@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -12,7 +12,7 @@ import {
   IconTrash,
   IconUpload
 } from '../icons';
-import SalesDetailModal, { type SaleDetail } from '../sales-detail-modal';
+import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
 import { API_BASE, formatCurrency, toNumber } from '../lib';
 
 type Product = {
@@ -21,6 +21,7 @@ type Product = {
   name: string;
   brand?: string | null;
   barcode?: string | null;
+  image_url?: string | null;
   price: number | string;
   active: boolean;
   quantity?: number | string;
@@ -32,6 +33,37 @@ type StockOption = { label: string; value: string };
 
 type Category = { id: string; name: string; color?: string | null };
 
+type InventoryUnit = {
+  id: string;
+  product_id: string;
+  cost: number | string;
+  expires_at?: string | null;
+  status: 'available' | 'sold' | 'inactive';
+  sale_id?: string | null;
+  sale_item_id?: string | null;
+  created_at?: string;
+  sold_at?: string | null;
+};
+
+type ProductSale = {
+  sale_id: string;
+  status: string;
+  total: number | string;
+  created_at: string;
+  customer_name?: string | null;
+  quantity: number | string;
+  price: number | string;
+  sku: string;
+  payment_status?: 'paid' | 'pending';
+};
+
+type Customer = {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string | null;
+};
+
 type ProductDraft = {
   name: string;
   brand: string;
@@ -39,7 +71,14 @@ type ProductDraft = {
   category: string;
   price: string;
   barcode: string;
+  imageUrl: string;
   available: boolean;
+};
+
+type InstallmentInput = {
+  id: string;
+  dueDate: string;
+  amount: string;
 };
 
 type InventoryPanelProps = {
@@ -84,6 +123,29 @@ const suggestions = [
   }
 ];
 
+const paymentMethods = [
+  'Dinheiro',
+  'Cartao de Credito',
+  'Cartao de Debito',
+  'Cheque',
+  'Pix',
+  'Boleto',
+  'TED/DOC',
+  'App de Pagamento'
+];
+
+const buildSampleImage = (label: string, primary: string, secondary: string) => {
+  const svg = `<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"200\" viewBox=\"0 0 200 200\">\n  <rect width=\"200\" height=\"200\" rx=\"24\" fill=\"#0f172a\"/>\n  <rect x=\"50\" y=\"26\" width=\"100\" height=\"148\" rx=\"18\" fill=\"${primary}\"/>\n  <rect x=\"68\" y=\"48\" width=\"64\" height=\"84\" rx=\"10\" fill=\"${secondary}\"/>\n  <rect x=\"78\" y=\"140\" width=\"44\" height=\"10\" rx=\"5\" fill=\"#0f172a\" opacity=\"0.2\"/>\n  <text x=\"100\" y=\"168\" font-size=\"16\" text-anchor=\"middle\" fill=\"#e2e8f0\" font-family=\"Arial, sans-serif\">${label}</text>\n</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
+const sampleImages = [
+  { id: 'sample-1', label: 'LO', url: buildSampleImage('LO', '#8b5cf6', '#e2e8f0') },
+  { id: 'sample-2', label: 'CX', url: buildSampleImage('CX', '#38bdf8', '#e2e8f0') },
+  { id: 'sample-3', label: 'PF', url: buildSampleImage('PF', '#f472b6', '#e2e8f0') },
+  { id: 'sample-4', label: 'SN', url: buildSampleImage('SN', '#fbbf24', '#111827') }
+];
+
 const emptyDraft: ProductDraft = {
   name: '',
   brand: '',
@@ -91,6 +153,7 @@ const emptyDraft: ProductDraft = {
   category: '',
   price: '',
   barcode: '',
+  imageUrl: '',
   available: true
 };
 
@@ -116,6 +179,62 @@ const getStockTone = (quantity: number, active: boolean) => {
   if (!active || quantity <= 0) return 'danger';
   if (quantity <= LOW_STOCK_THRESHOLD) return 'warn';
   return 'success';
+};
+
+const formatDate = (value?: string | null) => {
+  if (!value) return '-';
+  const normalized = value.includes('T') ? value : `${value}T00:00:00`;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('pt-BR');
+};
+
+const formatShortDate = (value?: string | null) => {
+  if (!value) return '-';
+  const normalized = value.includes('T') ? value : `${value}T00:00:00`;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return value;
+  return date
+    .toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+    .toUpperCase();
+};
+
+const toIsoDate = (value: Date) => value.toISOString().split('T')[0];
+
+const addMonths = (dateValue: string, months: number) => {
+  const base = new Date(`${dateValue}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return dateValue;
+  base.setMonth(base.getMonth() + months);
+  return base.toISOString().split('T')[0];
+};
+
+const buildInstallments = (count: number, total: number, startDate: string): InstallmentInput[] => {
+  if (count <= 0 || total <= 0) return [];
+  const totalCents = Math.round(total * 100);
+  const base = Math.floor(totalCents / count);
+  const remainder = totalCents - base * count;
+  return Array.from({ length: count }).map((_, index) => {
+    const cents = base + (index < remainder ? 1 : 0);
+    return {
+      id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+      dueDate: addMonths(startDate, index),
+      amount: (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    };
+  });
+};
+
+const getProductImage = (product?: Product | null) => {
+  if (!product) return '';
+  return product.image_url || '';
+};
+
+const getProductInitials = (product?: Product | null) => {
+  if (!product) return 'P';
+  const parts = product.name.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] || '';
+  const second = parts[1]?.[0] || '';
+  const initials = `${first}${second}`.toUpperCase();
+  return initials || product.name.slice(0, 2).toUpperCase();
 };
 
 export default function InventoryPanel({
@@ -151,6 +270,29 @@ export default function InventoryPanel({
   const [unitQuantity, setUnitQuantity] = useState('1');
   const [unitCost, setUnitCost] = useState('');
   const [unitExpiry, setUnitExpiry] = useState('');
+  const [productUnits, setProductUnits] = useState<InventoryUnit[]>([]);
+  const [unitsLoading, setUnitsLoading] = useState(false);
+  const [productSales, setProductSales] = useState<ProductSale[]>([]);
+  const [salesLoading, setSalesLoading] = useState(false);
+  const [unitMenuOpenId, setUnitMenuOpenId] = useState<string | null>(null);
+  const [sellUnit, setSellUnit] = useState<InventoryUnit | null>(null);
+  const [sellCustomerName, setSellCustomerName] = useState('');
+  const [sellCustomerId, setSellCustomerId] = useState('');
+  const [sellPrice, setSellPrice] = useState('');
+  const [sellDate, setSellDate] = useState(toIsoDate(new Date()));
+  const [sellPaid, setSellPaid] = useState(false);
+  const [sellPaymentOpen, setSellPaymentOpen] = useState(false);
+  const [sellRegisterAmount, setSellRegisterAmount] = useState('');
+  const [sellRegisterMethod, setSellRegisterMethod] = useState('');
+  const [sellInstallments, setSellInstallments] = useState<InstallmentInput[]>([]);
+  const [sellRegisterError, setSellRegisterError] = useState<string | null>(null);
+  const [selling, setSelling] = useState(false);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
+  const [editUnit, setEditUnit] = useState<InventoryUnit | null>(null);
+  const [editUnitCost, setEditUnitCost] = useState('');
+  const [editUnitExpiry, setEditUnitExpiry] = useState('');
+  const [deleteUnit, setDeleteUnit] = useState<InventoryUnit | null>(null);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [categoryMode, setCategoryMode] = useState<'list' | 'create' | 'edit'>('list');
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -160,6 +302,7 @@ export default function InventoryPanel({
   const [brandOpen, setBrandOpen] = useState(false);
   const [saleModal, setSaleModal] = useState<SaleDetail | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [localProducts, setLocalProducts] = useState<Product[]>(products);
 
   const view = viewParam === 'grid' ? 'grid' : 'list';
 
@@ -195,22 +338,100 @@ export default function InventoryPanel({
     return `${basePath}?${params.toString()}`;
   };
 
-  const gridProducts = products.slice(0, 12);
+  useEffect(() => {
+    setLocalProducts(products);
+  }, [products]);
 
-  const salesSample = useMemo<SaleDetail>(() => {
-    const base = selectedProduct || products[0];
-    return {
-      id: base?.id || 'sale-demo',
-      customer: 'iago',
-      date: new Date().toISOString(),
-      status: 'delivered',
-      total: toNumber(base?.price || 100),
-      paid: 0,
-      itemName: base?.name || 'Produto demonstracao',
-      itemQty: 1,
-      dueDate: new Date().toISOString()
-    };
-  }, [selectedProduct, products]);
+  const displayProducts = localProducts;
+
+  const adjustLocalQuantity = (productId: string, delta: number) => {
+    setLocalProducts((prev) =>
+      prev.map((item) =>
+        item.id === productId
+          ? { ...item, quantity: Math.max(0, toNumber(item.quantity ?? 0) + delta) }
+          : item
+      )
+    );
+    setSelectedProduct((prev) =>
+      prev && prev.id === productId
+        ? { ...prev, quantity: Math.max(0, toNumber(prev.quantity ?? 0) + delta) }
+        : prev
+    );
+  };
+
+  const loadProductUnits = async (productId: string) => {
+    setUnitsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/inventory/products/${productId}/units`, {
+        cache: 'no-store'
+      });
+      if (!res.ok) {
+        setProductUnits([]);
+        return;
+      }
+      const data = (await res.json()) as { data: InventoryUnit[] };
+      setProductUnits(data.data || []);
+    } catch {
+      setProductUnits([]);
+    } finally {
+      setUnitsLoading(false);
+    }
+  };
+
+  const loadProductSales = async (productId: string) => {
+    setSalesLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/inventory/products/${productId}/sales`, {
+        cache: 'no-store'
+      });
+      if (!res.ok) {
+        setProductSales([]);
+        return;
+      }
+      const data = (await res.json()) as { data: ProductSale[] };
+      setProductSales(data.data || []);
+    } catch {
+      setProductSales([]);
+    } finally {
+      setSalesLoading(false);
+    }
+  };
+
+  const refreshProductDetails = (productId: string) => {
+    loadProductUnits(productId);
+    loadProductSales(productId);
+  };
+
+  const handleSaleUpdated = (update: SaleUpdate) => {
+    setProductSales((prev) =>
+      prev.map((sale) =>
+        sale.sale_id === update.id
+          ? {
+              ...sale,
+              status: update.status ?? sale.status,
+              payment_status: update.paymentStatus ?? sale.payment_status
+            }
+          : sale
+      )
+    );
+  };
+
+  const loadCustomers = async () => {
+    setCustomersLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/customers`, { cache: 'no-store' });
+      if (!res.ok) {
+        setCustomers([]);
+        return;
+      }
+      const data = (await res.json()) as { data: Customer[] };
+      setCustomers(data.data || []);
+    } catch {
+      setCustomers([]);
+    } finally {
+      setCustomersLoading(false);
+    }
+  };
 
   const closeCreateModal = () => {
     setOpenCreate(false);
@@ -237,6 +458,7 @@ export default function InventoryPanel({
   };
 
   const openEditForm = (product: Product) => {
+    setSelectedProduct(null);
     openForm(
       {
         name: product.name,
@@ -245,6 +467,7 @@ export default function InventoryPanel({
         category: product.category_id || '',
         price: product.price ? formatCurrency(toNumber(product.price)) : '',
         barcode: product.barcode || '',
+        imageUrl: product.image_url || '',
         available: product.active
       },
       'edit',
@@ -261,11 +484,314 @@ export default function InventoryPanel({
     return Number.isNaN(parsed) ? 0 : parsed;
   };
 
+  const sellRegisterTotal = parseMoney(sellRegisterAmount);
+
   const formatCurrencyInput = (value: string) => {
     const digits = value.replace(/\D/g, '');
     if (!digits) return '';
     const amount = Number(digits) / 100;
     return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  const resetSellForm = () => {
+    setSellCustomerName('');
+    setSellCustomerId('');
+    setSellPrice('');
+    setSellDate(toIsoDate(new Date()));
+    setSellPaid(false);
+    setSellPaymentOpen(false);
+    setSellRegisterAmount('');
+    setSellRegisterMethod('');
+    setSellInstallments([]);
+    setSellRegisterError(null);
+  };
+
+  const openSellUnit = (unit: InventoryUnit) => {
+    if (!selectedProduct) return;
+    setSellUnit(unit);
+    setSellCustomerName('');
+    setSellCustomerId('');
+    setSellPrice(
+      selectedProduct.price !== null && selectedProduct.price !== undefined && `${selectedProduct.price}` !== ''
+        ? formatCurrency(toNumber(selectedProduct.price))
+        : ''
+    );
+    setSellDate(toIsoDate(new Date()));
+    setSellPaid(false);
+    setSellPaymentOpen(false);
+    setSellRegisterAmount('');
+    setSellRegisterMethod('');
+    setSellInstallments([]);
+    setSellRegisterError(null);
+  };
+
+  const updateSellInstallment = (id: string, field: 'dueDate' | 'amount', value: string) => {
+    setSellInstallments((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+  };
+
+  const handleIncreaseSellInstallments = () => {
+    const total = parseMoney(sellRegisterAmount);
+    if (total <= 0) return;
+    const nextCount = Math.max(sellInstallments.length + 1, 1);
+    setSellInstallments(buildInstallments(nextCount, total, sellDate || toIsoDate(new Date())));
+  };
+
+  const handleDecreaseSellInstallments = () => {
+    if (sellInstallments.length <= 1) return;
+    const total = parseMoney(sellRegisterAmount);
+    const nextCount = sellInstallments.length - 1;
+    setSellInstallments(buildInstallments(nextCount, total, sellDate || toIsoDate(new Date())));
+  };
+
+  const handleConfirmSellPayment = () => {
+    const priceValue = parseMoney(sellPrice);
+    if (sellRegisterTotal <= 0) {
+      setSellRegisterError('Informe o valor do pagamento');
+      return;
+    }
+    if (priceValue > 0 && Math.abs(sellRegisterTotal - priceValue) > 0.01) {
+      setSellRegisterError('O valor do pagamento precisa ser igual ao valor da venda');
+      return;
+    }
+    const installmentsTotal = sellInstallments.reduce((sum, item) => sum + parseMoney(item.amount), 0);
+    if (Math.abs(installmentsTotal - sellRegisterTotal) > 0.01) {
+      setSellRegisterError('A soma das parcelas precisa ser igual ao valor informado');
+      return;
+    }
+    setSellRegisterError(null);
+    setSellPaymentOpen(false);
+  };
+
+  useEffect(() => {
+    if (!sellPaymentOpen) return;
+    const priceValue = parseMoney(sellPrice);
+    const baseDate = sellDate || toIsoDate(new Date());
+    const amountValue = priceValue > 0 ? priceValue : 0;
+    setSellRegisterAmount(amountValue > 0 ? formatCurrency(amountValue) : formatCurrency(0));
+    setSellRegisterMethod('');
+    setSellInstallments(amountValue > 0 ? buildInstallments(1, amountValue, baseDate) : []);
+    setSellRegisterError(null);
+  }, [sellPaymentOpen]);
+
+  useEffect(() => {
+    if (!sellPaymentOpen) return;
+    const total = parseMoney(sellRegisterAmount);
+    if (total <= 0) {
+      setSellInstallments([]);
+      return;
+    }
+    const baseDate = sellDate || toIsoDate(new Date());
+    const count = sellInstallments.length || 1;
+    setSellInstallments(buildInstallments(count, total, baseDate));
+  }, [sellRegisterAmount, sellPaymentOpen, sellInstallments.length, sellDate]);
+
+  useEffect(() => {
+    if (!sellPaymentOpen) return;
+    const total = parseMoney(sellRegisterAmount);
+    const max = parseMoney(sellPrice);
+    if (max > 0 && total > max) {
+      setSellRegisterError('Valor maior que o valor da venda');
+    } else if (sellRegisterError === 'Valor maior que o valor da venda') {
+      setSellRegisterError(null);
+    }
+  }, [sellRegisterAmount, sellPrice, sellPaymentOpen, sellRegisterError]);
+
+  const handleConfirmSell = async () => {
+    if (!sellUnit || !selectedProduct) return;
+    const priceValue = parseMoney(sellPrice);
+    if (!priceValue) {
+      setToast('Informe o preco de venda');
+      return;
+    }
+    const registerTotal = parseMoney(sellRegisterAmount);
+    if (!sellPaid && sellInstallments.length > 0) {
+      if (registerTotal <= 0) {
+        setToast('Informe o valor do pagamento');
+        return;
+      }
+      if (Math.abs(registerTotal - priceValue) > 0.01) {
+        setToast('O valor do pagamento precisa ser igual ao valor da venda');
+        return;
+      }
+      const installmentsTotal = sellInstallments.reduce((sum, item) => sum + parseMoney(item.amount), 0);
+      if (Math.abs(installmentsTotal - registerTotal) > 0.01) {
+        setToast('A soma das parcelas precisa ser igual ao valor informado');
+        return;
+      }
+    }
+    setSelling(true);
+    try {
+      const saleRes = await fetch(`${API_BASE}/sales/checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: sellCustomerId || undefined,
+          customerName: sellCustomerId ? undefined : sellCustomerName.trim() || undefined,
+          createdAt: sellDate ? `${sellDate}T00:00:00` : undefined,
+          items: [
+            {
+              sku: selectedProduct.sku,
+              quantity: 1,
+              price: priceValue,
+              unitId: sellUnit.id
+            }
+          ],
+          payments: sellPaid
+            ? [
+                {
+                  method: 'Dinheiro',
+                  amount: priceValue
+                }
+              ]
+            : []
+        })
+      });
+
+      if (!saleRes.ok) {
+        const payload = (await saleRes.json().catch(() => null)) as { message?: string } | null;
+        setToast(payload?.message || 'Erro ao registrar a venda');
+        return;
+      }
+
+      const payload = (await saleRes.json()) as { data: { id: string; created_at?: string; customer_name?: string | null } };
+      const saleId = payload.data?.id;
+
+      if (!sellPaid && saleId) {
+        if (sellInstallments.length > 0 && registerTotal > 0) {
+          for (const installment of sellInstallments) {
+            const amount = parseMoney(installment.amount);
+            if (!amount || !installment.dueDate) continue;
+            await fetch(`${API_BASE}/finance/receivables`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                saleId,
+                amount,
+                dueDate: installment.dueDate,
+                method: sellRegisterMethod || undefined
+              })
+            });
+          }
+        }
+      }
+
+      const saleDateValue = payload.data?.created_at || `${sellDate}T00:00:00`;
+      if (!sellPaid && saleId) {
+        setSaleModal({
+          id: saleId,
+          customer: sellCustomerName || payload.data?.customer_name || 'Cliente nao informado',
+          date: saleDateValue,
+          status: 'pending',
+          total: priceValue,
+          paid: 0,
+          itemName: selectedProduct.name,
+          itemQty: 1,
+          dueDate: saleDateValue
+        });
+      }
+
+      setSellUnit(null);
+      resetSellForm();
+      router.refresh();
+      if (selectedProduct) {
+        refreshProductDetails(selectedProduct.id);
+      }
+      adjustLocalQuantity(selectedProduct.id, -1);
+      setToast('Venda registrada');
+    } catch {
+      setToast('Erro ao registrar a venda');
+    } finally {
+      setSelling(false);
+    }
+  };
+
+  const openEditUnit = (unit: InventoryUnit) => {
+    setEditUnit(unit);
+    setEditUnitCost(
+      unit.cost !== null && unit.cost !== undefined && `${unit.cost}` !== ''
+        ? formatCurrency(toNumber(unit.cost))
+        : ''
+    );
+    setEditUnitExpiry(unit.expires_at || '');
+  };
+
+  const handleUpdateUnit = async () => {
+    if (!editUnit) return;
+    const payload: { cost?: number; expiresAt?: string } = {};
+    if (editUnitCost) {
+      payload.cost = parseMoney(editUnitCost);
+    }
+    if (editUnitExpiry) {
+      payload.expiresAt = editUnitExpiry;
+    }
+    if (payload.cost === undefined && !payload.expiresAt) {
+      setToast('Informe o preco ou a validade');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/inventory/units/${editUnit.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        setToast('Erro ao atualizar unidade');
+        return;
+      }
+      setEditUnit(null);
+      setEditUnitCost('');
+      setEditUnitExpiry('');
+      if (selectedProduct) {
+        refreshProductDetails(selectedProduct.id);
+      }
+      setToast('Unidade atualizada');
+    } catch {
+      setToast('Erro ao atualizar unidade');
+    }
+  };
+
+  const handleDeleteUnit = async () => {
+    if (!deleteUnit) return;
+    try {
+      const res = await fetch(`${API_BASE}/inventory/units/${deleteUnit.id}`, {
+        method: 'DELETE'
+      });
+      if (res.status === 409) {
+        setToast('Unidade ja vendida');
+        return;
+      }
+      if (!res.ok) {
+        setToast('Erro ao excluir unidade');
+        return;
+      }
+      setDeleteUnit(null);
+      if (selectedProduct) {
+        refreshProductDetails(selectedProduct.id);
+      }
+      if (deleteUnit?.product_id) {
+        adjustLocalQuantity(deleteUnit.product_id, -1);
+      }
+      router.refresh();
+      setToast('Unidade removida');
+    } catch {
+      setToast('Erro ao excluir unidade');
+    }
+  };
+
+  const openSaleDetail = (sale: ProductSale) => {
+    const mappedStatus: SaleDetail['status'] =
+      sale.status === 'cancelled' ? 'cancelled' : sale.status === 'pending' ? 'pending' : 'delivered';
+    setSaleModal({
+      id: sale.sale_id,
+      customer: sale.customer_name || 'Cliente nao informado',
+      date: sale.created_at,
+      status: mappedStatus,
+      total: toNumber(sale.total),
+      paid: 0,
+      itemName: selectedProduct?.name || sale.sku,
+      itemQty: toNumber(sale.quantity || 1),
+      dueDate: sale.created_at
+    });
   };
 
   const buildSku = () => {
@@ -282,6 +808,7 @@ export default function InventoryPanel({
       sku: buildSku(),
       brand: formDraft.brand.trim() || undefined,
       barcode: formDraft.barcode.trim() || undefined,
+      imageUrl: formDraft.imageUrl.trim() || undefined,
       price: parseMoney(formDraft.price),
       cost: 0,
       categoryId: formDraft.category || undefined,
@@ -455,17 +982,24 @@ export default function InventoryPanel({
         body: JSON.stringify({
           sku: adjustProduct.sku,
           quantity,
-          reason: 'manual_add'
+          reason: 'manual_add',
+          cost: parseMoney(unitCost),
+          expiresAt: unitExpiry || undefined
         })
       });
       if (!res.ok) {
-        setToast('Erro ao adicionar unidades');
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        setToast(payload?.message || 'Erro ao adicionar unidades');
         return;
       }
       setAdjustProduct(null);
       setUnitQuantity('1');
       setUnitCost('');
       setUnitExpiry('');
+      if (selectedProduct) {
+        refreshProductDetails(selectedProduct.id);
+      }
+      adjustLocalQuantity(adjustProduct.id, quantity);
       router.refresh();
       setToast('Unidades adicionadas');
     } catch {
@@ -474,10 +1008,31 @@ export default function InventoryPanel({
   };
 
   useEffect(() => {
+    if (!selectedProduct) {
+      setProductUnits([]);
+      setProductSales([]);
+      setUnitMenuOpenId(null);
+      setSellUnit(null);
+      setEditUnit(null);
+      setDeleteUnit(null);
+      return;
+    }
+    refreshProductDetails(selectedProduct.id);
+    setUnitMenuOpenId(null);
+  }, [selectedProduct?.id]);
+
+  useEffect(() => {
+    if (!sellUnit) return;
+    loadCustomers();
+  }, [sellUnit]);
+
+  useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 2400);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  const availableUnits = productUnits.filter((unit) => unit.status === 'available');
 
   return (
     <>
@@ -493,6 +1048,7 @@ export default function InventoryPanel({
             type="button"
             onClick={() => updateView(view === 'grid' ? 'list' : 'grid')}
             title={view === 'grid' ? 'Layout de lista' : 'Layout de grade'}
+            aria-label={view === 'grid' ? 'Layout de lista' : 'Layout de grade'}
           >
             {view === 'grid' ? <IconList /> : <IconGrid />}
           </button>
@@ -631,6 +1187,89 @@ export default function InventoryPanel({
                 Limpar filtros
               </Link>
             </div>
+          ) : view === 'grid' ? (
+            <div className="inventory-grid">
+              {displayProducts.map((product) => {
+                const quantity = toNumber(product.quantity ?? 0);
+                const stockLabel = product.active && quantity > 0 ? `${quantity} un.` : 'Sem estoque';
+                const hasPrice = product.price !== null && product.price !== undefined && `${product.price}` !== '';
+                const priceLabel = hasPrice ? formatCurrency(toNumber(product.price)) : 'Sem preco';
+                return (
+                  <div key={product.id} className="inventory-card">
+                    <button
+                      className="inventory-thumb"
+                      type="button"
+                      title="Ver produto"
+                      onClick={() => {
+                        setSelectedProduct(product);
+                        setProductTab('estoque');
+                      }}
+                    >
+                      <span className="inventory-thumb-badge">{stockLabel}</span>
+                      {getProductImage(product) ? (
+                        <img
+                          className="inventory-thumb-img"
+                          src={getProductImage(product)}
+                          alt={product.name}
+                        />
+                      ) : (
+                        <span className="inventory-thumb-img product-initial">
+                          {getProductInitials(product)}
+                        </span>
+                      )}
+                    </button>
+                    <div className="inventory-meta">
+                      <strong>{product.name}</strong>
+                      <span>{(product.brand || 'Sem marca') + ' · ' + product.sku}</span>
+                    </div>
+                    <div className="inventory-price">{priceLabel}</div>
+                    <button
+                      className="inventory-menu"
+                      type="button"
+                      title="Acoes"
+                      onClick={() => setMenuOpenId((prev) => (prev === product.id ? null : product.id))}
+                    >
+                      <IconDots />
+                    </button>
+                    {menuOpenId === product.id ? (
+                      <div className="inventory-dropdown">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuOpenId(null);
+                            openEditForm(product);
+                          }}
+                        >
+                          <IconEdit /> Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuOpenId(null);
+                            setAdjustProduct(product);
+                            setUnitQuantity('1');
+                            setUnitCost('');
+                            setUnitExpiry('');
+                          }}
+                        >
+                          <IconPlus /> Adicionar unidades
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => {
+                            setMenuOpenId(null);
+                            setDeleteProduct(product);
+                          }}
+                        >
+                          <IconTrash /> Excluir
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className="inventory-list">
               <div className="data-row cols-4 header">
@@ -639,12 +1278,14 @@ export default function InventoryPanel({
                 <span>Estoque</span>
                 <span>Acoes</span>
               </div>
-              {gridProducts.map((product) => {
+              {displayProducts.map((product) => {
                 const quantity = toNumber(product.quantity ?? 0);
                 const stockLabel =
                   product.active && quantity > 0
                     ? `${quantity} ${quantity === 1 ? 'unidade' : 'unidades'}`
                     : 'Sem estoque';
+                const hasPrice = product.price !== null && product.price !== undefined && `${product.price}` !== '';
+                const priceLabel = hasPrice ? formatCurrency(toNumber(product.price)) : 'Sem preco';
                 return (
                   <div key={product.id} className="data-row cols-4 inventory-row">
                     <button
@@ -655,7 +1296,13 @@ export default function InventoryPanel({
                         setProductTab('estoque');
                       }}
                     >
-                      <span className="inventory-row-thumb">🧴</span>
+                      <span className="inventory-row-thumb">
+                        {getProductImage(product) ? (
+                          <img src={getProductImage(product)} alt={product.name} />
+                        ) : (
+                          <span className="product-initial">{getProductInitials(product)}</span>
+                        )}
+                      </span>
                       <div>
                         <strong>{product.name}</strong>
                         <div className="meta">
@@ -663,14 +1310,13 @@ export default function InventoryPanel({
                         </div>
                       </div>
                     </button>
-                    <div className="data-cell mono">
-                      {product.price ? formatCurrency(toNumber(product.price)) : 'Sem preco'}
-                    </div>
+                    <div className="data-cell mono">{priceLabel}</div>
                     <span className={`badge ${getStockTone(quantity, product.active)}`}>{stockLabel}</span>
                     <div className="inventory-row-actions">
                       <button
                         className={`button icon small${menuOpenId === product.id ? ' active' : ''}`}
                         type="button"
+                        title="Acoes"
                         onClick={() => setMenuOpenId((prev) => (prev === product.id ? null : product.id))}
                       >
                         <IconDots />
@@ -786,9 +1432,28 @@ export default function InventoryPanel({
               <>
                 <div className="product-form">
                   <div className="product-image">
-                    <div className="product-upload">
-                      <span>⬆</span>
-                      <p>Arraste a imagem ou clique para enviar</p>
+                    {formDraft.imageUrl ? (
+                      <div className="product-image-preview">
+                        <img src={formDraft.imageUrl} alt={formDraft.name || 'Produto'} />
+                      </div>
+                    ) : (
+                      <div className="product-upload">
+                        <span>⬆</span>
+                        <p>Arraste a imagem ou clique para enviar</p>
+                      </div>
+                    )}
+                    <div className="sample-images">
+                      {sampleImages.map((image) => (
+                        <button
+                          key={image.id}
+                          className={`sample-image${formDraft.imageUrl === image.url ? ' active' : ''}`}
+                          type="button"
+                          onClick={() => setFormDraft((prev) => ({ ...prev, imageUrl: image.url }))}
+                          title="Selecionar imagem"
+                        >
+                          <img src={image.url} alt={image.label} />
+                        </button>
+                      ))}
                     </div>
                   </div>
                   <div className="product-fields">
@@ -947,10 +1612,20 @@ export default function InventoryPanel({
           <div className="modal modal-product" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-product-header">
-                <div className="modal-product-thumb">🧴</div>
+                <div className="modal-product-thumb">
+                  {getProductImage(selectedProduct) ? (
+                    <img src={getProductImage(selectedProduct)} alt={selectedProduct.name} />
+                  ) : (
+                    <span className="product-initial">{getProductInitials(selectedProduct)}</span>
+                  )}
+                </div>
                 <div>
                   <strong>{selectedProduct.name}</strong>
-                  <span>{selectedProduct.barcode || selectedProduct.sku}</span>
+                  <span>
+                    {(selectedProduct.brand || 'Sem marca') +
+                      ' · ' +
+                      (selectedProduct.barcode || selectedProduct.sku)}
+                  </span>
                 </div>
               </div>
               <button className="modal-close" type="button" onClick={() => setSelectedProduct(null)}>
@@ -977,7 +1652,13 @@ export default function InventoryPanel({
 
             {productTab === 'estoque' ? (
               <div className="modal-product-body">
-                {toNumber(selectedProduct.quantity ?? 0) > 0 && selectedProduct.active ? (
+                {unitsLoading ? (
+                  <div className="modal-empty">
+                    <div className="modal-empty-icon">⏳</div>
+                    <strong>Carregando unidades</strong>
+                    <span>Atualizando informacoes do estoque...</span>
+                  </div>
+                ) : availableUnits.length > 0 && selectedProduct.active ? (
                   <>
                     <div className="modal-product-table">
                       <div className="modal-table-header">
@@ -985,13 +1666,56 @@ export default function InventoryPanel({
                         <span>Vencimento</span>
                         <span>Acoes</span>
                       </div>
-                      <div className="modal-table-row">
-                        <span>{formatCurrency(0.7)}</span>
-                        <span>-</span>
-                        <button className="button icon small" type="button">
-                          <IconDots />
-                        </button>
-                      </div>
+                      {availableUnits.map((unit) => (
+                        <div key={unit.id} className="modal-table-row">
+                          <span>{formatCurrency(toNumber(unit.cost))}</span>
+                          <span>{unit.expires_at ? formatDate(unit.expires_at) : '-'}</span>
+                          <div className="unit-actions">
+                            <button
+                              className={`button icon small${unitMenuOpenId === unit.id ? ' active' : ''}`}
+                              type="button"
+                              title="Acoes"
+                              onClick={() =>
+                                setUnitMenuOpenId((prev) => (prev === unit.id ? null : unit.id))
+                              }
+                            >
+                              <IconDots />
+                            </button>
+                            {unitMenuOpenId === unit.id ? (
+                              <div className="inventory-dropdown unit-dropdown">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUnitMenuOpenId(null);
+                                    openSellUnit(unit);
+                                  }}
+                                >
+                                  Vender
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUnitMenuOpenId(null);
+                                    openEditUnit(unit);
+                                  }}
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="danger"
+                                  onClick={() => {
+                                    setUnitMenuOpenId(null);
+                                    setDeleteUnit(unit);
+                                  }}
+                                >
+                                  Excluir
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                     <div className="modal-footer">
                       <button className="button ghost" type="button" onClick={() => openEditForm(selectedProduct)}>
@@ -1040,15 +1764,66 @@ export default function InventoryPanel({
               </div>
             ) : (
               <div className="modal-product-body">
-                <div className="modal-product-row clickable" onClick={() => setSaleModal(salesSample)}>
-                  <div>
-                    <strong>iago - 1 itens</strong>
-                    <span>{formatCurrency(100)} | 24 DE JAN.</span>
+                {salesLoading ? (
+                  <div className="modal-empty">
+                    <div className="modal-empty-icon">⏳</div>
+                    <strong>Carregando vendas</strong>
+                    <span>Buscando historico do produto...</span>
                   </div>
-                  <button className="button ghost" type="button">
-                    Clique para ver
-                  </button>
-                </div>
+                ) : productSales.length === 0 ? (
+                  <div className="modal-empty">
+                    <div className="modal-empty-icon">🏷️</div>
+                    <strong>Nenhuma venda registrada</strong>
+                    <span>As vendas deste produto aparecerao aqui.</span>
+                  </div>
+                ) : (
+                  productSales.map((sale) => {
+                    const deliveryLabel =
+                      sale.status === 'delivered'
+                        ? 'Entregue'
+                        : sale.status === 'pending'
+                          ? 'A entregar'
+                          : 'Cancelado';
+                    return (
+                      <div
+                        key={sale.sale_id}
+                        className="modal-product-row clickable"
+                        onClick={() => openSaleDetail(sale)}
+                      >
+                      <div>
+                        <strong>
+                          {(sale.customer_name || 'Cliente nao informado') +
+                            ` - ${toNumber(sale.quantity)} ${toNumber(sale.quantity) === 1 ? 'item' : 'itens'}`}
+                        </strong>
+                        <span>
+                          {formatCurrency(toNumber(sale.price) * toNumber(sale.quantity))} | {formatShortDate(sale.created_at)}
+                        </span>
+                      </div>
+                      <div className="product-sale-actions">
+                        {sale.status === 'cancelled' ? (
+                          <span className="payment-badge cancelled">
+                            <span className="badge-icon">⛔</span>Cancelado
+                          </span>
+                        ) : (
+                          <div className="product-sale-status">
+                            <div className="sale-status-main">
+                              <span className={`sale-status-label ${sale.payment_status === 'paid' ? 'paid' : 'pending'}`}>
+                                {sale.payment_status === 'paid' ? 'Pago' : 'Pendente'}
+                              </span>
+                              <span className={`sale-status-circle ${sale.payment_status === 'paid' ? 'paid' : 'pending'}`}>
+                                {sale.payment_status === 'paid' ? '✓' : '🕒'}
+                              </span>
+                            </div>
+                            <span className={`sale-delivery-label ${sale.status === 'delivered' ? 'delivered' : 'pending'}`}>
+                              {deliveryLabel}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+                )}
               </div>
             )}
           </div>
@@ -1067,10 +1842,17 @@ export default function InventoryPanel({
               </button>
             </div>
             <div className="unit-product">
-              <div className="unit-thumb">🧴</div>
+              <div className="unit-thumb">
+                {getProductImage(adjustProduct) ? (
+                  <img src={getProductImage(adjustProduct)} alt={adjustProduct.name} />
+                ) : (
+                  <span className="product-initial">{getProductInitials(adjustProduct)}</span>
+                )}
+              </div>
               <div>
                 <span>Incluindo unidades do produto</span>
                 <strong>{adjustProduct.name}</strong>
+                <span>{(adjustProduct.brand || 'Sem marca') + ' · ' + adjustProduct.sku}</span>
               </div>
             </div>
             <label className="modal-field">
@@ -1105,6 +1887,304 @@ export default function InventoryPanel({
               </button>
               <button className="button primary" type="button" onClick={handleAddUnits}>
                 Adicionar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {sellUnit && selectedProduct ? (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            setSellUnit(null);
+            resetSellForm();
+          }}
+        >
+          <div className="modal modal-units" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Registrar venda</h3>
+              <button
+                className="modal-close"
+                type="button"
+                onClick={() => {
+                  setSellUnit(null);
+                  resetSellForm();
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="unit-product">
+              <div className="unit-thumb">
+                {getProductImage(selectedProduct) ? (
+                  <img src={getProductImage(selectedProduct)} alt={selectedProduct.name} />
+                ) : (
+                  <span className="product-initial">{getProductInitials(selectedProduct)}</span>
+                )}
+              </div>
+              <div>
+                <span>Vendendo unidade do produto</span>
+                <strong>{selectedProduct.name}</strong>
+                <span>{(selectedProduct.brand || 'Sem marca') + ' · ' + selectedProduct.sku}</span>
+              </div>
+            </div>
+            <label className="modal-field">
+              <span>Produto</span>
+              <input value={`${selectedProduct.name} · ${selectedProduct.sku}`} readOnly />
+            </label>
+            <label className="modal-field">
+              <span>Cliente</span>
+              <div className="select">
+                <input
+                  list="customer-options"
+                  placeholder={customersLoading ? 'Carregando clientes...' : 'Selecione o cliente'}
+                  value={sellCustomerName}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setSellCustomerName(value);
+                    const match = customers.find((customer) => customer.name === value);
+                    setSellCustomerId(match?.id || '');
+                  }}
+                />
+                <span>▾</span>
+              </div>
+              <datalist id="customer-options">
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.name} />
+                ))}
+              </datalist>
+            </label>
+            <label className="modal-field">
+              <span>Preco de venda</span>
+              <input
+                value={sellPrice}
+                inputMode="decimal"
+                placeholder="R$ 0,00"
+                onChange={(event) => setSellPrice(formatCurrencyInput(event.target.value))}
+              />
+            </label>
+            <label className="modal-field">
+              <span>Data da venda</span>
+              <input
+                type="date"
+                value={sellDate}
+                onChange={(event) => setSellDate(event.target.value)}
+              />
+            </label>
+            <div className="toggle-row">
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={sellPaid}
+                  onChange={(event) => setSellPaid(event.target.checked)}
+                />
+                <span className="slider" />
+              </label>
+              <span>A venda ja foi paga</span>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="button ghost"
+                type="button"
+                onClick={() => {
+                  setSellUnit(null);
+                  resetSellForm();
+                }}
+              >
+                Cancelar
+              </button>
+              <button className="button primary" type="button" onClick={handleConfirmSell} disabled={selling}>
+                {selling ? 'Salvando...' : 'Confirmar venda'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {sellPaymentOpen ? (
+        <div
+          className="modal-backdrop"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (event.target !== event.currentTarget) return;
+            setSellPaymentOpen(false);
+          }}
+        >
+          <div className="modal modal-payment" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Pagamento da venda</h3>
+              <button className="modal-close" type="button" onClick={() => setSellPaymentOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <label className="modal-field">
+              <span>Valor do pagamento</span>
+              <input
+                className={sellRegisterError ? 'input-error' : undefined}
+                value={sellRegisterAmount}
+                inputMode="decimal"
+                placeholder="R$ 0,00"
+                onChange={(event) => {
+                  setSellRegisterAmount(formatCurrencyInput(event.target.value));
+                  if (sellRegisterError) setSellRegisterError(null);
+                }}
+              />
+              {sellRegisterError ? <span className="field-error">{sellRegisterError}</span> : null}
+            </label>
+            <label className="modal-field">
+              <span>Forma do pagamento</span>
+              <div className="select-field">
+                <select
+                  value={sellRegisterMethod}
+                  onChange={(event) => {
+                    setSellRegisterMethod(event.target.value);
+                    if (sellRegisterError) setSellRegisterError(null);
+                  }}
+                >
+                  <option value="">Selecione</option>
+                  {paymentMethods.map((method) => (
+                    <option key={method} value={method}>
+                      {method}
+                    </option>
+                  ))}
+                </select>
+                {sellRegisterMethod ? (
+                  <button type="button" className="select-clear" onClick={() => setSellRegisterMethod('')}>
+                    ✕
+                  </button>
+                ) : null}
+                <span className="select-arrow">▾</span>
+              </div>
+            </label>
+            <div className="installments">
+              <div className="installments-header">
+                <strong>Parcelas</strong>
+                <div className="installments-controls">
+                  <button className="button icon small" type="button" onClick={handleDecreaseSellInstallments}>
+                    −
+                  </button>
+                  <span>{sellInstallments.length || 0}</span>
+                  <button className="button icon small" type="button" onClick={handleIncreaseSellInstallments}>
+                    +
+                  </button>
+                </div>
+              </div>
+              {sellRegisterTotal > 0 ? (
+                <div className="installments-list">
+                  {sellInstallments.map((installment, index) => (
+                    <div key={installment.id} className="installment-row">
+                      <div className="installment-index">{index + 1}</div>
+                      <div className="installment-fields">
+                        <label>
+                          <span>Vencimento</span>
+                          <input
+                            type="date"
+                            value={installment.dueDate}
+                            onChange={(event) => updateSellInstallment(installment.id, 'dueDate', event.target.value)}
+                          />
+                        </label>
+                        <label>
+                          <span>Valor</span>
+                          <input
+                            value={installment.amount}
+                            inputMode="decimal"
+                            placeholder="R$ 0,00"
+                            onChange={(event) =>
+                              updateSellInstallment(installment.id, 'amount', formatCurrencyInput(event.target.value))
+                            }
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="installments-empty">Sem parcelas pendentes.</div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="button ghost" type="button" onClick={() => setSellPaymentOpen(false)}>
+                Cancelar
+              </button>
+              <button className="button primary" type="button" onClick={handleConfirmSellPayment}>
+                Registrar pagamento
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {editUnit && selectedProduct ? (
+        <div className="modal-backdrop" onClick={() => setEditUnit(null)}>
+          <div className="modal modal-units" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Editar unidade</h3>
+              <button className="modal-close" type="button" onClick={() => setEditUnit(null)}>
+                ✕
+              </button>
+            </div>
+            <div className="unit-product">
+              <div className="unit-thumb">
+                {getProductImage(selectedProduct) ? (
+                  <img src={getProductImage(selectedProduct)} alt={selectedProduct.name} />
+                ) : (
+                  <span className="product-initial">{getProductInitials(selectedProduct)}</span>
+                )}
+              </div>
+              <div>
+                <span>Atualizando unidade do produto</span>
+                <strong>{selectedProduct.name}</strong>
+                <span>{(selectedProduct.brand || 'Sem marca') + ' · ' + selectedProduct.sku}</span>
+              </div>
+            </div>
+            <label className="modal-field">
+              <span>Preco de compra</span>
+              <input
+                value={editUnitCost}
+                inputMode="decimal"
+                placeholder="R$ 0,00"
+                onChange={(event) => setEditUnitCost(formatCurrencyInput(event.target.value))}
+              />
+            </label>
+            <label className="modal-field">
+              <span>Data de validade</span>
+              <input
+                type="date"
+                value={editUnitExpiry}
+                onChange={(event) => setEditUnitExpiry(event.target.value)}
+              />
+            </label>
+            <div className="modal-footer">
+              <button className="button ghost" type="button" onClick={() => setEditUnit(null)}>
+                Cancelar
+              </button>
+              <button className="button primary" type="button" onClick={handleUpdateUnit}>
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteUnit ? (
+        <div className="modal-backdrop" onClick={() => setDeleteUnit(null)}>
+          <div className="modal modal-delete" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Excluir unidade</h3>
+              <button className="modal-close" type="button" onClick={() => setDeleteUnit(null)}>
+                ✕
+              </button>
+            </div>
+            <p>
+              Tem certeza que deseja excluir esta unidade? Unidades vendidas nao podem ser removidas.
+            </p>
+            <div className="modal-footer">
+              <button className="button ghost" type="button" onClick={() => setDeleteUnit(null)}>
+                Cancelar
+              </button>
+              <button className="button danger" type="button" onClick={handleDeleteUnit}>
+                Excluir
               </button>
             </div>
           </div>
@@ -1241,7 +2321,15 @@ export default function InventoryPanel({
 
       {toast ? <div className="toast">{toast}</div> : null}
 
-      <SalesDetailModal open={Boolean(saleModal)} onClose={() => setSaleModal(null)} sale={saleModal} />
+      <SalesDetailModal
+        open={Boolean(saleModal)}
+        onClose={() => setSaleModal(null)}
+        sale={saleModal}
+        onUpdated={(update) => {
+          handleSaleUpdated(update);
+          if (selectedProduct) refreshProductDetails(selectedProduct.id);
+        }}
+      />
     </>
   );
 }

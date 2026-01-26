@@ -7,6 +7,7 @@ type Product = {
   name: string;
   brand?: string | null;
   barcode?: string | null;
+  image_url?: string | null;
   price: number | string;
   active: boolean;
   quantity?: number | string;

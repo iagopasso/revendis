@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatCurrency } from '../lib';
-import SalesDetailModal, { type SaleDetail } from '../sales-detail-modal';
+import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
 
 type Sale = {
   id: string;
   status: string;
   total: number | string;
   created_at: string;
+  customer_name?: string | null;
 };
 
 type SalesPanelProps = {
@@ -28,24 +29,31 @@ const formatDate = (value: string) => {
 const statusLabel = (status: string) => {
   if (status === 'cancelled') return 'Cancelado';
   if (status === 'pending') return 'A entregar';
+  if (status === 'delivered') return 'Entregue';
   return 'Confirmado';
 };
 
 const statusBadge = (status: string) => {
   if (status === 'cancelled') return 'danger';
   if (status === 'pending') return 'warn';
+  if (status === 'delivered') return 'success';
   return 'success';
 };
 
 export default function SalesPanel({ sales, totalSales, profit, totalReceivable, salesCount }: SalesPanelProps) {
   const [selectedSale, setSelectedSale] = useState<SaleDetail | null>(null);
+  const [localSales, setLocalSales] = useState<Sale[]>(sales);
+
+  useEffect(() => {
+    setLocalSales(sales);
+  }, [sales]);
 
   const openModal = (sale: Sale) => {
     const mappedStatus: SaleDetail['status'] =
       sale.status === 'cancelled' ? 'cancelled' : sale.status === 'pending' ? 'pending' : 'delivered';
     setSelectedSale({
       id: sale.id,
-      customer: 'iago',
+      customer: sale.customer_name || 'Cliente nao informado',
       date: sale.created_at,
       status: mappedStatus,
       total: Number(sale.total),
@@ -54,6 +62,19 @@ export default function SalesPanel({ sales, totalSales, profit, totalReceivable,
       itemQty: 1,
       dueDate: sale.created_at
     });
+  };
+
+  const handleSaleUpdated = (update: SaleUpdate) => {
+    setLocalSales((prev) =>
+      prev.map((sale) =>
+        sale.id === update.id
+          ? {
+              ...sale,
+              status: update.status ?? sale.status
+            }
+          : sale
+      )
+    );
   };
 
   return (
@@ -107,7 +128,7 @@ export default function SalesPanel({ sales, totalSales, profit, totalReceivable,
               <span>Total</span>
               <span>Data</span>
             </div>
-            {sales.slice(0, 6).map((sale) => (
+            {localSales.slice(0, 6).map((sale) => (
               <button key={sale.id} className="data-row cols-4 sale-row" type="button" onClick={() => openModal(sale)}>
                 <div>
                   <strong>Pedido #{sale.id.slice(0, 6)}</strong>
@@ -122,7 +143,12 @@ export default function SalesPanel({ sales, totalSales, profit, totalReceivable,
         )}
       </section>
 
-      <SalesDetailModal open={Boolean(selectedSale)} onClose={() => setSelectedSale(null)} sale={selectedSale} />
+      <SalesDetailModal
+        open={Boolean(selectedSale)}
+        onClose={() => setSelectedSale(null)}
+        sale={selectedSale}
+        onUpdated={handleSaleUpdated}
+      />
     </>
   );
 }

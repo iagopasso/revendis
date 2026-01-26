@@ -1,0 +1,2 @@
+ALTER TABLE receivables
+ADD COLUMN IF NOT EXISTS method text;

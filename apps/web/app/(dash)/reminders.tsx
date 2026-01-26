@@ -58,7 +58,7 @@ export default function Reminders({
 
   const expiringHref = useMemo(() => {
     const params = new URLSearchParams(rangeParams.toString());
-    params.set('stock', 'expiring');
+    params.set('stock', 'empty');
     return buildHref('/categorias', params);
   }, [rangeParams]);
 
@@ -94,7 +94,7 @@ export default function Reminders({
             <span className="reminder-icon">
               <IconCalendar />
             </span>
-            <span>Produtos vencendo</span>
+            <span>Sem estoque</span>
           </span>
           <strong className="reminder-count">{expiringCount}</strong>
         </Link>

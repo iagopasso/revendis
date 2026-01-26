@@ -6,6 +6,7 @@ export const productInputSchema = z
     sku: z.string().min(1),
     brand: z.string().min(1).optional(),
     barcode: z.string().optional(),
+    imageUrl: z.string().min(1).optional(),
     price: z.number().nonnegative(),
     cost: z.number().nonnegative().optional(),
     stock: z.number().int().optional(),
@@ -21,6 +22,7 @@ export const productUpdateSchema = z
     sku: z.string().min(1).optional(),
     brand: z.string().min(1).optional(),
     barcode: z.string().optional(),
+    imageUrl: z.string().min(1).optional(),
     price: z.number().nonnegative().optional(),
     cost: z.number().nonnegative().optional(),
     expiresAt: z.string().optional(),
@@ -48,7 +50,9 @@ export const inventoryAdjustmentSchema = z
     sku: z.string().min(1),
     quantity: z.number().int(),
     reason: z.string().min(1),
-    storeId: z.string().optional()
+    storeId: z.string().optional(),
+    cost: z.number().nonnegative().optional(),
+    expiresAt: z.string().optional()
   })
   .strict();
 
@@ -73,5 +77,12 @@ export const inventoryReturnSchema = z
         .strict()
     ),
     condition: z.enum(['good', 'damaged']).optional()
+  })
+  .strict();
+
+export const inventoryUnitUpdateSchema = z
+  .object({
+    cost: z.number().nonnegative().optional(),
+    expiresAt: z.string().optional()
   })
   .strict();

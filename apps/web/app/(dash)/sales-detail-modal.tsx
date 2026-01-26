@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { formatCurrency } from './lib';
+import { useRouter } from 'next/navigation';
+import { API_BASE, formatCurrency, toNumber } from './lib';
 
 export type SaleDetail = {
   id: string;
@@ -15,10 +16,58 @@ export type SaleDetail = {
   dueDate?: string;
 };
 
+export type SaleUpdate = {
+  id: string;
+  status?: SaleDetail['status'];
+  paymentStatus?: 'paid' | 'pending';
+};
+
+type SaleItemDetail = {
+  id: string;
+  sku: string;
+  quantity: number | string;
+  price: number | string;
+  product_name?: string | null;
+  product_brand?: string | null;
+  product_image_url?: string | null;
+};
+
+type PaymentDetail = {
+  id: string;
+  method: string;
+  amount: number | string;
+  created_at: string;
+};
+
+type ReceivableDetail = {
+  id: string;
+  amount: number | string;
+  due_date: string;
+  status: string;
+  settled_at?: string | null;
+  method?: string | null;
+};
+
+type SaleDetailResponse = {
+  id: string;
+  status: string;
+  total: number | string;
+  subtotal: number | string;
+  discount_total: number | string;
+  created_at: string;
+  customer_name?: string | null;
+  items: SaleItemDetail[];
+  payments: PaymentDetail[];
+  receivables: ReceivableDetail[];
+  cost_total: number | string;
+  profit: number | string;
+};
+
 type SalesDetailModalProps = {
   open: boolean;
   onClose: () => void;
   sale?: SaleDetail | null;
+  onUpdated?: (update: SaleUpdate) => void;
 };
 
 type PaymentState = {
@@ -26,6 +75,12 @@ type PaymentState = {
   dueDate: string;
   method: string;
   paidAt?: string | null;
+};
+
+type InstallmentInput = {
+  id: string;
+  dueDate: string;
+  amount: string;
 };
 
 const paymentMethods = [
@@ -49,6 +104,42 @@ const formatTime = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+};
+
+const formatCurrencyInput = (value: string) => {
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return '';
+  const amount = Number(digits) / 100;
+  return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+const parseMoney = (value: string) => {
+  const cleaned = value.replace(/[^\d,.-]/g, '');
+  const normalized = cleaned.includes(',') ? cleaned.replace(/\./g, '').replace(',', '.') : cleaned;
+  const parsed = Number(normalized);
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const addMonths = (dateValue: string, months: number) => {
+  const base = new Date(`${dateValue}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return dateValue;
+  base.setMonth(base.getMonth() + months);
+  return base.toISOString().split('T')[0];
+};
+
+const buildInstallments = (count: number, total: number, startDate: string): InstallmentInput[] => {
+  if (count <= 0 || total <= 0) return [];
+  const totalCents = Math.round(total * 100);
+  const base = Math.floor(totalCents / count);
+  const remainder = totalCents - base * count;
+  return Array.from({ length: count }).map((_, index) => {
+    const cents = base + (index < remainder ? 1 : 0);
+    return {
+      id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+      dueDate: addMonths(startDate, index),
+      amount: formatCurrency(cents / 100)
+    };
+  });
 };
 
 const toIsoDate = (value: Date) => value.toISOString().split('T')[0];
@@ -75,13 +166,35 @@ const getOverdueDays = (dueDate?: string) => {
   return diff > 0 ? Math.ceil(diff / (1000 * 60 * 60 * 24)) : 0;
 };
 
-export default function SalesDetailModal({ open, onClose, sale }: SalesDetailModalProps) {
+const getInitials = (value: string) => {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] || '';
+  const second = parts[1]?.[0] || '';
+  const initials = `${first}${second}`.toUpperCase();
+  return initials || value.slice(0, 2).toUpperCase();
+};
+
+const getPaymentStatus = (
+  total: number,
+  payments: PaymentDetail[],
+  receivables: ReceivableDetail[]
+): 'paid' | 'pending' => {
+  if (total <= 0) return 'paid';
+  const paidFromPayments = payments.reduce((sum, item) => sum + toNumber(item.amount), 0);
+  const paidFromReceivables = receivables
+    .filter((item) => item.status === 'paid')
+    .reduce((sum, item) => sum + toNumber(item.amount), 0);
+  return paidFromPayments + paidFromReceivables >= total ? 'paid' : 'pending';
+};
+
+export default function SalesDetailModal({ open, onClose, sale, onUpdated }: SalesDetailModalProps) {
+  const router = useRouter();
   const [statusOpen, setStatusOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
-  const [paymentMenuOpen, setPaymentMenuOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [receiptTab, setReceiptTab] = useState<'digital' | 'termico'>('digital');
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
+  const [settleOpen, setSettleOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [undoOpen, setUndoOpen] = useState(false);
@@ -93,12 +206,24 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
     method: 'Dinheiro',
     paidAt: null
   });
-  const [paymentRemoved, setPaymentRemoved] = useState(false);
-  const [paymentPaid, setPaymentPaid] = useState(false);
-  const [paymentDate, setPaymentDate] = useState(toIsoDate(new Date()));
+  const [registerAmount, setRegisterAmount] = useState('');
+  const [registerMethod, setRegisterMethod] = useState('');
+  const [installments, setInstallments] = useState<InstallmentInput[]>([]);
+  const [registering, setRegistering] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+  const [activePaymentMenu, setActivePaymentMenu] = useState<string | null>(null);
+  const [settleTarget, setSettleTarget] = useState<ReceivableDetail | null>(null);
+  const [settleDate, setSettleDate] = useState(toIsoDate(new Date()));
+  const [editTarget, setEditTarget] = useState<ReceivableDetail | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<ReceivableDetail | null>(null);
   const [editDueDate, setEditDueDate] = useState(toIsoDate(new Date()));
   const [editAmount, setEditAmount] = useState('');
   const [editMethod, setEditMethod] = useState(paymentMethods[0]);
+  const [detail, setDetail] = useState<SaleDetailResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [profitVisible, setProfitVisible] = useState(false);
+  const [undoing, setUndoing] = useState(false);
 
   useEffect(() => {
     if (!sale) return;
@@ -110,17 +235,53 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
       method: 'Dinheiro',
       paidAt: null
     });
-    setPaymentRemoved(false);
-    setPaymentPaid(false);
-    setPaymentDate(toIsoDate(new Date()));
     setEditDueDate(dueDate);
     setEditAmount(String(sale.total));
     setEditMethod('Dinheiro');
     setReceiptTab('digital');
     setStatusOpen(false);
     setActionsOpen(false);
-    setPaymentMenuOpen(false);
+    setActivePaymentMenu(null);
+    setDetail(null);
+    setProfitVisible(false);
+    setRegisterAmount('');
+    setRegisterMethod('');
+    setInstallments([]);
+    setRegistering(false);
+    setRegisterError(null);
+    setStatusUpdating(false);
+    setSettleOpen(false);
+    setSettleTarget(null);
+    setSettleDate(toIsoDate(new Date()));
+    setEditTarget(null);
+    setRemoveTarget(null);
   }, [sale]);
+
+  useEffect(() => {
+    if (!sale || !open) return;
+    let active = true;
+    setDetailLoading(true);
+    fetch(`${API_BASE}/sales/orders/${sale.id}`, { cache: 'no-store' })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json()) as { data: SaleDetailResponse };
+      })
+      .then((payload) => {
+        if (!active) return;
+        setDetail(payload?.data || null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setDetail(null);
+      })
+      .finally(() => {
+        if (!active) return;
+        setDetailLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [sale, open]);
 
   useEffect(() => {
     if (!toast) return;
@@ -128,48 +289,377 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
     return () => clearTimeout(timer);
   }, [toast]);
 
+  const payments = detail?.payments ?? [];
+  const receivables = detail?.receivables ?? [];
+  const totalValue = toNumber(detail?.total ?? sale?.total ?? paymentState.amount);
+  const paidFromPayments = payments.reduce((sum, item) => sum + toNumber(item.amount), 0);
+  const paidFromReceivables = receivables
+    .filter((item) => item.status === 'paid')
+    .reduce((sum, item) => sum + toNumber(item.amount), 0);
+  const paidValue = paidFromPayments + paidFromReceivables;
+
   const summary = useMemo(() => {
-    const total = paymentState.amount;
-    const paid = paymentPaid ? paymentState.amount : 0;
-    return { total, paid, remaining: Math.max(total - paid, 0) };
-  }, [paymentState.amount, paymentPaid]);
+    return { total: totalValue, paid: paidValue, remaining: Math.max(totalValue - paidValue, 0) };
+  }, [totalValue, paidValue]);
+
+  useEffect(() => {
+    if (!markPaidOpen) return;
+    const remaining = summary.remaining;
+    const baseDate = paymentState.dueDate || toIsoDate(new Date());
+    const amountValue = remaining > 0 ? remaining : 0;
+    setRegisterAmount(amountValue > 0 ? formatCurrency(amountValue) : formatCurrency(0));
+    setRegisterMethod('');
+    setInstallments(amountValue > 0 ? buildInstallments(1, amountValue, baseDate) : []);
+    setRegisterError(null);
+  }, [markPaidOpen, summary.remaining, paymentState.dueDate]);
+
+  useEffect(() => {
+    if (!markPaidOpen) return;
+    const total = parseMoney(registerAmount);
+    if (total <= 0) {
+      setInstallments([]);
+      return;
+    }
+    const baseDate = paymentState.dueDate || toIsoDate(new Date());
+    const count = installments.length || 1;
+    setInstallments(buildInstallments(count, total, baseDate));
+  }, [registerAmount, markPaidOpen, installments.length, paymentState.dueDate]);
+
+  useEffect(() => {
+    if (!markPaidOpen) return;
+    const total = parseMoney(registerAmount);
+    if (total > summary.remaining) {
+      setRegisterError('Valor maior que o valor da venda');
+    } else if (registerError === 'Valor maior que o valor da venda') {
+      setRegisterError(null);
+    }
+  }, [registerAmount, markPaidOpen, registerError, summary.remaining]);
 
   if (!open || !sale) return null;
 
-  const overdueDays = paymentPaid ? 0 : getOverdueDays(paymentState.dueDate);
+  const notifyUpdate = (override?: {
+    status?: SaleDetail['status'];
+    payments?: PaymentDetail[];
+    receivables?: ReceivableDetail[];
+    total?: number;
+  }) => {
+    const nextStatus = override?.status ?? deliveryStatus;
+    const nextPayments = override?.payments ?? payments;
+    const nextReceivables = override?.receivables ?? receivables;
+    const nextTotal = override?.total ?? totalValue;
+    onUpdated?.({
+      id: sale.id,
+      status: nextStatus,
+      paymentStatus: getPaymentStatus(nextTotal, nextPayments, nextReceivables)
+    });
+  };
+
+  const isCancelled = deliveryStatus === 'cancelled';
+  const paymentDueDate = receivables[0]?.due_date || paymentState.dueDate;
+  const isPaid = summary.total > 0 ? summary.paid >= summary.total : false;
+  const showPaymentCallout = !isCancelled && summary.remaining > 0 && receivables.length === 0;
+  const overdueDays = isPaid ? 0 : getOverdueDays(paymentDueDate);
   const isOverdue = overdueDays > 0;
 
-  const paymentStatusLabel = paymentPaid
-    ? `Pago em ${formatDate(paymentState.paidAt || paymentDate)}`
-    : `Vence em ${formatDate(paymentState.dueDate)}`;
+  const receiptStatus = isPaid ? 'Pago' : isOverdue ? `Atrasado (${overdueDays} dias)` : 'Pendente';
 
-  const receiptStatus = paymentPaid ? 'Pago' : isOverdue ? `Atrasado (${overdueDays} dias)` : 'Pendente';
+  const customerName = detail?.customer_name || sale.customer;
+  const saleItems =
+    detail?.items && detail.items.length
+      ? detail.items
+      : [
+          {
+            id: sale.id,
+            sku: '',
+            quantity: sale.itemQty,
+            price: sale.itemQty ? summary.total / sale.itemQty : summary.total,
+            product_name: sale.itemName
+          }
+        ];
+  const profitValue = detail
+    ? toNumber(detail.profit ?? totalValue - toNumber(detail.cost_total))
+    : 0;
 
-  const handleSavePaid = () => {
-    setPaymentPaid(true);
-    setPaymentRemoved(false);
-    setPaymentState((prev) => ({ ...prev, paidAt: paymentDate }));
-    setMarkPaidOpen(false);
-    setToast('Marcado como pago');
+  const receivableEntries = receivables.map((receivable, index) => ({
+    id: receivable.id,
+    label: `Parcela ${index + 1} de ${receivables.length}`,
+    amount: toNumber(receivable.amount),
+    status: receivable.status === 'paid' ? 'paid' : 'pending',
+    date: receivable.status === 'paid' ? receivable.settled_at || receivable.due_date : receivable.due_date,
+    method: receivable.method || 'Outro'
+  }));
+
+  const paymentEntries = payments.map((payment, index) => ({
+    id: payment.id || `payment-${index}`,
+    label: 'Pagamento',
+    amount: toNumber(payment.amount),
+    status: 'paid' as const,
+    date: payment.created_at,
+    method: payment.method || 'Outro'
+  }));
+
+  const receiptEntries = [...paymentEntries, ...receivableEntries].filter((entry) => entry.amount > 0);
+
+  const paymentListEntries = [
+    ...receivables.map((receivable) => ({
+      id: receivable.id,
+      kind: 'receivable' as const,
+      amount: toNumber(receivable.amount),
+      status: receivable.status === 'paid' ? 'paid' : 'pending',
+      date: receivable.status === 'paid' ? receivable.settled_at || receivable.due_date : receivable.due_date,
+      method: receivable.method || 'Outro'
+    })),
+    ...payments.map((payment, index) => ({
+      id: payment.id || `payment-${index}`,
+      kind: 'payment' as const,
+      amount: toNumber(payment.amount),
+      status: 'paid' as const,
+      date: payment.created_at,
+      method: payment.method || 'Outro'
+    }))
+  ]
+    .filter((entry) => entry.amount > 0)
+    .sort((a, b) => {
+      const aTime = a.date ? new Date(a.date).getTime() : 0;
+      const bTime = b.date ? new Date(b.date).getTime() : 0;
+      return aTime - bTime;
+    });
+
+  const receiptPaymentStatus =
+    summary.paid <= 0
+      ? 'Pendente'
+      : summary.remaining <= 0
+        ? 'Pago'
+        : 'Parcialmente pago';
+
+  const receiptPaymentStatusClass =
+    receiptPaymentStatus === 'Pago' ? 'paid' : receiptPaymentStatus === 'Parcialmente pago' ? 'partial' : 'pending';
+
+  const thermalPaymentLines =
+    receiptEntries.length > 0
+      ? receiptEntries
+          .map(
+            (entry) =>
+              `${entry.method} ${entry.status === 'paid' ? 'PAGO' : 'PENDENTE'} - ${entry.date ? formatDate(entry.date) : '-'} ${formatCurrency(entry.amount)}`
+          )
+          .join('\n')
+      : 'Sem pagamentos registrados';
+
+  const thermalStatusLabel =
+    receiptPaymentStatus === 'Parcialmente pago' ? 'PARCIAL' : receiptPaymentStatus.toUpperCase();
+
+  const handleRegisterPayment = async () => {
+    if (!sale) return;
+    const totalToRegister = parseMoney(registerAmount);
+    if (totalToRegister <= 0) {
+      setRegisterError('Informe o valor do pagamento');
+      return;
+    }
+    if (totalToRegister > summary.remaining) {
+      setRegisterError('Valor maior que o valor da venda');
+      return;
+    }
+    setRegisterError(null);
+
+    const baseDate = paymentState.dueDate || toIsoDate(new Date());
+    const normalizedInstallments =
+      installments.length > 0 ? installments : buildInstallments(1, totalToRegister, baseDate);
+    const installmentsTotal = normalizedInstallments.reduce(
+      (sum, item) => sum + parseMoney(item.amount),
+      0
+    );
+    if (Math.abs(installmentsTotal - totalToRegister) > 0.01) {
+      setRegisterError('A soma das parcelas precisa ser igual ao valor informado');
+      return;
+    }
+
+    setRegistering(true);
+    try {
+      let nextReceivables = [...receivables];
+
+      for (const installment of normalizedInstallments) {
+        const amount = parseMoney(installment.amount);
+        if (!amount || !installment.dueDate) continue;
+        const res = await fetch(`${API_BASE}/finance/receivables`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            saleId: sale.id,
+            amount,
+            dueDate: installment.dueDate,
+            method: registerMethod || undefined
+          })
+        });
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+          setToast(payload?.message || 'Erro ao registrar parcelas');
+          return;
+        }
+        const payload = (await res.json()) as { data?: ReceivableDetail };
+        if (payload.data) {
+          nextReceivables = [...nextReceivables, payload.data];
+        }
+      }
+
+      setDetail((prev) => (prev ? { ...prev, receivables: nextReceivables } : prev));
+      setMarkPaidOpen(false);
+      setToast('Pagamento registrado');
+      router.refresh();
+      notifyUpdate({ receivables: nextReceivables });
+    } catch {
+      setToast('Erro ao registrar pagamento');
+    } finally {
+      setRegistering(false);
+    }
   };
 
-  const handleSaveEdit = () => {
-    const amountValue = Number(editAmount.replace(',', '.')) || paymentState.amount;
-    setPaymentState((prev) => ({
-      ...prev,
-      amount: amountValue,
-      dueDate: editDueDate,
-      method: editMethod
-    }));
-    setEditOpen(false);
-    setToast('Parcela atualizada');
+  const registerTotal = parseMoney(registerAmount);
+
+  const handleIncreaseInstallments = () => {
+    if (registerTotal <= 0) return;
+    const nextCount = Math.max(installments.length + 1, 1);
+    setInstallments(buildInstallments(nextCount, registerTotal, paymentState.dueDate || toIsoDate(new Date())));
   };
 
-  const handleRemove = () => {
-    setPaymentRemoved(true);
-    setPaymentPaid(false);
-    setRemoveOpen(false);
-    setToast('Parcela removida');
+  const handleDecreaseInstallments = () => {
+    if (installments.length <= 1) return;
+    const nextCount = installments.length - 1;
+    setInstallments(buildInstallments(nextCount, registerTotal, paymentState.dueDate || toIsoDate(new Date())));
+  };
+
+  const updateInstallment = (id: string, field: 'dueDate' | 'amount', value: string) => {
+    setInstallments((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editTarget) return;
+    const amountValue = parseMoney(editAmount);
+    if (!amountValue) {
+      setToast('Informe o valor da parcela');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/finance/receivables/${editTarget.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amountValue,
+          dueDate: editDueDate,
+          method: editMethod || undefined
+        })
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        setToast(payload?.message || 'Erro ao atualizar parcela');
+        return;
+      }
+      const payload = (await res.json()) as { data?: ReceivableDetail };
+      if (payload.data) {
+        const updatedReceivables = detail
+          ? detail.receivables.map((item) => (item.id === payload.data?.id ? { ...item, ...payload.data } : item))
+          : [];
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                receivables: updatedReceivables
+              }
+            : prev
+        );
+        notifyUpdate({ receivables: updatedReceivables });
+      }
+      setEditOpen(false);
+      setEditTarget(null);
+      setToast('Parcela atualizada');
+      router.refresh();
+    } catch {
+      setToast('Erro ao atualizar parcela');
+    }
+  };
+
+  const handleRemove = async () => {
+    if (!removeTarget) return;
+    try {
+      const res = await fetch(`${API_BASE}/finance/receivables/${removeTarget.id}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok && res.status !== 204) {
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        setToast(payload?.message || 'Erro ao remover parcela');
+        return;
+      }
+      const updatedReceivables = detail
+        ? detail.receivables.filter((item) => item.id !== removeTarget.id)
+        : [];
+      setDetail((prev) => (prev ? { ...prev, receivables: updatedReceivables } : prev));
+      setRemoveOpen(false);
+      setRemoveTarget(null);
+      setToast('Parcela removida');
+      router.refresh();
+      notifyUpdate({ receivables: updatedReceivables });
+    } catch {
+      setToast('Erro ao remover parcela');
+    }
+  };
+
+  const handleSettleReceivable = async () => {
+    if (!settleTarget) return;
+    try {
+      const res = await fetch(`${API_BASE}/finance/receivables/${settleTarget.id}/settle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: toNumber(settleTarget.amount),
+          settledAt: settleDate ? `${settleDate}T00:00:00` : new Date().toISOString()
+        })
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        setToast(payload?.message || 'Erro ao marcar parcela como paga');
+        return;
+      }
+      const updatedReceivables = detail
+        ? detail.receivables.map((item) =>
+            item.id === settleTarget.id ? { ...item, status: 'paid', settled_at: settleDate } : item
+          )
+        : [];
+      setDetail((prev) => (prev ? { ...prev, receivables: updatedReceivables } : prev));
+      setSettleOpen(false);
+      setSettleTarget(null);
+      setToast('Parcela marcada como paga');
+      router.refresh();
+      notifyUpdate({ receivables: updatedReceivables });
+    } catch {
+      setToast('Erro ao marcar parcela como paga');
+    }
+  };
+
+  const handleUpdateStatus = async (nextStatus: SaleDetail['status']) => {
+    if (!sale || nextStatus === deliveryStatus) return;
+    setStatusUpdating(true);
+    try {
+      const res = await fetch(`${API_BASE}/sales/orders/${sale.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus })
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        setToast(payload?.message || 'Erro ao atualizar status');
+        return;
+      }
+      setDeliveryStatus(nextStatus);
+      setDetail((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      setToast('Status atualizado');
+      router.refresh();
+      notifyUpdate({ status: nextStatus });
+    } catch {
+      setToast('Erro ao atualizar status');
+    } finally {
+      setStatusUpdating(false);
+    }
   };
 
   const handleDownloadReceipt = () => {
@@ -180,6 +670,29 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
   const handlePrintReceipt = () => {
     if (typeof window !== 'undefined') {
       window.print();
+    }
+  };
+
+  const handleUndoSale = async () => {
+    if (!sale) return;
+    setUndoing(true);
+    try {
+      const res = await fetch(`${API_BASE}/sales/orders/${sale.id}/cancel`, { method: 'POST' });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        setToast(payload?.message || 'Erro ao desfazer venda');
+        return;
+      }
+      setUndoOpen(false);
+      setDeliveryStatus('cancelled');
+      setDetail((prev) => (prev ? { ...prev, status: 'cancelled' } : prev));
+      setToast('Venda cancelada');
+      router.refresh();
+      notifyUpdate({ status: 'cancelled' });
+    } catch {
+      setToast('Erro ao desfazer venda');
+    } finally {
+      setUndoing(false);
     }
   };
 
@@ -196,7 +709,7 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
           <div className="sale-header-left">
             <div className="avatar-circle">👤</div>
             <div>
-              <strong>{sale.customer}</strong>
+              <strong>{customerName}</strong>
               <span>{formatDate(sale.date)}</span>
             </div>
           </div>
@@ -205,28 +718,36 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
               <button
                 className={`button status-button ${statusClass(deliveryStatus)}`}
                 type="button"
-                onClick={() => setStatusOpen((prev) => !prev)}
+                onClick={() => {
+                  if (isCancelled) return;
+                  setStatusOpen((prev) => !prev);
+                }}
+                disabled={isCancelled}
               >
-                <span className="status-icon">{deliveryStatus === 'pending' ? '🚚' : '✅'}</span>
+                <span className="status-icon">
+                  {deliveryStatus === 'cancelled' ? '⛔' : deliveryStatus === 'pending' ? '🚚' : '✅'}
+                </span>
                 {statusLabel(deliveryStatus)} ▾
               </button>
-              {statusOpen ? (
+              {statusOpen && !isCancelled ? (
                 <div className="sale-menu">
                   <button
                     type="button"
                     onClick={() => {
-                      setDeliveryStatus('delivered');
+                      handleUpdateStatus('delivered');
                       setStatusOpen(false);
                     }}
+                    disabled={statusUpdating}
                   >
                     Ja entregue
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      setDeliveryStatus('pending');
+                      handleUpdateStatus('pending');
                       setStatusOpen(false);
                     }}
+                    disabled={statusUpdating}
                   >
                     A entregar
                   </button>
@@ -266,97 +787,174 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
 
         <div className="sale-grid">
           <section className="sale-section">
-            <h4>Itens da Venda (1)</h4>
-            <div className="sale-item">
-              <div className="sale-thumb">🧴</div>
-              <div>
-                <strong>{sale.itemName}</strong>
-                <span>{sale.itemQty} unidade</span>
-                <span>Total: {formatCurrency(summary.total)}</span>
-              </div>
-              <span className="sale-price">{formatCurrency(summary.total)}</span>
+            <div className="sale-section-title">
+              <span className="section-icon">📦</span>
+              <h4>Itens da Venda ({saleItems.length})</h4>
             </div>
+            {detailLoading ? (
+              <div className="meta">Carregando itens...</div>
+            ) : (
+              saleItems.map((item) => {
+                const qty = toNumber(item.quantity);
+                const price = toNumber(item.price);
+                const totalItem = qty * price;
+                const itemTitle = item.product_name || item.sku || sale.itemName;
+                const itemImage = item.product_image_url || '';
+                return (
+                  <div key={item.id} className="sale-item">
+                    <div className="sale-thumb">
+                      {itemImage ? (
+                        <img src={itemImage} alt={itemTitle} />
+                      ) : (
+                        <span className="sale-thumb-initial">{getInitials(itemTitle)}</span>
+                      )}
+                    </div>
+                    <div className="sale-item-info">
+                      <strong>{itemTitle}</strong>
+                      <span>{qty} {qty === 1 ? 'unidade' : 'unidades'}</span>
+                      <span>Total: {formatCurrency(totalItem)}</span>
+                    </div>
+                    <span className="sale-price">{formatCurrency(totalItem)}</span>
+                  </div>
+                );
+              })
+            )}
           </section>
 
           <section className="sale-section">
             <div className="sale-payment-header">
-              <h4>Pagamentos</h4>
+              <div className="sale-section-title">
+                <span className="section-icon">💳</span>
+                <h4>Pagamentos</h4>
+              </div>
               <div className="payment-progress" />
             </div>
 
-            {paymentRemoved ? (
+            {showPaymentCallout ? (
               <div className="payment-callout">
-                <span>Valor pendente de registro: {formatCurrency(summary.total)}</span>
-                <button className="button primary" type="button" onClick={() => setMarkPaidOpen(true)}>
+                <span>Valor pendente de registro: {formatCurrency(summary.remaining)}</span>
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => setMarkPaidOpen(true)}
+                  disabled={isCancelled}
+                >
                   + Registrar Pagamento
                 </button>
               </div>
-            ) : (
-              <div className={`payment-card${paymentPaid ? ' paid' : isOverdue ? ' overdue' : ''}`}>
-                <div className="sale-payment-row">
-                  <div className="payment-left">
-                    <span className="payment-status-icon">{paymentPaid ? '✓' : '!'}</span>
-                    <span>{formatCurrency(summary.total)}</span>
-                  </div>
-                  <button className="button icon small" type="button" onClick={() => setPaymentMenuOpen((prev) => !prev)}>
-                    ⋯
-                  </button>
-                  {paymentMenuOpen ? (
-                    <div className="payment-menu">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPaymentMenuOpen(false);
-                          setMarkPaidOpen(true);
-                        }}
-                      >
-                        Marcar como paga
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPaymentMenuOpen(false);
-                          setEditOpen(true);
-                        }}
-                      >
-                        Editar parcela
-                      </button>
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() => {
-                          setPaymentMenuOpen(false);
-                          setRemoveOpen(true);
-                        }}
-                      >
-                        Remover parcela
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-                <div className="meta">{paymentState.method.toUpperCase()}</div>
-                <div className="meta">{paymentStatusLabel}</div>
-              </div>
-            )}
+            ) : null}
 
-            <div className="sale-summary">
-              <div>
-                <span>Valor Total</span>
-                <strong>{formatCurrency(summary.total)}</strong>
+            {paymentListEntries.length > 0 ? (
+              <div className="payment-list">
+                {paymentListEntries.map((entry) => (
+                  <div key={entry.id} className={`payment-item ${entry.status}`}>
+                    <div className="payment-item-header">
+                      <div className="payment-item-left">
+                        <span className="payment-status-icon">
+                          {entry.status === 'paid' ? '✓' : '📅'}
+                        </span>
+                        <span className="payment-amount">{formatCurrency(entry.amount)}</span>
+                      </div>
+                      {entry.kind === 'receivable' ? (
+                        <button
+                          className="button icon small"
+                          type="button"
+                          onClick={() =>
+                            setActivePaymentMenu((prev) => (prev === entry.id ? null : entry.id))
+                          }
+                        >
+                          ⋯
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="payment-item-meta">
+                      <span className="payment-method-pill">{entry.method.toUpperCase()}</span>
+                      <span className="payment-item-date">
+                        {entry.status === 'paid'
+                          ? `Pago em ${formatDate(entry.date)}`
+                          : `Vence em ${formatDate(entry.date)}`}
+                      </span>
+                    </div>
+                    {entry.kind === 'receivable' && activePaymentMenu === entry.id ? (
+                      <div className="payment-menu">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActivePaymentMenu(null);
+                            const target = receivables.find((item) => item.id === entry.id) || null;
+                            if (!target) return;
+                            setSettleTarget(target);
+                            setSettleDate(toIsoDate(new Date()));
+                            setSettleOpen(true);
+                          }}
+                          disabled={entry.status === 'paid'}
+                        >
+                          Marcar como paga
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActivePaymentMenu(null);
+                            const target = receivables.find((item) => item.id === entry.id) || null;
+                            if (!target) return;
+                            setEditTarget(target);
+                            setEditAmount(formatCurrency(toNumber(target.amount)));
+                            setEditDueDate(target.due_date);
+                            setEditMethod(target.method || '');
+                            setEditOpen(true);
+                          }}
+                        >
+                          Editar parcela
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => {
+                            setActivePaymentMenu(null);
+                            const target = receivables.find((item) => item.id === entry.id) || null;
+                            if (!target) return;
+                            setRemoveTarget(target);
+                            setRemoveOpen(true);
+                          }}
+                        >
+                          Remover parcela
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
               </div>
-              <div>
-                <span>Valor Pago</span>
-                <strong>{formatCurrency(summary.paid)}</strong>
-              </div>
-              <div>
-                <span>Valor Restante</span>
-                <strong>{formatCurrency(summary.remaining)}</strong>
-              </div>
-              <div>
-                <span>Lucro</span>
-                <button className="button ghost" type="button">
-                  Clique para ver
-                </button>
+            ) : null}
+
+            <div className="sale-summary-card">
+              <div className="sale-summary">
+                <div>
+                  <span>Valor Total</span>
+                  <strong>{formatCurrency(summary.total)}</strong>
+                </div>
+                <div>
+                  <span>Valor Pago</span>
+                  <strong>{formatCurrency(summary.paid)}</strong>
+                </div>
+                <div>
+                  <span>Valor Restante</span>
+                  <strong>{formatCurrency(summary.remaining)}</strong>
+                </div>
+                <div>
+                  <span>Lucro</span>
+                  <button
+                    className="button ghost"
+                    type="button"
+                    onClick={() => setProfitVisible(true)}
+                    disabled={detailLoading && !detail}
+                  >
+                    {profitVisible
+                      ? detailLoading && !detail
+                        ? 'Calculando...'
+                        : formatCurrency(profitValue)
+                      : 'Clique para ver'}
+                  </button>
+                </div>
               </div>
             </div>
           </section>
@@ -425,27 +1023,51 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
                       <strong>{statusLabel(deliveryStatus)}</strong>
                     </div>
                   </div>
-                  <div className="receipt-products">
-                    <strong>Produtos</strong>
-                    <div className="receipt-product-row">
-                      <span>{sale.itemQty}</span>
-                      <span>{sale.itemName}</span>
-                      <strong>{formatCurrency(summary.total)}</strong>
-                    </div>
-                  </div>
+                <div className="receipt-products">
+                  <strong>Produtos</strong>
+                  {saleItems.map((item) => {
+                    const qty = toNumber(item.quantity);
+                    const price = toNumber(item.price);
+                    const totalItem = qty * price;
+                    return (
+                      <div key={item.id} className="receipt-product-row">
+                        <span>{qty}</span>
+                        <span>{item.product_name || item.sku || sale.itemName}</span>
+                        <strong>{formatCurrency(totalItem)}</strong>
+                      </div>
+                    );
+                  })}
                 </div>
+              </div>
 
                 <div className="receipt-card">
                   <div className="receipt-header">
                     <strong>Pagamento</strong>
-                    <span className={`receipt-pill ${paymentPaid ? 'paid' : 'pending'}`}>{paymentPaid ? 'Pago' : 'Pendente'}</span>
+                    <span className={`receipt-pill ${receiptPaymentStatusClass}`}>
+                      {receiptPaymentStatus}
+                    </span>
                   </div>
                   <div className="receipt-payment-status">
-                    {isOverdue && !paymentPaid ? <span className="receipt-badge">{receiptStatus}</span> : null}
-                    <span>Parcela 1 de 1</span>
-                    <strong>{formatCurrency(summary.total)}</strong>
-                    <span>{paymentState.method}</span>
-                    <span>{formatDate(paymentState.dueDate)}</span>
+                    {isOverdue && summary.remaining > 0 ? <span className="receipt-badge">{receiptStatus}</span> : null}
+                    {receiptEntries.length === 0 ? (
+                      <span>Nenhum pagamento registrado</span>
+                    ) : (
+                      <div className="receipt-payment-list">
+                        {receiptEntries.map((entry) => (
+                          <div key={entry.id} className="receipt-payment-row">
+                            <span className={`receipt-pill ${entry.status === 'paid' ? 'paid' : 'pending'}`}>
+                              {entry.status === 'paid' ? 'Pago' : 'Pendente'}
+                            </span>
+                            <div className="receipt-payment-meta">
+                              <strong>{entry.label}</strong>
+                              <span>{entry.method}</span>
+                              <span>{entry.date ? formatDate(entry.date) : '-'}</span>
+                            </div>
+                            <strong>{formatCurrency(entry.amount)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="receipt-summary">
                     <div>
@@ -475,7 +1097,7 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
               <div className="receipt-body">
                 <div className="receipt-thermal">
                   <pre>
-{`==============================\nCOMPROVANTE DE VENDA\n\nData: ${formatDate(sale.date)}\nVenda: #${sale.id.slice(0, 6)}\nCliente: ${sale.customer}\n\n------------------------------\nPRODUTOS:\n${sale.itemName}\n${sale.itemQty}x ${formatCurrency(summary.total)}\n\nSubtotal: ${formatCurrency(summary.total)}\nTOTAL: ${formatCurrency(summary.total)}\n\n------------------------------\nPAGAMENTO:\n${paymentState.method}\nPENDENTE: ${formatDate(paymentState.dueDate)}\nPago: ${formatCurrency(summary.paid)}\nRestante: ${formatCurrency(summary.remaining)}\n\nSTATUS: ${paymentPaid ? 'PAGO' : 'PENDENTE'}\n------------------------------\nObrigado pela preferencia!\n${formatDate(sale.date)} ${formatTime(sale.date)}`}
+{`==============================\nCOMPROVANTE DE VENDA\n\nData: ${formatDate(sale.date)}\nVenda: #${sale.id.slice(0, 6)}\nCliente: ${sale.customer}\n\n------------------------------\nPRODUTOS:\n${sale.itemName}\n${sale.itemQty}x ${formatCurrency(summary.total)}\n\nSubtotal: ${formatCurrency(summary.total)}\nTOTAL: ${formatCurrency(summary.total)}\n\n------------------------------\nPAGAMENTO:\n${thermalPaymentLines}\n\nPago: ${formatCurrency(summary.paid)}\nRestante: ${formatCurrency(summary.remaining)}\n\nSTATUS: ${thermalStatusLabel}\n------------------------------\nObrigado pela preferencia!\n${formatDate(sale.date)} ${formatTime(sale.date)}`}
                   </pre>
                 </div>
               </div>
@@ -502,22 +1124,144 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
             setMarkPaidOpen(false);
           }}
         >
-          <div className="modal modal-small" onClick={(event) => event.stopPropagation()}>
+          <div className="modal modal-payment" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <h3>Marcar como pago</h3>
+              <h3>Pagamento da venda</h3>
               <button className="modal-close" type="button" onClick={() => setMarkPaidOpen(false)}>
                 ✕
               </button>
             </div>
             <label className="modal-field">
-              <span>Data do pagamento</span>
-              <input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} />
+              <span>Valor do pagamento</span>
+              <input
+                className={registerError ? 'input-error' : undefined}
+                value={registerAmount}
+                inputMode="decimal"
+                placeholder="R$ 0,00"
+                onChange={(event) => {
+                  setRegisterAmount(formatCurrencyInput(event.target.value));
+                  if (registerError) setRegisterError(null);
+                }}
+              />
+              {registerError ? <span className="field-error">{registerError}</span> : null}
             </label>
+            <label className="modal-field">
+              <span>Forma do pagamento</span>
+              <div className="select-field">
+                <select
+                  value={registerMethod}
+                  onChange={(event) => {
+                    setRegisterMethod(event.target.value);
+                    if (registerError) setRegisterError(null);
+                  }}
+                >
+                  <option value="">Selecione</option>
+                  {paymentMethods.map((method) => (
+                    <option key={method} value={method}>
+                      {method}
+                    </option>
+                  ))}
+                </select>
+                {registerMethod ? (
+                  <button
+                    type="button"
+                    className="select-clear"
+                    onClick={() => setRegisterMethod('')}
+                  >
+                    ✕
+                  </button>
+                ) : null}
+                <span className="select-arrow">▾</span>
+              </div>
+            </label>
+            <div className="installments">
+              <div className="installments-header">
+                <strong>Parcelas</strong>
+                <div className="installments-controls">
+                  <button className="button icon small" type="button" onClick={handleDecreaseInstallments}>
+                    −
+                  </button>
+                  <span>{installments.length || 0}</span>
+                  <button className="button icon small" type="button" onClick={handleIncreaseInstallments}>
+                    +
+                  </button>
+                </div>
+              </div>
+              {registerTotal > 0 ? (
+                <div className="installments-list">
+                  {installments.map((installment, index) => (
+                    <div key={installment.id} className="installment-row">
+                      <div className="installment-index">{index + 1}</div>
+                      <div className="installment-fields">
+                        <label>
+                          <span>Vencimento</span>
+                          <input
+                            type="date"
+                            value={installment.dueDate}
+                            onChange={(event) => updateInstallment(installment.id, 'dueDate', event.target.value)}
+                          />
+                        </label>
+                        <label>
+                          <span>Valor</span>
+                          <input
+                            value={installment.amount}
+                            inputMode="decimal"
+                            placeholder="R$ 0,00"
+                            onChange={(event) =>
+                              updateInstallment(installment.id, 'amount', formatCurrencyInput(event.target.value))
+                            }
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="installments-empty">Sem parcelas pendentes.</div>
+              )}
+            </div>
             <div className="modal-footer">
               <button className="button ghost" type="button" onClick={() => setMarkPaidOpen(false)}>
                 Cancelar
               </button>
-              <button className="button primary" type="button" onClick={handleSavePaid}>
+              <button
+                className="button primary"
+                type="button"
+                onClick={handleRegisterPayment}
+                disabled={registering || registerTotal <= 0 || Boolean(registerError)}
+              >
+                {registering ? 'Registrando...' : 'Registrar pagamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {settleOpen ? (
+        <div
+          className="modal-backdrop"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (event.target !== event.currentTarget) return;
+            setSettleOpen(false);
+          }}
+        >
+          <div className="modal modal-small" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Marcar como pago</h3>
+              <button className="modal-close" type="button" onClick={() => setSettleOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <label className="modal-field">
+              <span>Data do pagamento</span>
+              <input type="date" value={settleDate} onChange={(event) => setSettleDate(event.target.value)} />
+            </label>
+            <div className="modal-footer">
+              <button className="button ghost" type="button" onClick={() => setSettleOpen(false)}>
+                Cancelar
+              </button>
+              <button className="button primary" type="button" onClick={handleSettleReceivable}>
                 Salvar
               </button>
             </div>
@@ -551,13 +1295,22 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
             </label>
             <label className="modal-field">
               <span>Forma do pagamento</span>
-              <select value={editMethod} onChange={(event) => setEditMethod(event.target.value)}>
-                {paymentMethods.map((method) => (
-                  <option key={method} value={method}>
-                    {method}
-                  </option>
-                ))}
-              </select>
+              <div className="select-field">
+                <select value={editMethod} onChange={(event) => setEditMethod(event.target.value)}>
+                  <option value="">Selecione</option>
+                  {paymentMethods.map((method) => (
+                    <option key={method} value={method}>
+                      {method}
+                    </option>
+                  ))}
+                </select>
+                {editMethod ? (
+                  <button type="button" className="select-clear" onClick={() => setEditMethod('')}>
+                    ✕
+                  </button>
+                ) : null}
+                <span className="select-arrow">▾</span>
+              </div>
             </label>
             <div className="modal-footer">
               <button className="button ghost" type="button" onClick={() => setEditOpen(false)}>
@@ -616,13 +1369,13 @@ export default function SalesDetailModal({ open, onClose, sale }: SalesDetailMod
                 ✕
               </button>
             </div>
-            <p>A cobranca gerada ao cliente sera removida e a unidade voltara ao estoque.</p>
+            <p>A venda sera marcada como cancelada. O estoque nao sera alterado.</p>
             <div className="modal-footer">
               <button className="button ghost" type="button" onClick={() => setUndoOpen(false)}>
                 Cancelar
               </button>
-              <button className="button danger" type="button" onClick={() => setUndoOpen(false)}>
-                Desfazer
+              <button className="button danger" type="button" onClick={handleUndoSale} disabled={undoing}>
+                {undoing ? 'Desfazendo...' : 'Desfazer'}
               </button>
             </div>
           </div>

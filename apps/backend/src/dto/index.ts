@@ -18,6 +18,7 @@ export type ProductInput = {
   sku: string;
   brand?: string;
   barcode?: string;
+  imageUrl?: string;
   price: number;
   cost?: number;
   stock?: number;
@@ -31,6 +32,7 @@ export type ProductUpdateInput = {
   sku?: string;
   brand?: string;
   barcode?: string;
+  imageUrl?: string;
   price?: number;
   cost?: number;
   expiresAt?: string;
@@ -53,6 +55,8 @@ export type InventoryAdjustmentInput = {
   quantity: number;
   reason: string;
   storeId?: string;
+  cost?: number;
+  expiresAt?: string;
 };
 
 export type InventoryTransferInput = {
@@ -72,6 +76,8 @@ export type SaleItem = {
   sku: string;
   quantity: number;
   price: number;
+  unitId?: string;
+  unitIds?: string[];
 };
 
 export type Payment = {
@@ -84,6 +90,15 @@ export type SaleInput = {
   items: SaleItem[];
   discounts?: Array<Record<string, unknown>>;
   payments?: Payment[];
+  customerId?: string;
+  customerName?: string;
+  createdAt?: string;
+};
+
+export type SalePaymentInput = {
+  method: string;
+  amount: number;
+  paidAt?: string;
 };
 
 export type ReceivableInput = {
@@ -96,6 +111,12 @@ export type ReceivableInput = {
 export type ReceivableSettleInput = {
   amount: number;
   settledAt: string;
+};
+
+export type ReceivableUpdateInput = {
+  amount?: number;
+  dueDate?: string;
+  method?: string;
 };
 
 export type CustomerInput = {

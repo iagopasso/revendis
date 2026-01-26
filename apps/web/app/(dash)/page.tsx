@@ -72,9 +72,8 @@ export default async function Home({
   const overdueCount = overdueReceivables.length;
   const cobrancasCount = receivablesInRange.filter((r) => r.status !== 'paid').length;
   const expiringCount = (products?.data || []).filter((p) => {
-    if (!p.expires_at) return false;
-    if (range.source === 'all') return true;
-    return isInDateRange(p.expires_at, range);
+    const quantity = toNumber(p.quantity ?? 0);
+    return quantity <= 0 || p.active === false;
   }).length;
   const lowStockCount = (products?.data || []).filter((p) => {
     const quantity = toNumber(p.quantity ?? 0);

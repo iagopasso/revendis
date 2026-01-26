@@ -137,6 +137,8 @@ export default async function VendasPage({
               value={deliveryFilter}
               options={[
                 { label: 'Situacao da entrega: Todas', value: 'all' },
+                { label: 'A entregar', value: 'pending' },
+                { label: 'Entregue', value: 'delivered' },
                 { label: 'Confirmado', value: 'confirmed' },
                 { label: 'Cancelado', value: 'cancelled' }
               ]}

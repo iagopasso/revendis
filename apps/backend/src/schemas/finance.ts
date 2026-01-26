@@ -15,3 +15,11 @@ export const receivableSettleSchema = z
     settledAt: z.string().min(1)
   })
   .strict();
+
+export const receivableUpdateSchema = z
+  .object({
+    amount: z.number().positive().optional(),
+    dueDate: z.string().min(1).optional(),
+    method: z.string().optional()
+  })
+  .strict();
