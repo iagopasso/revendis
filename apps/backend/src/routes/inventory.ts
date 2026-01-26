@@ -1,0 +1,518 @@
+import { Router } from 'express';
+import type {
+  CategoryInput,
+  CategoryUpdateInput,
+  InventoryAdjustmentInput,
+  InventoryReturnInput,
+  InventoryTransferInput,
+  ProductInput,
+  ProductUpdateInput
+} from '../dto';
+import { DEFAULT_ORG_ID, DEFAULT_STORE_ID } from '../config';
+import { query, withTransaction } from '../db';
+import { validateRequest } from '../middleware/validate';
+import {
+  categoryInputSchema,
+  categoryUpdateSchema,
+  inventoryAdjustmentSchema,
+  inventoryReturnSchema,
+  inventoryTransferSchema,
+  productInputSchema,
+  productUpdateSchema
+} from '../schemas/inventory';
+import { asyncHandler } from '../utils/async-handler';
+import { writeAudit } from '../utils/audit';
+
+const router = Router();
+
+router.get(
+  '/inventory/products',
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
+    const result = await query(
+      `SELECT p.id, p.sku, p.name, p.brand, p.barcode, p.price, p.cost, p.active, p.created_at, p.expires_at,
+              p.category_id, COALESCE(b.quantity, 0) AS quantity
+       FROM products p
+       LEFT JOIN inventory_balances b ON b.product_id = p.id AND b.store_id = $2
+       WHERE p.organization_id = $1
+       ORDER BY p.created_at DESC
+       LIMIT 100`,
+      [orgId, storeId]
+    );
+    res.json({
+      data: result.rows
+    });
+  })
+);
+
+router.post(
+  '/inventory/products',
+  validateRequest({ body: productInputSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const product = req.body as ProductInput;
+    const storeId =
+      req.header('x-store-id') || (typeof product.stock === 'number' ? DEFAULT_STORE_ID : undefined);
+
+    const created = await withTransaction(async (client) => {
+      const userId = req.header('x-user-id') || null;
+      const inserted = await client.query(
+        `INSERT INTO products (organization_id, sku, name, brand, barcode, price, cost, active, expires_at, category_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING id, sku, name, brand, barcode, price, cost, active, created_at, expires_at, category_id`,
+        [
+          orgId,
+          product.sku,
+          product.name,
+          product.brand || null,
+          product.barcode || null,
+          product.price,
+          product.cost || 0,
+          typeof product.active === 'boolean' ? product.active : true,
+          product.expiresAt || null,
+          product.categoryId || null
+        ]
+      );
+
+      if (typeof product.stock === 'number' && storeId) {
+        await client.query(
+          `INSERT INTO inventory_movements (store_id, product_id, movement_type, quantity, reason)
+           VALUES ($1, $2, 'adjustment_in', $3, $4)`,
+          [storeId, inserted.rows[0].id, product.stock, 'initial_stock']
+        );
+      }
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        storeId,
+        userId,
+        entityType: 'product',
+        entityId: inserted.rows[0].id,
+        action: 'created',
+        payload: { sku: product.sku, name: product.name }
+      });
+
+      return inserted.rows[0];
+    });
+
+    res.status(201).json({
+      data: created
+    });
+  })
+);
+
+router.patch(
+  '/inventory/products/:id',
+  validateRequest({ body: productUpdateSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const productId = req.params.id;
+    const updates = req.body as ProductUpdateInput;
+
+    const fields: string[] = [];
+    const values: Array<string | number | boolean | null> = [];
+    let index = 1;
+
+    if (updates.name) {
+      fields.push(`name = $${index++}`);
+      values.push(updates.name);
+    }
+    if (updates.sku) {
+      fields.push(`sku = $${index++}`);
+      values.push(updates.sku);
+    }
+    if (typeof updates.brand === 'string') {
+      fields.push(`brand = $${index++}`);
+      values.push(updates.brand || null);
+    }
+    if (typeof updates.barcode === 'string') {
+      fields.push(`barcode = $${index++}`);
+      values.push(updates.barcode || null);
+    }
+    if (typeof updates.price === 'number') {
+      fields.push(`price = $${index++}`);
+      values.push(updates.price);
+    }
+    if (typeof updates.cost === 'number') {
+      fields.push(`cost = $${index++}`);
+      values.push(updates.cost);
+    }
+    if (typeof updates.active === 'boolean') {
+      fields.push(`active = $${index++}`);
+      values.push(updates.active);
+    }
+    if (typeof updates.expiresAt === 'string') {
+      fields.push(`expires_at = $${index++}`);
+      values.push(updates.expiresAt || null);
+    }
+    if (typeof updates.categoryId === 'string') {
+      fields.push(`category_id = $${index++}`);
+      values.push(updates.categoryId || null);
+    }
+
+    if (!fields.length) {
+      return res.status(400).json({
+        code: 'invalid_payload',
+        message: 'Nenhuma alteracao enviada.'
+      });
+    }
+
+    values.push(productId, orgId);
+
+    const result = await withTransaction(async (client) => {
+      const updated = await client.query(
+        `UPDATE products
+         SET ${fields.join(', ')}
+         WHERE id = $${index++} AND organization_id = $${index}
+         RETURNING id, sku, name, brand, barcode, price, cost, active, created_at, expires_at, category_id`,
+        values
+      );
+
+      if (!updated.rows.length) return null;
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        storeId: req.header('x-store-id') || DEFAULT_STORE_ID,
+        userId: req.header('x-user-id') || null,
+        entityType: 'product',
+        entityId: productId,
+        action: 'updated',
+        payload: updates
+      });
+
+      return updated.rows[0];
+    });
+
+    if (!result) {
+      return res.status(404).json({
+        code: 'not_found',
+        message: 'Produto nao encontrado.'
+      });
+    }
+
+    return res.json({ data: result });
+  })
+);
+
+router.delete(
+  '/inventory/products/:id',
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const productId = req.params.id;
+
+    const result = await withTransaction(async (client) => {
+      const deleted = await client.query(
+        `DELETE FROM products
+         WHERE id = $1 AND organization_id = $2
+         RETURNING id`,
+        [productId, orgId]
+      );
+      if (!deleted.rows.length) return null;
+      await writeAudit(client, {
+        organizationId: orgId,
+        storeId: req.header('x-store-id') || DEFAULT_STORE_ID,
+        userId: req.header('x-user-id') || null,
+        entityType: 'product',
+        entityId: productId,
+        action: 'deleted',
+        payload: {}
+      });
+      return deleted.rows[0];
+    });
+
+    if (!result) {
+      return res.status(404).json({
+        code: 'not_found',
+        message: 'Produto nao encontrado.'
+      });
+    }
+
+    return res.status(204).send();
+  })
+);
+
+router.get(
+  '/inventory/categories',
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const result = await query(
+      `SELECT id, name, color, created_at
+       FROM categories
+       WHERE organization_id = $1
+       ORDER BY created_at DESC`,
+      [orgId]
+    );
+    res.json({ data: result.rows });
+  })
+);
+
+router.post(
+  '/inventory/categories',
+  validateRequest({ body: categoryInputSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const payload = req.body as CategoryUpdateInput;
+
+    const created = await withTransaction(async (client) => {
+      const inserted = await client.query(
+        `INSERT INTO categories (organization_id, name, color)
+         VALUES ($1, $2, $3)
+         RETURNING id, name, color, created_at`,
+        [orgId, payload.name, payload.color || null]
+      );
+      return inserted.rows[0];
+    });
+
+    res.status(201).json({ data: created });
+  })
+);
+
+router.patch(
+  '/inventory/categories/:id',
+  validateRequest({ body: categoryUpdateSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const categoryId = req.params.id;
+    const payload = req.body as CategoryInput;
+
+    const fields: string[] = [];
+    const values: Array<string | null> = [];
+    let index = 1;
+
+    if (typeof payload.name === 'string') {
+      fields.push(`name = $${index++}`);
+      values.push(payload.name);
+    }
+    if (typeof payload.color === 'string') {
+      fields.push(`color = $${index++}`);
+      values.push(payload.color || null);
+    }
+
+    if (!fields.length) {
+      return res.status(400).json({
+        code: 'invalid_payload',
+        message: 'Nenhuma alteracao enviada.'
+      });
+    }
+
+    values.push(categoryId, orgId);
+
+    const updated = await query(
+      `UPDATE categories
+       SET ${fields.join(', ')}
+       WHERE id = $${index++} AND organization_id = $${index}
+       RETURNING id, name, color, created_at`,
+      values
+    );
+
+    if (!updated.rows.length) {
+      return res.status(404).json({
+        code: 'not_found',
+        message: 'Categoria nao encontrada.'
+      });
+    }
+
+    return res.json({ data: updated.rows[0] });
+  })
+);
+
+router.delete(
+  '/inventory/categories/:id',
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const categoryId = req.params.id;
+
+    const deleted = await query(
+      `DELETE FROM categories
+       WHERE id = $1 AND organization_id = $2
+       RETURNING id`,
+      [categoryId, orgId]
+    );
+
+    if (!deleted.rows.length) {
+      return res.status(404).json({
+        code: 'not_found',
+        message: 'Categoria nao encontrada.'
+      });
+    }
+
+    return res.status(204).send();
+  })
+);
+
+router.post(
+  '/inventory/adjustments',
+  validateRequest({ body: inventoryAdjustmentSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const { sku, quantity, reason, storeId } = req.body as InventoryAdjustmentInput;
+    const targetStore = storeId || DEFAULT_STORE_ID;
+    const movementType = quantity >= 0 ? 'adjustment_in' : 'adjustment_out';
+
+    const result = await withTransaction(async (client) => {
+      const userId = req.header('x-user-id') || null;
+      const productRes = await client.query(
+        `SELECT id FROM products WHERE organization_id = $1 AND sku = $2`,
+        [orgId, sku]
+      );
+      if (!productRes.rows.length) {
+        return null;
+      }
+      const productId = productRes.rows[0].id;
+
+      const movementRes = await client.query(
+        `INSERT INTO inventory_movements (store_id, product_id, movement_type, quantity, reason)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [targetStore, productId, movementType, quantity, reason]
+      );
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        storeId: targetStore,
+        userId,
+        entityType: 'inventory_movement',
+        entityId: movementRes.rows[0].id,
+        action: 'adjusted',
+        payload: { sku, quantity, reason }
+      });
+
+      return {
+        id: movementRes.rows[0].id,
+        sku,
+        quantity,
+        reason,
+        storeId: targetStore,
+        status: 'applied'
+      };
+    });
+
+    if (!result) {
+      return res.status(400).json({ code: 'not_found', message: 'SKU not found' });
+    }
+
+    res.status(201).json({ data: result });
+  })
+);
+
+router.post(
+  '/inventory/transfers',
+  validateRequest({ body: inventoryTransferSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const { sku, quantity, fromStoreId, toStoreId } = req.body as InventoryTransferInput;
+
+    const result = await withTransaction(async (client) => {
+      const userId = req.header('x-user-id') || null;
+      const productRes = await client.query(
+        `SELECT id FROM products WHERE organization_id = $1 AND sku = $2`,
+        [orgId, sku]
+      );
+      if (!productRes.rows.length) {
+        return null;
+      }
+      const productId = productRes.rows[0].id;
+
+      const transferRes = await client.query(
+        `INSERT INTO inventory_movements (store_id, product_id, movement_type, quantity, reason)
+         VALUES ($1, $2, 'transfer_out', $3, $4)
+         RETURNING id`,
+        [fromStoreId, productId, -Math.abs(quantity), 'transfer_out']
+      );
+      await client.query(
+        `INSERT INTO inventory_movements (store_id, product_id, movement_type, quantity, reason)
+         VALUES ($1, $2, 'transfer_in', $3, $4)`,
+        [toStoreId, productId, Math.abs(quantity), 'transfer_in']
+      );
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        storeId: fromStoreId,
+        userId,
+        entityType: 'inventory_transfer',
+        entityId: transferRes.rows[0].id,
+        action: 'transferred',
+        payload: { sku, quantity, fromStoreId, toStoreId }
+      });
+
+      return {
+        id: transferRes.rows[0].id,
+        sku,
+        quantity,
+        fromStoreId,
+        toStoreId,
+        status: 'completed'
+      };
+    });
+
+    if (!result) {
+      return res.status(400).json({ code: 'not_found', message: 'SKU not found' });
+    }
+
+    res.status(201).json({ data: result });
+  })
+);
+
+router.post(
+  '/inventory/returns',
+  validateRequest({ body: inventoryReturnSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const { saleId, items, condition } = req.body as InventoryReturnInput;
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
+
+    const result = await withTransaction(async (client) => {
+      const userId = req.header('x-user-id') || null;
+      const returnRes = await client.query(
+        `INSERT INTO returns (sale_id, condition)
+         VALUES ($1, $2)
+         RETURNING id`,
+        [saleId, condition || 'good']
+      );
+
+      for (const item of items) {
+        const productRes = await client.query(
+          `SELECT id FROM products WHERE organization_id = $1 AND sku = $2`,
+          [orgId, item.sku]
+        );
+        if (!productRes.rows.length) continue;
+        const productId = productRes.rows[0].id;
+
+        await client.query(
+          `INSERT INTO return_items (return_id, product_id, sku, quantity)
+           VALUES ($1, $2, $3, $4)`,
+          [returnRes.rows[0].id, productId, item.sku, item.quantity]
+        );
+
+        await client.query(
+          `INSERT INTO inventory_movements (store_id, product_id, movement_type, quantity, reason)
+           VALUES ($1, $2, 'return_in', $3, $4)`,
+          [storeId, productId, item.quantity, 'return']
+        );
+      }
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        storeId,
+        userId,
+        entityType: 'return',
+        entityId: returnRes.rows[0].id,
+        action: 'created',
+        payload: { saleId, itemCount: items.length }
+      });
+
+      return {
+        id: returnRes.rows[0].id,
+        saleId,
+        items,
+        condition,
+        receivableReversed: true
+      };
+    });
+
+    res.status(201).json({ data: result });
+  })
+);
+
+export default router;

@@ -1,0 +1,13 @@
+{
+  "name": "@revendis/tokens",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "files": ["src"],
+  "scripts": {
+    "build": "node -e \"require('fs').mkdirSync('dist',{recursive:true});require('fs').writeFileSync('dist/.keep','');\"",
+    "lint": "echo 'tokens lint placeholder'",
+    "test": "echo 'tokens tests placeholder'"
+  }
+}

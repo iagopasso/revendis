@@ -1,0 +1,26 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "lint": "echo 'web lint placeholder'",
+    "test": "echo 'web tests placeholder'",
+    "e2e": "playwright test -c playwright.config.ts"
+  },
+  "dependencies": {
+    "@revendis/api-types": "0.1.0",
+    "@revendis/api-client": "0.1.0",
+    "@revendis/tokens": "0.1.0",
+    "@revendis/ui": "0.1.0",
+    "next": "15.5.9",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "@types/react": "^18.2.37",
+    "typescript": "^5.3.3"
+  }
+}

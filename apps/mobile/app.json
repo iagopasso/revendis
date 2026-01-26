@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "Revendis",
+    "slug": "revendis",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true
+    }
+  }
+}

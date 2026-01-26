@@ -1,0 +1,16 @@
+{
+  "name": "@revendis/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "files": ["src"],
+  "scripts": {
+    "build": "node -e \"require('fs').mkdirSync('dist',{recursive:true});require('fs').writeFileSync('dist/.keep','');\"",
+    "lint": "echo 'api-client lint placeholder'",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@revendis/api-types": "0.1.0"
+  }
+}

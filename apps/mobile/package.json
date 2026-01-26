@@ -1,0 +1,28 @@
+{
+  "name": "mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.tsx",
+  "scripts": {
+    "dev": "CI=1 expo start --port 8082",
+    "build": "echo 'mobile build placeholder'",
+    "lint": "echo 'mobile lint placeholder'",
+    "test": "echo 'mobile tests placeholder'",
+    "e2e:build": "detox build -c ios.sim.debug",
+    "e2e": "detox test -c ios.sim.debug"
+  },
+  "dependencies": {
+    "@revendis/api-types": "0.1.0",
+    "@revendis/api-client": "0.1.0",
+    "expo": "^54.0.32",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/react": "~19.1.10",
+    "detox": "^20.17.0",
+    "jest-circus": "^29.7.0",
+    "typescript": "^5.3.3"
+  }
+}

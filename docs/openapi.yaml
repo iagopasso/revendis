@@ -1,0 +1,494 @@
+openapi: 3.1.1
+info:
+  title: Revendis API
+  version: 0.2.0
+  description: Initial OpenAPI contract for Sprint 1 endpoints.
+  license:
+    name: Proprietary
+    identifier: Proprietary
+servers:
+  - url: https://api.revendis.com
+    description: Production
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      tags: [system]
+      security: []
+      responses:
+        "200":
+          description: API ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /inventory/products:
+    get:
+      summary: List products
+      operationId: listProducts
+      tags: [inventory]
+      responses:
+        "200":
+          description: Products list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      summary: Create product
+      operationId: createProduct
+      tags: [inventory]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "201":
+          description: Product created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /inventory/adjustments:
+    post:
+      summary: Adjust inventory
+      operationId: adjustInventory
+      tags: [inventory]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InventoryAdjustmentInput"
+      responses:
+        "201":
+          description: Adjustment applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /inventory/transfers:
+    post:
+      summary: Transfer inventory between stores
+      operationId: transferInventory
+      tags: [inventory]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InventoryTransferInput"
+      responses:
+        "201":
+          description: Transfer completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /inventory/returns:
+    post:
+      summary: Register return
+      operationId: registerReturn
+      tags: [inventory]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InventoryReturnInput"
+      responses:
+        "201":
+          description: Return registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /sales/orders:
+    get:
+      summary: List sales orders
+      operationId: listSalesOrders
+      tags: [sales]
+      responses:
+        "200":
+          description: Sales list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /sales/checkout:
+    post:
+      summary: Checkout sale
+      operationId: checkoutSale
+      tags: [sales]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleInput"
+      responses:
+        "201":
+          description: Sale confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /sales/orders/{id}/cancel:
+    post:
+      summary: Cancel sale
+      operationId: cancelSale
+      tags: [sales]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sale cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /finance/receivables:
+    get:
+      summary: List receivables
+      operationId: listReceivables
+      tags: [finance]
+      responses:
+        "200":
+          description: Receivables list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      summary: Create receivable
+      operationId: createReceivable
+      tags: [finance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceivableInput"
+      responses:
+        "201":
+          description: Receivable created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /finance/receivables/{id}/settle:
+    post:
+      summary: Settle receivable
+      operationId: settleReceivable
+      tags: [finance]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceivableSettleInput"
+      responses:
+        "200":
+          description: Receivable settled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /customers:
+    get:
+      summary: List customers
+      operationId: listCustomers
+      tags: [customers]
+      responses:
+        "200":
+          description: Customers list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      summary: Create customer
+      operationId: createCustomer
+      tags: [customers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerInput"
+      responses:
+        "201":
+          description: Customer created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /reports/daily-sales:
+    get:
+      summary: Daily sales report
+      operationId: reportDailySales
+      tags: [reports]
+      responses:
+        "200":
+          description: Report data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /reports/stock-outs:
+    get:
+      summary: Stock-out report
+      operationId: reportStockOuts
+      tags: [reports]
+      responses:
+        "200":
+          description: Report data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /reports/receivables-aging:
+    get:
+      summary: Receivables aging report
+      operationId: reportReceivablesAging
+      tags: [reports]
+      responses:
+        "200":
+          description: Report data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /storefront/catalog:
+    get:
+      summary: Storefront catalog
+      operationId: listStorefrontCatalog
+      tags: [storefront]
+      responses:
+        "200":
+          description: Catalog list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /storefront/orders:
+    post:
+      summary: Create storefront order
+      operationId: createStorefrontOrder
+      tags: [storefront]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StorefrontOrderInput"
+      responses:
+        "201":
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    Health:
+      type: object
+      properties:
+        status: { type: string }
+        service: { type: string }
+        version: { type: string }
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object }
+    ListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        meta:
+          type: object
+          properties:
+            message: { type: string }
+    ItemResponse:
+      type: object
+      properties:
+        data:
+          type: object
+    ProductInput:
+      type: object
+      required: [name, sku, price]
+      properties:
+        name: { type: string }
+        sku: { type: string }
+        barcode: { type: string }
+        price: { type: number }
+        cost: { type: number }
+        stock: { type: number }
+        expiresAt: { type: string, format: date }
+    InventoryAdjustmentInput:
+      type: object
+      required: [sku, quantity, reason]
+      properties:
+        sku: { type: string }
+        quantity: { type: number }
+        reason: { type: string }
+        storeId: { type: string }
+    InventoryTransferInput:
+      type: object
+      required: [sku, quantity, fromStoreId, toStoreId]
+      properties:
+        sku: { type: string }
+        quantity: { type: number }
+        fromStoreId: { type: string }
+        toStoreId: { type: string }
+    InventoryReturnInput:
+      type: object
+      required: [saleId, items]
+      properties:
+        saleId: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              sku: { type: string }
+              quantity: { type: number }
+        condition: { type: string, enum: [good, damaged] }
+    SaleItem:
+      type: object
+      properties:
+        sku: { type: string }
+        quantity: { type: number }
+        price: { type: number }
+    Payment:
+      type: object
+      properties:
+        method: { type: string }
+        amount: { type: number }
+    SaleInput:
+      type: object
+      required: [items]
+      properties:
+        storeId: { type: string }
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SaleItem"
+        discounts:
+          type: array
+          items: { type: object }
+        payments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Payment"
+    ReceivableInput:
+      type: object
+      required: [saleId, amount, dueDate]
+      properties:
+        saleId: { type: string }
+        amount: { type: number }
+        dueDate: { type: string, format: date }
+        method: { type: string }
+    ReceivableSettleInput:
+      type: object
+      required: [amount, settledAt]
+      properties:
+        amount: { type: number }
+        settledAt: { type: string, format: date-time }
+    CustomerInput:
+      type: object
+      required: [name, phone]
+      properties:
+        name: { type: string }
+        phone: { type: string }
+        email: { type: string }
+    StorefrontOrderInput:
+      type: object
+      required: [items, customer]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SaleItem"
+        customer:
+          type: object
+          properties:
+            name: { type: string }
+            phone: { type: string }
+            email: { type: string }
+        shipping:
+          type: object
+          properties:
+            address: { type: string }
+            price: { type: number }
