@@ -942,12 +942,12 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                 </div>
                 <div>
                   <span>Lucro</span>
-                  <button
-                    className="button ghost"
-                    type="button"
-                    onClick={() => setProfitVisible(true)}
-                    disabled={detailLoading && !detail}
-                  >
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => setProfitVisible((prev) => !prev)}
+                  disabled={detailLoading && !detail}
+                >
                     {profitVisible
                       ? detailLoading && !detail
                         ? 'Calculando...'
