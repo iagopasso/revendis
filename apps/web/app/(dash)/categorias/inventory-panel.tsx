@@ -1818,10 +1818,14 @@ export default function InventoryPanel({
                           ) : (
                             <div className="sale-status-stack">
                               <span className={`sale-status-pill ${isPaid ? 'paid' : 'pending'}`}>
-                                {isPaid ? 'PAGO' : 'PAGAMENTO PENDENTE'}
+                                <span>{isPaid ? 'PAGAMENTO FEITO' : 'PAGAMENTO PENDENTE'}</span>
+                                {isPaid ? <span className="sale-status-icon">✓</span> : null}
                               </span>
                               {isDelivered ? (
-                                <span className="sale-status-pill delivered">PRODUTO ENTREGUE</span>
+                                <span className="sale-status-pill delivered">
+                                  <span>PRODUTO ENTREGUE</span>
+                                  <span className="sale-status-icon">✓</span>
+                                </span>
                               ) : null}
                             </div>
                           )}

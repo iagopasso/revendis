@@ -1715,6 +1715,37 @@ main {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(14, 165, 233, 0.25));
 }
 
+.modal-product .modal-header {
+  background: #f8fafc;
+  border-radius: 18px 18px 0 0;
+  padding: 18px 22px;
+  color: #0f172a;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  margin: -20px -20px 0;
+}
+
+.modal-product .modal-header .modal-close {
+  color: #0f172a;
+  border-color: rgba(15, 23, 42, 0.18);
+}
+
+.modal-product .modal-header .modal-close:hover {
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.modal-product .modal-product-header strong {
+  color: #0f172a;
+}
+
+.modal-product .modal-product-header span {
+  color: #64748b;
+}
+
+.modal-product .modal-product-thumb {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+}
+
 .modal-tabs {
   margin-top: 12px;
   display: grid;
@@ -1844,6 +1875,18 @@ main {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   border: 1px solid transparent;
+}
+
+.sale-status-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
 }
 
 .sale-status-pill.pending {
