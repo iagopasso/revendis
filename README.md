@@ -24,6 +24,7 @@ Monorepo inicial para web, mobile e backend.
 - `scripts/dev-start.sh`: sobe web/backend/mobile em background
 - `scripts/dev-stop.sh`: encerra web/backend/mobile
 - `scripts/db-apply.sh`: aplica migrations no Postgres local
+- `scripts/db-init.sh`: cria o banco (se faltar) e aplica migrations
 - `scripts/start-tmux.sh`: sobe web/backend com tmux (background)
 - `npm --workspace web run e2e`: Playwright (web)
 - `npm --workspace mobile run e2e`: Detox (mobile)
@@ -31,4 +32,5 @@ Monorepo inicial para web, mobile e backend.
 ## Proximos passos
 - Instalar dependencias com `pnpm install --link-workspace-packages`.
 - Para subir em background com tmux: `bash scripts/start-tmux.sh`.
+- Para inicializar o banco do zero: `bash scripts/db-init.sh`.
 - Preencher matriz de paridade e backlog detalhado em `docs/`.

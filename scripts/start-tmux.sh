@@ -11,14 +11,14 @@ if ! command -v tmux >/dev/null 2>&1; then
 fi
 
 if ! tmux has-session -t backend 2>/dev/null; then
-  tmux new-session -d -s backend -c "$BACKEND_DIR" "pnpm dev"
+  tmux new-session -d -s backend -c "$BACKEND_DIR" "npm run dev"
   echo "Sessao tmux 'backend' criada."
 else
   echo "Sessao tmux 'backend' ja existe."
 fi
 
 if ! tmux has-session -t web 2>/dev/null; then
-  tmux new-session -d -s web -c "$WEB_DIR" "pnpm dev"
+  tmux new-session -d -s web -c "$WEB_DIR" "npm run dev"
   echo "Sessao tmux 'web' criada."
 else
   echo "Sessao tmux 'web' ja existe."

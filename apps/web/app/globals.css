@@ -2419,7 +2419,7 @@ main {
   align-items: center;
   background: var(--panel-3);
   border-radius: 12px;
-  padding: 12px;
+  padding: 8px 10px;
   border: 1px solid var(--stroke);
 }
 
@@ -2429,8 +2429,8 @@ main {
 }
 
 .sale-thumb {
-  width: 52px;
-  height: 52px;
+  width: 42px;
+  height: 42px;
   border-radius: 12px;
   background: var(--panel);
   border: 1px solid var(--stroke);
@@ -2453,7 +2453,7 @@ main {
 
 .sale-item-info {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .sale-price {
@@ -2586,16 +2586,20 @@ main {
 .receipt-body {
   margin-top: 16px;
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .receipt-card {
-  background: var(--panel-2);
-  border: 1px solid var(--stroke);
-  border-radius: 14px;
-  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 16px;
+  padding: 18px;
   display: grid;
   gap: 12px;
+}
+
+.receipt-card + .receipt-card {
+  background: #eef2f7;
 }
 
 .receipt-header {
@@ -2608,7 +2612,7 @@ main {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: rgba(124, 58, 237, 0.25);
+  background: rgba(124, 58, 237, 0.18);
   color: var(--accent);
   display: grid;
   place-items: center;
@@ -2633,17 +2637,18 @@ main {
 
 .receipt-products {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .receipt-product-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  background: var(--panel-3);
-  border-radius: 10px;
-  padding: 10px 12px;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
 }
 
 .receipt-pill {
@@ -2651,11 +2656,12 @@ main {
   border-radius: 999px;
   font-size: 0.75rem;
   border: 1px solid transparent;
+  background: #fff7cc;
 }
 
 .receipt-pill.pending {
-  color: #fbbf24;
-  border-color: rgba(245, 158, 11, 0.45);
+  color: #a16207;
+  border-color: rgba(202, 138, 4, 0.35);
 }
 
 .receipt-pill.paid {
@@ -2683,11 +2689,12 @@ main {
 .receipt-payment-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  background: var(--panel-3);
-  border-radius: 10px;
-  padding: 10px 12px;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
 }
 
 .receipt-payment-meta {
@@ -2707,7 +2714,7 @@ main {
 }
 
 .receipt-summary {
-  margin-top: 8px;
+  margin-top: 6px;
   display: grid;
   gap: 6px;
 }
