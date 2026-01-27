@@ -350,11 +350,52 @@ router.post(
     const userId = req.header('x-user-id') || null;
 
     const result = await withTransaction(async (client) => {
-      const updated = await client.query(
-        `UPDATE sales SET status = 'cancelled' WHERE id = $1
-         RETURNING id, status`,
+      const saleRes = await client.query(
+        `SELECT id
+         FROM sales
+         WHERE id = $1 AND store_id = $2`,
+        [id, storeId]
+      );
+
+      if (!saleRes.rows.length) {
+        return { status: 'not_found' as const };
+      }
+
+      const itemsRes = await client.query(
+        `SELECT product_id, quantity
+         FROM sale_items
+         WHERE sale_id = $1`,
         [id]
       );
+
+      await client.query(
+        `UPDATE inventory_units
+         SET status = 'available',
+             sale_id = NULL,
+             sale_item_id = NULL,
+             sold_at = NULL,
+             updated_at = now()
+         WHERE sale_id = $1 AND store_id = $2`,
+        [id, storeId]
+      );
+
+      const quantitiesByProduct = new Map<string, number>();
+      for (const row of itemsRes.rows) {
+        if (!row.product_id) continue;
+        const current = quantitiesByProduct.get(row.product_id) || 0;
+        quantitiesByProduct.set(row.product_id, current + Number(row.quantity || 0));
+      }
+
+      for (const [productId, quantity] of quantitiesByProduct.entries()) {
+        if (!quantity) continue;
+        await client.query(
+          `INSERT INTO inventory_movements (store_id, product_id, movement_type, quantity, reason, reference_id)
+           VALUES ($1, $2, 'return_in', $3, $4, $5)`,
+          [storeId, productId, Math.abs(quantity), 'sale_undo', id]
+        );
+      }
+
+      await client.query(`DELETE FROM sales WHERE id = $1 AND store_id = $2`, [id, storeId]);
 
       await writeAudit(client, {
         organizationId: orgId,
@@ -362,17 +403,22 @@ router.post(
         userId,
         entityType: 'sale',
         entityId: id,
-        action: 'cancelled'
+        action: 'deleted',
+        payload: { stockReverted: true }
       });
 
-      return updated;
+      return { status: 'deleted' as const };
     });
-    res.json({
+
+    if (result.status === 'not_found') {
+      return res.status(404).json({ code: 'not_found', message: 'Venda nao encontrada.' });
+    }
+
+    return res.json({
       data: {
-        id: result.rows[0]?.id || id,
-        status: result.rows[0]?.status || 'cancelled',
-        stockReverted: false,
-        receivableReversed: false
+        id,
+        deleted: true,
+        stockReverted: true
       }
     });
   })

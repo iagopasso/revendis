@@ -65,16 +65,19 @@ export default function SalesPanel({ sales, totalSales, profit, totalReceivable,
   };
 
   const handleSaleUpdated = (update: SaleUpdate) => {
-    setLocalSales((prev) =>
-      prev.map((sale) =>
+    setLocalSales((prev) => {
+      if (update.removed) {
+        return prev.filter((sale) => sale.id !== update.id);
+      }
+      return prev.map((sale) =>
         sale.id === update.id
           ? {
               ...sale,
               status: update.status ?? sale.status
             }
           : sale
-      )
-    );
+      );
+    });
   };
 
   return (

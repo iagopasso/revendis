@@ -20,6 +20,7 @@ export type SaleUpdate = {
   id: string;
   status?: SaleDetail['status'];
   paymentStatus?: 'paid' | 'pending';
+  removed?: boolean;
 };
 
 type SaleItemDetail = {
@@ -449,7 +450,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     receiptPaymentStatus === 'Parcialmente pago' ? 'PARCIAL' : receiptPaymentStatus.toUpperCase();
 
   const handleRegisterPayment = async () => {
-    if (!sale) return;
+    if (!sale || isCancelled) return;
     const totalToRegister = parseMoney(registerAmount);
     if (totalToRegister <= 0) {
       setRegisterError('Informe o valor do pagamento');
@@ -534,7 +535,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
   };
 
   const handleSaveEdit = async () => {
-    if (!editTarget) return;
+    if (!editTarget || isCancelled) return;
     const amountValue = parseMoney(editAmount);
     if (!amountValue) {
       setToast('Informe o valor da parcela');
@@ -580,7 +581,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
   };
 
   const handleRemove = async () => {
-    if (!removeTarget) return;
+    if (!removeTarget || isCancelled) return;
     try {
       const res = await fetch(`${API_BASE}/finance/receivables/${removeTarget.id}`, {
         method: 'DELETE'
@@ -605,7 +606,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
   };
 
   const handleSettleReceivable = async () => {
-    if (!settleTarget) return;
+    if (!settleTarget || isCancelled) return;
     try {
       const res = await fetch(`${API_BASE}/finance/receivables/${settleTarget.id}/settle`, {
         method: 'POST',
@@ -684,11 +685,10 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
         return;
       }
       setUndoOpen(false);
-      setDeliveryStatus('cancelled');
-      setDetail((prev) => (prev ? { ...prev, status: 'cancelled' } : prev));
-      setToast('Venda cancelada');
+      setToast('Venda desfeita');
       router.refresh();
-      notifyUpdate({ status: 'cancelled' });
+      onUpdated?.({ id: sale.id, removed: true });
+      onClose();
     } catch {
       setToast('Erro ao desfazer venda');
     } finally {
@@ -708,9 +708,12 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
         <div className="modal-header">
           <div className="sale-header-left">
             <div className="avatar-circle">👤</div>
-            <div>
+            <div className="sale-header-text">
               <strong>{customerName}</strong>
-              <span>{formatDate(sale.date)}</span>
+              <div className="sale-header-meta">
+                <span>{formatDate(sale.date)}</span>
+                {isCancelled ? <span className="sale-cancelled-badge">Pedido cancelado</span> : null}
+              </div>
             </div>
           </div>
           <div className="sale-header-actions">
@@ -769,16 +772,18 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                   >
                     Baixar extrato
                   </button>
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={() => {
-                      setUndoOpen(true);
-                      setActionsOpen(false);
-                    }}
-                  >
-                    Desfazer venda
-                  </button>
+                  {!isCancelled ? (
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => {
+                        setUndoOpen(true);
+                        setActionsOpen(false);
+                      }}
+                    >
+                      Desfazer venda
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -855,17 +860,17 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                         </span>
                         <span className="payment-amount">{formatCurrency(entry.amount)}</span>
                       </div>
-                      {entry.kind === 'receivable' ? (
-                        <button
-                          className="button icon small"
-                          type="button"
-                          onClick={() =>
-                            setActivePaymentMenu((prev) => (prev === entry.id ? null : entry.id))
-                          }
-                        >
-                          ⋯
-                        </button>
-                      ) : null}
+                    {entry.kind === 'receivable' && !isCancelled ? (
+                      <button
+                        className="button icon small"
+                        type="button"
+                        onClick={() =>
+                          setActivePaymentMenu((prev) => (prev === entry.id ? null : entry.id))
+                        }
+                      >
+                        ⋯
+                      </button>
+                    ) : null}
                     </div>
                     <div className="payment-item-meta">
                       <span className="payment-method-pill">{entry.method.toUpperCase()}</span>
@@ -875,7 +880,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                           : `Vence em ${formatDate(entry.date)}`}
                       </span>
                     </div>
-                    {entry.kind === 'receivable' && activePaymentMenu === entry.id ? (
+                    {entry.kind === 'receivable' && !isCancelled && activePaymentMenu === entry.id ? (
                       <div className="payment-menu">
                         <button
                           type="button"
@@ -943,17 +948,20 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                 <div>
                   <span>Lucro</span>
                 <button
-                  className="button ghost"
+                  className="button ghost profit-button"
                   type="button"
                   onClick={() => setProfitVisible((prev) => !prev)}
                   disabled={detailLoading && !detail}
+                  data-state={profitVisible ? 'shown' : 'hidden'}
                 >
+                  <span className="profit-value">
                     {profitVisible
                       ? detailLoading && !detail
                         ? 'Calculando...'
                         : formatCurrency(profitValue)
                       : 'Clique para ver'}
-                  </button>
+                  </span>
+                </button>
                 </div>
               </div>
             </div>

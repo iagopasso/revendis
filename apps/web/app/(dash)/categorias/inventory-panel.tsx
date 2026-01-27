@@ -403,8 +403,11 @@ export default function InventoryPanel({
   };
 
   const handleSaleUpdated = (update: SaleUpdate) => {
-    setProductSales((prev) =>
-      prev.map((sale) =>
+    setProductSales((prev) => {
+      if (update.removed) {
+        return prev.filter((sale) => sale.sale_id !== update.id);
+      }
+      return prev.map((sale) =>
         sale.sale_id === update.id
           ? {
               ...sale,
@@ -412,8 +415,8 @@ export default function InventoryPanel({
               payment_status: update.paymentStatus ?? sale.payment_status
             }
           : sale
-      )
-    );
+      );
+    });
   };
 
   const loadCustomers = async () => {
@@ -1778,12 +1781,8 @@ export default function InventoryPanel({
                   </div>
                 ) : (
                   productSales.map((sale) => {
-                    const deliveryLabel =
-                      sale.status === 'delivered'
-                        ? 'Entregue'
-                        : sale.status === 'pending'
-                          ? 'A entregar'
-                          : 'Cancelado';
+                    const isCancelled = sale.status === 'cancelled';
+                    const isDelivered = sale.status === 'delivered';
                     return (
                       <div
                         key={sale.sale_id}
@@ -1799,30 +1798,23 @@ export default function InventoryPanel({
                           {formatCurrency(toNumber(sale.price) * toNumber(sale.quantity))} | {formatShortDate(sale.created_at)}
                         </span>
                       </div>
-                      <div className="product-sale-actions">
-                        {sale.status === 'cancelled' ? (
-                          <span className="payment-badge cancelled">
-                            <span className="badge-icon">⛔</span>Cancelado
-                          </span>
-                        ) : (
-                          <div className="product-sale-status">
-                            <div className="sale-status-main">
-                              <span className={`sale-status-label ${sale.payment_status === 'paid' ? 'paid' : 'pending'}`}>
-                                {sale.payment_status === 'paid' ? 'Pago' : 'Pendente'}
-                              </span>
-                              <span className={`sale-status-circle ${sale.payment_status === 'paid' ? 'paid' : 'pending'}`}>
-                                {sale.payment_status === 'paid' ? '✓' : '🕒'}
-                              </span>
-                            </div>
-                            <span className={`sale-delivery-label ${sale.status === 'delivered' ? 'delivered' : 'pending'}`}>
-                              {deliveryLabel}
+                        <div className="product-sale-actions">
+                          {isCancelled ? (
+                            <span className="sale-status-pill cancelled">
+                              <span className="badge-icon">⛔</span>CANCELADO
                             </span>
-                          </div>
-                        )}
+                          ) : (
+                            <div className="sale-status-stack">
+                              <span className="sale-status-pill pending">PAGAMENTO PENDENTE</span>
+                              {isDelivered ? (
+                                <span className="sale-status-pill delivered">PRODUTO ENTREGUE</span>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })
+                    );
+                  })
                 )}
               </div>
             )}

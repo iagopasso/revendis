@@ -1777,6 +1777,12 @@ main {
   justify-items: end;
 }
 
+.sale-status-stack {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
 .sale-status-main {
   display: inline-flex;
   align-items: center;
@@ -1826,6 +1832,36 @@ main {
 
 .sale-delivery-label.delivered {
   color: #86efac;
+}
+
+.sale-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid transparent;
+}
+
+.sale-status-pill.pending {
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.sale-status-pill.delivered {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.sale-status-pill.cancelled {
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.15);
 }
 
 .payment-badge {
@@ -1965,6 +2001,32 @@ main {
   gap: 12px;
 }
 
+.sale-header-text {
+  display: grid;
+  gap: 4px;
+}
+
+.sale-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.sale-cancelled-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  color: #f87171;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .sale-section-title {
   display: flex;
   align-items: center;
@@ -1999,6 +2061,12 @@ main {
   padding: 8px 14px;
   border: 1px solid transparent;
   font-weight: 600;
+}
+
+.status-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
 }
 
 .status-button.delivered {
@@ -2368,6 +2436,45 @@ main {
 
 .sale-summary .button.ghost:hover {
   border-color: rgba(99, 102, 241, 0.4);
+}
+
+.profit-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.profit-button .profit-value {
+  display: block;
+}
+
+.profit-button[data-state='shown'] .profit-value {
+  animation: profitIn 0.2s ease;
+}
+
+.profit-button[data-state='hidden'] .profit-value {
+  animation: profitOut 0.2s ease;
+}
+
+@keyframes profitIn {
+  from {
+    opacity: 0.4;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes profitOut {
+  from {
+    opacity: 0.6;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .modal-receipt {
