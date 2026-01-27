@@ -381,6 +381,19 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
             product_name: sale.itemName
           }
         ];
+
+  const getItemTitle = (item: SaleItemDetail) => {
+    const baseName = item.product_name || sale.itemName || '';
+    const itemCode = item.sku || '';
+    if (itemCode && baseName) return `${itemCode} - ${baseName}`;
+    return baseName || itemCode;
+  };
+
+  const getItemMetaLine = (item: SaleItemDetail) => {
+    const itemCode = item.sku || '';
+    if (!itemCode) return '';
+    return `${item.product_brand || 'Sem marca'} • ${itemCode}`;
+  };
   const profitValue = detail
     ? toNumber(detail.profit ?? totalValue - toNumber(detail.cost_total))
     : 0;
@@ -404,6 +417,15 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
   }));
 
   const receiptEntries = [...paymentEntries, ...receivableEntries].filter((entry) => entry.amount > 0);
+  const thermalItemsLines = saleItems
+    .map((item) => {
+      const qty = toNumber(item.quantity);
+      const price = toNumber(item.price);
+      const totalItem = qty * price;
+      const itemTitle = getItemTitle(item);
+      return `${qty}x ${itemTitle} - ${formatCurrency(totalItem)}`;
+    })
+    .join('\n');
 
   const paymentListEntries = [
     ...receivables.map((receivable) => ({
@@ -834,7 +856,8 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                 const qty = toNumber(item.quantity);
                 const price = toNumber(item.price);
                 const totalItem = qty * price;
-                const itemTitle = item.product_name || item.sku || sale.itemName;
+                const itemTitle = getItemTitle(item);
+                const itemMetaLine = getItemMetaLine(item);
                 const itemImage = item.product_image_url || '';
                 return (
                   <div key={item.id} className="sale-item">
@@ -847,6 +870,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                     </div>
                     <div className="sale-item-info">
                       <strong>{itemTitle}</strong>
+                      {itemMetaLine ? <span>{itemMetaLine}</span> : null}
                       <span>{qty} {qty === 1 ? 'unidade' : 'unidades'}</span>
                       <span>Total: {formatCurrency(totalItem)}</span>
                     </div>
@@ -1082,10 +1106,11 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                     const qty = toNumber(item.quantity);
                     const price = toNumber(item.price);
                     const totalItem = qty * price;
+                    const itemTitle = getItemTitle(item);
                     return (
                       <div key={item.id} className="receipt-product-row">
                         <span>{qty}</span>
-                        <span>{item.product_name || item.sku || sale.itemName}</span>
+                        <span>{itemTitle}</span>
                         <strong>{formatCurrency(totalItem)}</strong>
                       </div>
                     );
@@ -1150,7 +1175,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
               <div className="receipt-body">
                 <div className="receipt-thermal">
                   <pre>
-{`==============================\nCOMPROVANTE DE VENDA\n\nData: ${formatDate(sale.date)}\nVenda: #${sale.id.slice(0, 6)}\nCliente: ${sale.customer}\n\n------------------------------\nPRODUTOS:\n${sale.itemName}\n${sale.itemQty}x ${formatCurrency(summary.total)}\n\nSubtotal: ${formatCurrency(summary.total)}\nTOTAL: ${formatCurrency(summary.total)}\n\n------------------------------\nPAGAMENTO:\n${thermalPaymentLines}\n\nPago: ${formatCurrency(summary.paid)}\nRestante: ${formatCurrency(summary.remaining)}\n\nSTATUS: ${thermalStatusLabel}\n------------------------------\nObrigado pela preferencia!\n${formatDate(sale.date)} ${formatTime(sale.date)}`}
+{`==============================\nCOMPROVANTE DE VENDA\n\nData: ${formatDate(sale.date)}\nVenda: #${sale.id.slice(0, 6)}\nCliente: ${sale.customer}\n\n------------------------------\nPRODUTOS:\n${thermalItemsLines}\n\nSubtotal: ${formatCurrency(summary.total)}\nTOTAL: ${formatCurrency(summary.total)}\n\n------------------------------\nPAGAMENTO:\n${thermalPaymentLines}\n\nPago: ${formatCurrency(summary.paid)}\nRestante: ${formatCurrency(summary.remaining)}\n\nSTATUS: ${thermalStatusLabel}\n------------------------------\nObrigado pela preferencia!\n${formatDate(sale.date)} ${formatTime(sale.date)}`}
                   </pre>
                 </div>
               </div>

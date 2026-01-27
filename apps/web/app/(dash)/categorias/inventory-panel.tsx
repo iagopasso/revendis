@@ -228,6 +228,21 @@ const getProductImage = (product?: Product | null) => {
   return product.image_url || '';
 };
 
+const getProductCode = (product?: Product | null) => {
+  if (!product) return '';
+  return product.barcode || product.sku || '';
+};
+
+const getProductHeadline = (product?: Product | null) => {
+  if (!product) return '';
+  return `${getProductCode(product)} - ${product.name}`;
+};
+
+const getProductMetaLine = (product?: Product | null) => {
+  if (!product) return '';
+  return `${product.brand || 'Sem marca'} • ${getProductCode(product)}`;
+};
+
 const getProductInitials = (product?: Product | null) => {
   if (!product) return 'P';
   const parts = product.name.trim().split(/\s+/).filter(Boolean);
@@ -687,7 +702,7 @@ export default function InventoryPanel({
           status: 'pending',
           total: priceValue,
           paid: 0,
-          itemName: selectedProduct.name,
+          itemName: selectedProduct ? getProductHeadline(selectedProduct) : 'Produto',
           itemQty: 1,
           dueDate: saleDateValue
         });
@@ -791,7 +806,7 @@ export default function InventoryPanel({
       status: mappedStatus,
       total: toNumber(sale.total),
       paid: 0,
-      itemName: selectedProduct?.name || sale.sku,
+      itemName: selectedProduct ? getProductHeadline(selectedProduct) : sale.sku,
       itemQty: toNumber(sale.quantity || 1),
       dueDate: sale.created_at
     });
@@ -1222,8 +1237,8 @@ export default function InventoryPanel({
                       )}
                     </button>
                     <div className="inventory-meta">
-                      <strong>{product.name}</strong>
-                      <span>{(product.brand || 'Sem marca') + ' · ' + product.sku}</span>
+                      <strong>{getProductHeadline(product)}</strong>
+                      <span>{getProductMetaLine(product)}</span>
                     </div>
                     <div className="inventory-price">{priceLabel}</div>
                     <button
@@ -1307,9 +1322,9 @@ export default function InventoryPanel({
                         )}
                       </span>
                       <div>
-                        <strong>{product.name}</strong>
+                        <strong>{getProductHeadline(product)}</strong>
                         <div className="meta">
-                          {(product.brand || 'Sem marca') + ' · ' + product.sku}
+                          {getProductMetaLine(product)}
                         </div>
                       </div>
                     </button>
@@ -1623,12 +1638,8 @@ export default function InventoryPanel({
                   )}
                 </div>
                 <div>
-                  <strong>{selectedProduct.name}</strong>
-                  <span>
-                    {(selectedProduct.brand || 'Sem marca') +
-                      ' · ' +
-                      (selectedProduct.barcode || selectedProduct.sku)}
-                  </span>
+                  <strong>{getProductHeadline(selectedProduct)}</strong>
+                  <span>{getProductMetaLine(selectedProduct)}</span>
                 </div>
               </div>
               <button className="modal-close" type="button" onClick={() => setSelectedProduct(null)}>
@@ -1846,8 +1857,8 @@ export default function InventoryPanel({
               </div>
               <div>
                 <span>Incluindo unidades do produto</span>
-                <strong>{adjustProduct.name}</strong>
-                <span>{(adjustProduct.brand || 'Sem marca') + ' · ' + adjustProduct.sku}</span>
+                <strong>{getProductHeadline(adjustProduct)}</strong>
+                <span>{getProductMetaLine(adjustProduct)}</span>
               </div>
             </div>
             <label className="modal-field">
@@ -1920,13 +1931,13 @@ export default function InventoryPanel({
               </div>
               <div>
                 <span>Vendendo unidade do produto</span>
-                <strong>{selectedProduct.name}</strong>
-                <span>{(selectedProduct.brand || 'Sem marca') + ' · ' + selectedProduct.sku}</span>
+                <strong>{getProductHeadline(selectedProduct)}</strong>
+                <span>{getProductMetaLine(selectedProduct)}</span>
               </div>
             </div>
             <label className="modal-field">
               <span>Produto</span>
-              <input value={`${selectedProduct.name} · ${selectedProduct.sku}`} readOnly />
+              <input value={getProductHeadline(selectedProduct)} readOnly />
             </label>
             <label className="modal-field">
               <span>Cliente</span>
@@ -2129,8 +2140,8 @@ export default function InventoryPanel({
               </div>
               <div>
                 <span>Atualizando unidade do produto</span>
-                <strong>{selectedProduct.name}</strong>
-                <span>{(selectedProduct.brand || 'Sem marca') + ' · ' + selectedProduct.sku}</span>
+                <strong>{getProductHeadline(selectedProduct)}</strong>
+                <span>{getProductMetaLine(selectedProduct)}</span>
               </div>
             </div>
             <label className="modal-field">

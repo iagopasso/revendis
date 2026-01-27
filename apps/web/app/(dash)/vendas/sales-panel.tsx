@@ -58,7 +58,7 @@ export default function SalesPanel({ sales, totalSales, profit, totalReceivable,
       status: mappedStatus,
       total: Number(sale.total),
       paid: 0,
-      itemName: '174929 - Footworks Creme Hidratante para os Pes Noturno',
+      itemName: '',
       itemQty: 1,
       dueDate: sale.created_at
     });
