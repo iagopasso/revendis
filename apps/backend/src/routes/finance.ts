@@ -104,6 +104,44 @@ router.post(
   })
 );
 
+router.post(
+  '/finance/receivables/:id/unsettle',
+  validateRequest({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const orgId = req.header('x-org-id') || null;
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
+    const userId = req.header('x-user-id') || null;
+
+    const updated = await withTransaction(async (client) => {
+      const result = await client.query(
+        `UPDATE receivables
+         SET status = 'pending', settled_at = NULL
+         WHERE id = $1
+         RETURNING id, sale_id, amount, due_date, status, settled_at, method`,
+        [id]
+      );
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        storeId,
+        userId,
+        entityType: 'receivable',
+        entityId: id,
+        action: 'unsettled'
+      });
+
+      return result;
+    });
+
+    if (!updated.rows.length) {
+      return res.status(404).json({ code: 'not_found', message: 'Parcela nao encontrada.' });
+    }
+
+    res.json({ data: updated.rows[0] });
+  })
+);
+
 router.patch(
   '/finance/receivables/:id',
   validateRequest({ params: idParamSchema, body: receivableUpdateSchema }),

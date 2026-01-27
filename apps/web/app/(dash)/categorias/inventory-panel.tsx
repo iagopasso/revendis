@@ -1783,6 +1783,7 @@ export default function InventoryPanel({
                   productSales.map((sale) => {
                     const isCancelled = sale.status === 'cancelled';
                     const isDelivered = sale.status === 'delivered';
+                    const isPaid = sale.payment_status === 'paid';
                     return (
                       <div
                         key={sale.sale_id}
@@ -1805,7 +1806,9 @@ export default function InventoryPanel({
                             </span>
                           ) : (
                             <div className="sale-status-stack">
-                              <span className="sale-status-pill pending">PAGAMENTO PENDENTE</span>
+                              <span className={`sale-status-pill ${isPaid ? 'paid' : 'pending'}`}>
+                                {isPaid ? 'PAGO' : 'PAGAMENTO PENDENTE'}
+                              </span>
                               {isDelivered ? (
                                 <span className="sale-status-pill delivered">PRODUTO ENTREGUE</span>
                               ) : null}

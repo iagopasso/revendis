@@ -196,6 +196,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
   const [receiptTab, setReceiptTab] = useState<'digital' | 'termico'>('digital');
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
+  const [unsettleOpen, setUnsettleOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [undoOpen, setUndoOpen] = useState(false);
@@ -215,6 +216,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
   const [activePaymentMenu, setActivePaymentMenu] = useState<string | null>(null);
   const [settleTarget, setSettleTarget] = useState<ReceivableDetail | null>(null);
   const [settleDate, setSettleDate] = useState(toIsoDate(new Date()));
+  const [unsettleTarget, setUnsettleTarget] = useState<ReceivableDetail | null>(null);
   const [editTarget, setEditTarget] = useState<ReceivableDetail | null>(null);
   const [removeTarget, setRemoveTarget] = useState<ReceivableDetail | null>(null);
   const [editDueDate, setEditDueDate] = useState(toIsoDate(new Date()));
@@ -254,6 +256,8 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     setSettleOpen(false);
     setSettleTarget(null);
     setSettleDate(toIsoDate(new Date()));
+    setUnsettleOpen(false);
+    setUnsettleTarget(null);
     setEditTarget(null);
     setRemoveTarget(null);
   }, [sale]);
@@ -637,6 +641,33 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     }
   };
 
+  const handleUnsettleReceivable = async () => {
+    if (!unsettleTarget || isCancelled) return;
+    try {
+      const res = await fetch(`${API_BASE}/finance/receivables/${unsettleTarget.id}/unsettle`, {
+        method: 'POST'
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        setToast(payload?.message || 'Erro ao marcar parcela como nao paga');
+        return;
+      }
+      const updatedReceivables = detail
+        ? detail.receivables.map((item) =>
+            item.id === unsettleTarget.id ? { ...item, status: 'pending', settled_at: null } : item
+          )
+        : [];
+      setDetail((prev) => (prev ? { ...prev, receivables: updatedReceivables } : prev));
+      setUnsettleOpen(false);
+      setUnsettleTarget(null);
+      setToast('Parcela marcada como nao paga');
+      router.refresh();
+      notifyUpdate({ receivables: updatedReceivables });
+    } catch {
+      setToast('Erro ao marcar parcela como nao paga');
+    }
+  };
+
   const handleUpdateStatus = async (nextStatus: SaleDetail['status']) => {
     if (!sale || nextStatus === deliveryStatus) return;
     setStatusUpdating(true);
@@ -882,20 +913,34 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                     </div>
                     {entry.kind === 'receivable' && !isCancelled && activePaymentMenu === entry.id ? (
                       <div className="payment-menu">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActivePaymentMenu(null);
-                            const target = receivables.find((item) => item.id === entry.id) || null;
-                            if (!target) return;
-                            setSettleTarget(target);
-                            setSettleDate(toIsoDate(new Date()));
-                            setSettleOpen(true);
-                          }}
-                          disabled={entry.status === 'paid'}
-                        >
-                          Marcar como paga
-                        </button>
+                        {entry.status !== 'paid' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActivePaymentMenu(null);
+                              const target = receivables.find((item) => item.id === entry.id) || null;
+                              if (!target) return;
+                              setSettleTarget(target);
+                              setSettleDate(toIsoDate(new Date()));
+                              setSettleOpen(true);
+                            }}
+                          >
+                            Marcar como paga
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActivePaymentMenu(null);
+                              const target = receivables.find((item) => item.id === entry.id) || null;
+                              if (!target) return;
+                              setUnsettleTarget(target);
+                              setUnsettleOpen(true);
+                            }}
+                          >
+                            Marcar como nao paga
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => {
@@ -1271,6 +1316,35 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
               </button>
               <button className="button primary" type="button" onClick={handleSettleReceivable}>
                 Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {unsettleOpen ? (
+        <div
+          className="modal-backdrop"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (event.target !== event.currentTarget) return;
+            setUnsettleOpen(false);
+          }}
+        >
+          <div className="modal modal-small" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Marcar como nao paga</h3>
+              <button className="modal-close" type="button" onClick={() => setUnsettleOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <p>Tem certeza que deseja retornar esta parcela para pendente?</p>
+            <div className="modal-footer">
+              <button className="button ghost" type="button" onClick={() => setUnsettleOpen(false)}>
+                Cancelar
+              </button>
+              <button className="button primary" type="button" onClick={handleUnsettleReceivable}>
+                Confirmar
               </button>
             </div>
           </div>
