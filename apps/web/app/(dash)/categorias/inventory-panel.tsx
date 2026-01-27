@@ -1801,7 +1801,7 @@ export default function InventoryPanel({
                         className="modal-product-row clickable"
                         onClick={() => openSaleDetail(sale)}
                       >
-                      <div>
+                      <div className="modal-product-info">
                         <strong>
                           {(sale.customer_name || 'Cliente nao informado') +
                             ` - ${toNumber(sale.quantity)} ${toNumber(sale.quantity) === 1 ? 'item' : 'itens'}`}
@@ -1818,13 +1818,15 @@ export default function InventoryPanel({
                           ) : (
                             <div className="sale-status-stack">
                               <span className={`sale-status-pill ${isPaid ? 'paid' : 'pending'}`}>
-                                <span>{isPaid ? 'PAGAMENTO FEITO' : 'PAGAMENTO PENDENTE'}</span>
-                                {isPaid ? <span className="sale-status-icon">✓</span> : null}
+                                <span>{isPaid ? 'PAGAMENTO FEITO' : 'PENDENTE'}</span>
+                                <span className={`sale-status-icon ${isPaid ? 'paid' : 'pending'}`}>
+                                  {isPaid ? '✓' : '🕒'}
+                                </span>
                               </span>
                               {isDelivered ? (
                                 <span className="sale-status-pill delivered">
                                   <span>PRODUTO ENTREGUE</span>
-                                  <span className="sale-status-icon">✓</span>
+                                  <span className="sale-status-icon delivered">✓</span>
                                 </span>
                               ) : null}
                             </div>
