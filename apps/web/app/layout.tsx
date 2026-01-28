@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import React from 'react';
+import Providers from './providers';
 
 export const metadata: Metadata = {
   title: 'Revendis Web',
@@ -10,7 +11,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

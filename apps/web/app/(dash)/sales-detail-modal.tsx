@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, formatCurrency, toNumber } from './lib';
+import { downloadPdf } from '../lib/pdf';
 
 export type SaleDetail = {
   id: string;
@@ -105,6 +106,59 @@ const formatTime = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+};
+
+const padRight = (text: string, length: number) => text.padEnd(length, ' ');
+const padLeft = (text: string, length: number) => text.padStart(length, ' ');
+const repeatChar = (char: string, length: number) => char.repeat(length);
+
+const centerText = (text: string, length: number) => {
+  if (text.length >= length) return text;
+  const padding = Math.floor((length - text.length) / 2);
+  return `${' '.repeat(padding)}${text}`;
+};
+
+const wrapText = (text: string, length: number) => {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return [''];
+  const words = normalized.split(' ');
+  const lines: string[] = [];
+  let current = '';
+  words.forEach((word) => {
+    if (!current.length) {
+      if (word.length <= length) {
+        current = word;
+        return;
+      }
+      for (let index = 0; index < word.length; index += length) {
+        lines.push(word.slice(index, index + length));
+      }
+      return;
+    }
+    if (current.length + 1 + word.length <= length) {
+      current = `${current} ${word}`;
+      return;
+    }
+    lines.push(current);
+    if (word.length <= length) {
+      current = word;
+      return;
+    }
+    for (let index = 0; index < word.length; index += length) {
+      lines.push(word.slice(index, index + length));
+    }
+    current = '';
+  });
+  if (current.length) lines.push(current);
+  return lines;
+};
+
+const buildRow = (label: string, value: string, columns: number) => {
+  const available = columns - value.length;
+  if (available <= 0 || label.length >= available) {
+    return `${label}\n${padLeft(value, columns)}`;
+  }
+  return `${padRight(label, available)}${value}`;
 };
 
 const formatCurrencyInput = (value: string) => {
@@ -227,6 +281,8 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [profitVisible, setProfitVisible] = useState(false);
   const [undoing, setUndoing] = useState(false);
+  const digitalReceiptRef = useRef<HTMLDivElement>(null);
+  const thermalReceiptRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!sale) return;
@@ -416,17 +472,6 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     method: payment.method || 'Outro'
   }));
 
-  const receiptEntries = [...paymentEntries, ...receivableEntries].filter((entry) => entry.amount > 0);
-  const thermalItemsLines = saleItems
-    .map((item) => {
-      const qty = toNumber(item.quantity);
-      const price = toNumber(item.price);
-      const totalItem = qty * price;
-      const itemTitle = getItemTitle(item);
-      return `${qty}x ${itemTitle} - ${formatCurrency(totalItem)}`;
-    })
-    .join('\n');
-
   const paymentListEntries = [
     ...receivables.map((receivable) => ({
       id: receivable.id,
@@ -452,28 +497,65 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
       return aTime - bTime;
     });
 
+  const receiptInstallments = paymentListEntries.map((entry, index) => ({
+    ...entry,
+    installmentLabel: `Parcela ${index + 1} de ${paymentListEntries.length}`,
+    statusLabel: entry.status === 'paid' ? 'Pago' : 'Pendente'
+  }));
+
   const receiptPaymentStatus =
     summary.paid <= 0
       ? 'Pendente'
       : summary.remaining <= 0
         ? 'Pago'
-        : 'Parcialmente pago';
+        : 'Parcial';
 
   const receiptPaymentStatusClass =
-    receiptPaymentStatus === 'Pago' ? 'paid' : receiptPaymentStatus === 'Parcialmente pago' ? 'partial' : 'pending';
-
-  const thermalPaymentLines =
-    receiptEntries.length > 0
-      ? receiptEntries
-          .map(
-            (entry) =>
-              `${entry.method} ${entry.status === 'paid' ? 'PAGO' : 'PENDENTE'} - ${entry.date ? formatDate(entry.date) : '-'} ${formatCurrency(entry.amount)}`
-          )
-          .join('\n')
-      : 'Sem pagamentos registrados';
+    receiptPaymentStatus === 'Pago' ? 'paid' : receiptPaymentStatus === 'Parcial' ? 'partial' : 'pending';
 
   const thermalStatusLabel =
-    receiptPaymentStatus === 'Parcialmente pago' ? 'PARCIAL' : receiptPaymentStatus.toUpperCase();
+    receiptPaymentStatus === 'Parcial' ? 'PARCIAL' : receiptPaymentStatus.toUpperCase();
+
+  const thermalWidthMm: 80 | 58 = 80;
+  const thermalColumns = thermalWidthMm === 58 ? 24 : 32;
+  const thermalLine = repeatChar('=', thermalColumns);
+  const thermalDash = repeatChar('-', thermalColumns);
+  const thermalSubtotal = toNumber(detail?.subtotal ?? summary.total);
+
+  const thermalItemLines = saleItems.flatMap((item) => {
+    const qty = toNumber(item.quantity);
+    const unitPrice = toNumber(item.price);
+    const totalItem = qty * unitPrice;
+    const itemTitle = getItemTitle(item) || 'Item';
+    const nameLines = wrapText(itemTitle, thermalColumns);
+    const qtyLine = `${qty} x ${formatCurrency(unitPrice)}`;
+    const totalValue = formatCurrency(totalItem);
+    const detailLine = buildRow(qtyLine, totalValue, thermalColumns);
+    return [...nameLines, detailLine];
+  });
+
+  const thermalReceiptText = [
+    thermalLine,
+    centerText('COMPROVANTE DE VENDA', thermalColumns),
+    thermalDash,
+    `Data: ${formatDate(sale.date)}`,
+    `Venda: #${sale.id}`,
+    `Cliente: ${customerName}`,
+    thermalDash,
+    'PRODUTOS',
+    thermalItemLines.length ? thermalItemLines.join('\n') : 'Sem itens',
+    thermalDash,
+    'RESUMO',
+    buildRow('Subtotal:', formatCurrency(thermalSubtotal), thermalColumns),
+    buildRow('Total:', formatCurrency(summary.total), thermalColumns),
+    thermalDash,
+    'PAGAMENTO',
+    buildRow('Pago:', formatCurrency(summary.paid), thermalColumns),
+    buildRow('Restante:', formatCurrency(summary.remaining), thermalColumns),
+    thermalDash,
+    `STATUS: ${thermalStatusLabel}`,
+    thermalLine
+  ].join('\n');
 
   const handleRegisterPayment = async () => {
     if (!sale || isCancelled) return;
@@ -716,9 +798,26 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     }
   };
 
-  const handleDownloadReceipt = () => {
-    setReceiptOpen(true);
-    setToast('Extrato pronto para baixar');
+  const handleDownloadReceipt = async () => {
+    if (!sale) return;
+    const node = receiptTab === 'digital' ? digitalReceiptRef.current : thermalReceiptRef.current;
+    if (!node) {
+      setToast('Extrato indisponivel para download');
+      return;
+    }
+    const filename = `venda-${sale.id}-${receiptTab}.pdf`;
+    const format = receiptTab === 'digital'
+      ? 'a4'
+      : thermalWidthMm === 58
+        ? 'thermal-58'
+        : 'thermal-80';
+
+    try {
+      await downloadPdf({ element: node, filename, format });
+      setToast('PDF gerado');
+    } catch {
+      setToast('Erro ao gerar PDF');
+    }
   };
 
   const handlePrintReceipt = () => {
@@ -1073,14 +1172,14 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
             </div>
 
             {receiptTab === 'digital' ? (
-              <div className="receipt-body">
+              <div className="receipt-body" id="print-root" ref={digitalReceiptRef}>
                 <div className="receipt-card">
                   <div className="receipt-header">
                     <strong>Resumo da venda</strong>
                     <div className="receipt-logo">R</div>
                   </div>
                   <div className="receipt-meta">
-                    Emitido em {formatDate(sale.date)} as {formatTime(sale.date)} no Revendi Web
+                    Emitido em {formatDate(sale.date)} às {formatTime(sale.date)} no Revendi Web
                   </div>
                   <div className="receipt-grid">
                     <div>
@@ -1096,26 +1195,13 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                       <strong>{formatCurrency(summary.total)}</strong>
                     </div>
                     <div>
-                      <span>Situacao da entrega</span>
-                      <strong>{statusLabel(deliveryStatus)}</strong>
+                      <span>Situação da entrega</span>
+                      <strong className={`receipt-status-pill ${statusClass(deliveryStatus)}`}>
+                        <span className="receipt-status-dot" />
+                        {statusLabel(deliveryStatus)}
+                      </strong>
                     </div>
                   </div>
-                <div className="receipt-products">
-                  <strong>Produtos</strong>
-                  {saleItems.map((item) => {
-                    const qty = toNumber(item.quantity);
-                    const price = toNumber(item.price);
-                    const totalItem = qty * price;
-                    const itemTitle = getItemTitle(item);
-                    return (
-                      <div key={item.id} className="receipt-product-row">
-                        <span>{qty}</span>
-                        <span>{itemTitle}</span>
-                        <strong>{formatCurrency(totalItem)}</strong>
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
 
                 <div className="receipt-card">
@@ -1127,56 +1213,41 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                   </div>
                   <div className="receipt-payment-status">
                     {isOverdue && summary.remaining > 0 ? <span className="receipt-badge">{receiptStatus}</span> : null}
-                    {receiptEntries.length === 0 ? (
+                    {receiptInstallments.length === 0 ? (
                       <span>Nenhum pagamento registrado</span>
                     ) : (
-                      <div className="receipt-payment-list">
-                        {receiptEntries.map((entry) => (
-                          <div key={entry.id} className="receipt-payment-row">
-                            <span className={`receipt-pill ${entry.status === 'paid' ? 'paid' : 'pending'}`}>
-                              {entry.status === 'paid' ? 'Pago' : 'Pendente'}
-                            </span>
-                            <div className="receipt-payment-meta">
-                              <strong>{entry.label}</strong>
+                      <div className="receipt-installments">
+                        {receiptInstallments.map((entry) => (
+                          <div key={entry.id} className="receipt-installment">
+                            <div className="receipt-installment-top">
+                              <strong>{entry.installmentLabel}</strong>
+                              <span className={`receipt-pill ${entry.status === 'paid' ? 'paid' : 'pending'}`}>
+                                {entry.statusLabel}
+                              </span>
+                            </div>
+                            <div className="receipt-installment-meta">
                               <span>{entry.method}</span>
                               <span>{entry.date ? formatDate(entry.date) : '-'}</span>
                             </div>
-                            <strong>{formatCurrency(entry.amount)}</strong>
+                            <strong className="receipt-installment-amount">
+                              {formatCurrency(entry.amount)}
+                            </strong>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
-                  <div className="receipt-summary">
-                    <div>
-                      <span>Valor original</span>
-                      <strong>{formatCurrency(summary.total)}</strong>
-                    </div>
-                    <div>
-                      <span>Desconto</span>
-                      <strong>-{formatCurrency(0)}</strong>
-                    </div>
-                    <div>
-                      <span>Valor final</span>
-                      <strong>{formatCurrency(summary.total)}</strong>
-                    </div>
-                    <div>
-                      <span>Valor pago</span>
-                      <strong>{formatCurrency(summary.paid)}</strong>
-                    </div>
-                    <div>
-                      <span>Valor restante</span>
-                      <strong>{formatCurrency(summary.remaining)}</strong>
-                    </div>
-                  </div>
                 </div>
               </div>
             ) : (
-              <div className="receipt-body">
+              <div
+                className="receipt-body"
+                id="print-root"
+                ref={thermalReceiptRef}
+                style={{ width: `${thermalWidthMm}mm` }}
+              >
                 <div className="receipt-thermal">
-                  <pre>
-{`==============================\nCOMPROVANTE DE VENDA\n\nData: ${formatDate(sale.date)}\nVenda: #${sale.id.slice(0, 6)}\nCliente: ${sale.customer}\n\n------------------------------\nPRODUTOS:\n${thermalItemsLines}\n\nSubtotal: ${formatCurrency(summary.total)}\nTOTAL: ${formatCurrency(summary.total)}\n\n------------------------------\nPAGAMENTO:\n${thermalPaymentLines}\n\nPago: ${formatCurrency(summary.paid)}\nRestante: ${formatCurrency(summary.remaining)}\n\nSTATUS: ${thermalStatusLabel}\n------------------------------\nObrigado pela preferencia!\n${formatDate(sale.date)} ${formatTime(sale.date)}`}
-                  </pre>
+                  <pre>{thermalReceiptText}</pre>
                 </div>
               </div>
             )}
