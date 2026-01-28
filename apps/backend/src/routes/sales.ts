@@ -15,10 +15,28 @@ router.get(
   asyncHandler(async (req, res) => {
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const result = await query(
-      `SELECT s.id, s.status, s.subtotal, s.discount_total, s.total, s.created_at,
-              COALESCE(c.name, s.customer_name) AS customer_name
+      `SELECT s.id,
+              s.status,
+              s.subtotal,
+              s.discount_total,
+              s.total,
+              s.created_at,
+              COALESCE(c.name, s.customer_name) AS customer_name,
+              COALESCE(items.total_quantity, 0) AS items_count,
+              COALESCE(costs.cost_total, 0) AS cost_total,
+              (s.total - COALESCE(costs.cost_total, 0)) AS profit
        FROM sales s
        LEFT JOIN customers c ON c.id = s.customer_id
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(si.quantity), 0) AS total_quantity
+         FROM sale_items si
+         WHERE si.sale_id = s.id
+       ) items ON true
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(iu.cost), 0) AS cost_total
+         FROM inventory_units iu
+         WHERE iu.sale_id = s.id
+       ) costs ON true
        WHERE s.store_id = $1
        ORDER BY created_at DESC
        LIMIT 100`,

@@ -709,6 +709,57 @@ main {
   grid-template-columns: 1.8fr 0.8fr 0.8fr 0.6fr 0.6fr;
 }
 
+.data-row.cols-7 {
+  grid-template-columns: 1.6fr 0.7fr 0.9fr 0.9fr 0.8fr 0.7fr 0.7fr;
+}
+
+.sale-row {
+  text-align: left;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.sale-row:hover {
+  border-color: rgba(63, 194, 255, 0.35);
+}
+
+.sale-customer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sale-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--stroke);
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.table-footer {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.table-footer .pager {
+  display: flex;
+  gap: 8px;
+}
+
+.table-footer .button.icon {
+  width: 36px;
+  height: 36px;
+}
+
 .data-cell.mono {
   font-family: 'Space Mono', ui-monospace, monospace;
 }
@@ -2020,6 +2071,18 @@ main {
   background: rgba(34, 197, 94, 0.15);
 }
 
+.payment-badge.partial {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.15);
+}
+
+.payment-badge.overdue {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.15);
+}
+
 .payment-badge.cancelled {
   color: #f87171;
   border-color: rgba(239, 68, 68, 0.45);
@@ -2048,6 +2111,18 @@ main {
   color: #86efac;
   border-color: rgba(34, 197, 94, 0.45);
   background: rgba(34, 197, 94, 0.15);
+}
+
+.delivery-badge.confirmed {
+  color: #93c5fd;
+  border-color: rgba(147, 197, 253, 0.45);
+  background: rgba(147, 197, 253, 0.15);
+}
+
+.delivery-badge.cancelled {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.15);
 }
 
 .badge-icon {

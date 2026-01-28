@@ -14,26 +14,24 @@ type Sale = {
   status: string;
   total: number | string;
   created_at: string;
+  customer_name?: string | null;
+  items_count?: number | string;
+  cost_total?: number | string;
+  profit?: number | string;
 };
 
 type Receivable = { sale_id?: string; amount: number | string; status: string; due_date?: string };
 
-const statusLabel = (status: string) => {
-  if (status === 'cancelled') return 'Cancelado';
-  if (status === 'pending') return 'Pendente';
-  return 'Confirmado';
-};
+type PaymentStatus = 'paid' | 'pending' | 'overdue' | 'partial';
 
-const statusBadge = (status: string) => {
-  if (status === 'cancelled') return 'danger';
-  if (status === 'pending') return 'warn';
-  return 'success';
-};
-
-const formatDate = (value: string) => {
-  if (!value) return '--';
-  const date = new Date(value);
-  return date.toLocaleDateString('pt-BR');
+type ReceivableSummary = {
+  total: number;
+  paid: number;
+  pending: number;
+  overdue: number;
+  hasPaid: boolean;
+  hasPending: boolean;
+  hasOverdue: boolean;
 };
 
 type SearchParams = {
@@ -45,11 +43,12 @@ type SearchParams = {
   to?: string | string[];
 };
 
-const getReceivableStatus = (status?: string) => {
-  if (status === 'overdue') return 2;
-  if (status === 'pending') return 1;
-  if (status === 'paid') return 0;
-  return 0;
+const getPaymentStatus = (summary?: ReceivableSummary): PaymentStatus => {
+  if (!summary) return 'paid';
+  if (summary.hasOverdue) return 'overdue';
+  if (summary.hasPending && summary.hasPaid) return 'partial';
+  if (summary.hasPending) return 'pending';
+  return 'paid';
 };
 
 export default async function VendasPage({
@@ -70,39 +69,71 @@ export default async function VendasPage({
   const paymentFilter = getStringParam(resolvedParams.payment) || 'all';
   const deliveryFilter = getStringParam(resolvedParams.delivery) || 'all';
 
-  const receivableBySale = new Map<string, string>();
+  const receivableSummary = new Map<string, ReceivableSummary>();
   receivables.forEach((receivable) => {
     const saleId = receivable.sale_id || '';
-    const current = receivableBySale.get(saleId);
-    const nextStatus = receivable.status;
-    if (!current) {
-      receivableBySale.set(saleId, nextStatus);
-      return;
+    if (!saleId) return;
+    const current = receivableSummary.get(saleId) ?? {
+      total: 0,
+      paid: 0,
+      pending: 0,
+      overdue: 0,
+      hasPaid: false,
+      hasPending: false,
+      hasOverdue: false
+    };
+    const amount = toNumber(receivable.amount);
+    current.total += amount;
+    if (receivable.status === 'paid') {
+      current.paid += amount;
+      current.hasPaid = true;
+    } else if (receivable.status === 'overdue') {
+      current.overdue += amount;
+      current.hasOverdue = true;
+    } else {
+      current.pending += amount;
+      current.hasPending = true;
     }
-    const currentScore = getReceivableStatus(current);
-    const nextScore = getReceivableStatus(nextStatus);
-    if (nextScore > currentScore) {
-      receivableBySale.set(saleId, nextStatus);
-    }
+    receivableSummary.set(saleId, current);
   });
 
   const salesInRange = sales.filter((sale) => isInDateRange(sale.created_at, dateRange));
 
   const filteredSales = salesInRange.filter((sale) => {
-    const paymentStatus = receivableBySale.get(sale.id) || 'paid';
-    const matchesPayment = paymentFilter === 'all' || paymentStatus === paymentFilter;
+    const paymentStatus = getPaymentStatus(receivableSummary.get(sale.id));
+    const matchesPayment =
+      paymentFilter === 'all'
+        ? true
+        : paymentFilter === 'pending'
+          ? paymentStatus === 'pending' || paymentStatus === 'partial'
+          : paymentFilter === 'partial'
+            ? paymentStatus === 'partial'
+            : paymentStatus === paymentFilter;
     const matchesDelivery = deliveryFilter === 'all' || sale.status === deliveryFilter;
     return matchesPayment && matchesDelivery;
   });
 
-  const salesCount = filteredSales.length;
-  const totalSales = filteredSales.reduce((sum, sale) => sum + toNumber(sale.total), 0);
-  const profit = totalSales * 0.28;
-  const filteredSaleIds = new Set(filteredSales.map((sale) => sale.id));
-  const filteredReceivables = receivables.filter((r) =>
-    r.sale_id ? filteredSaleIds.has(r.sale_id) : false
-  );
-  const totalReceivable = filteredReceivables.reduce((sum, r) => sum + toNumber(r.amount), 0);
+  const enrichedSales = filteredSales.map((sale) => {
+    const summary = receivableSummary.get(sale.id);
+    const paymentStatus = getPaymentStatus(summary);
+    const profitValue = toNumber(sale.profit ?? toNumber(sale.total) - toNumber(sale.cost_total));
+    return {
+      ...sale,
+      items_count: toNumber(sale.items_count ?? 0),
+      profit: profitValue,
+      payment_status: paymentStatus
+    };
+  });
+
+  const salesCount = enrichedSales.length;
+  const totalSales = enrichedSales.reduce((sum, sale) => sum + toNumber(sale.total), 0);
+  const profit = enrichedSales.reduce((sum, sale) => sum + toNumber(sale.profit ?? 0), 0);
+  const totalReceivable = enrichedSales.reduce((sum, sale) => {
+    const summary = receivableSummary.get(sale.id);
+    if (!summary) return sum;
+    return sum + summary.pending + summary.overdue;
+  }, 0);
+  const hasSalesInRange = salesInRange.length > 0;
 
   return (
     <main className="page-content">
@@ -129,6 +160,7 @@ export default async function VendasPage({
                 { label: 'Situacao do pagamento: Todas', value: 'all' },
                 { label: 'Pagamento pendente', value: 'pending' },
                 { label: 'Pagamento atrasado', value: 'overdue' },
+                { label: 'Pagamento parcial', value: 'partial' },
                 { label: 'Pagamento recebido', value: 'paid' }
               ]}
             />
@@ -149,11 +181,12 @@ export default async function VendasPage({
       </section>
 
       <SalesPanel
-        sales={filteredSales}
+        sales={enrichedSales}
         totalSales={totalSales}
         profit={profit}
         totalReceivable={totalReceivable}
         salesCount={salesCount}
+        hasSalesInRange={hasSalesInRange}
       />
     </main>
   );
