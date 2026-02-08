@@ -14,7 +14,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     const result = await query(
-      `SELECT id, sku, name, barcode, price, active
+      `SELECT id, sku, name, barcode, brand, price, active
        FROM products
        WHERE organization_id = $1 AND active = true
        ORDER BY created_at DESC

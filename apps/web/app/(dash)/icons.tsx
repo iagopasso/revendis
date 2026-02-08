@@ -172,3 +172,45 @@ export const IconTrash = ({ className }: IconProps) => (
     <path d="M6 7l1 13h10l1-13" />
   </IconBase>
 );
+
+export const IconUser = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <circle cx="12" cy="8" r="3.2" />
+    <path d="M5 19c0-3.3 3.1-5.4 7-5.4s7 2.1 7 5.4" />
+  </IconBase>
+);
+
+export const IconSettings = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <circle cx="12" cy="12" r="3.2" />
+    <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.8 1.8 0 1 1-2.5 2.5l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a1.8 1.8 0 1 1-3.6 0v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.8 1.8 0 1 1-2.5-2.5l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a1.8 1.8 0 1 1 0-3.6h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.8 1.8 0 0 1 2.5-2.5l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a1.8 1.8 0 0 1 3.6 0v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2a1.8 1.8 0 1 1 0 3.6h-.2a1 1 0 0 0-.9.6z" />
+  </IconBase>
+);
+
+export const IconLogout = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M14 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-2" />
+    <path d="M10 12h11" />
+    <path d="M18 8l4 4-4 4" />
+  </IconBase>
+);
+
+export const IconStar = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M12 3.5l2.8 5.7 6.3.9-4.6 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2-4.6-4.4 6.3-.9z" />
+  </IconBase>
+);
+
+export const IconDiamond = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M6 9l6 11 6-11-6-6-6 6z" />
+    <path d="M6 9h12" />
+  </IconBase>
+);
+
+export const IconLock = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  </IconBase>
+);

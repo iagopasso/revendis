@@ -137,6 +137,55 @@ export type CustomerInput = {
   tags?: string[];
 };
 
+export type ResellerBrandSource = 'existing' | 'catalog' | 'manual';
+
+export type ResellerBrandInput = {
+  name: string;
+  source?: ResellerBrandSource;
+  sourceBrand?: string;
+  profitability?: number;
+  logoUrl?: string;
+};
+
+export type SettingsAccountInput = {
+  ownerName?: string;
+  ownerEmail?: string;
+  ownerPhone?: string;
+  businessName?: string;
+};
+
+export type SettingsSubscriptionInput = {
+  plan?: string;
+  status?: string;
+  renewalDate?: string;
+  monthlyPrice?: number;
+};
+
+export type SettingsPixInput = {
+  keyType?: string;
+  keyValue?: string;
+  holderName?: string;
+};
+
+export type SettingsAlertInput = {
+  enabled?: boolean;
+  daysBeforeDue?: number;
+};
+
+export type AccessMemberInput = {
+  name: string;
+  email: string;
+  role?: string;
+  active?: boolean;
+};
+
+export type AccessMemberUpdateInput = {
+  name?: string;
+  email?: string;
+  role?: string;
+  active?: boolean;
+};
+
 export type StorefrontOrderInput = {
   items: SaleItem[];
   customer: {
