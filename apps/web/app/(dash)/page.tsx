@@ -15,6 +15,7 @@ type Product = {
   name: string;
   expires_at?: string | null;
   quantity?: number | string;
+  active?: boolean;
 };
 
 type Sale = { id: string; total: number; status: string; created_at?: string };
@@ -37,9 +38,9 @@ type SearchParams = {
 export default async function Home({
   searchParams
 }: {
-  searchParams?: SearchParams | Promise<SearchParams>;
+  searchParams?: Promise<SearchParams>;
 }) {
-  const resolvedParams = (await Promise.resolve(searchParams)) ?? {};
+  const resolvedParams = (await searchParams) ?? {};
   const [products, sales, receivables, customers, catalog] = await Promise.all([
     fetchList<Product>('/inventory/products'),
     fetchList<Sale>('/sales/orders'),

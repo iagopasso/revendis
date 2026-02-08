@@ -31,9 +31,9 @@ type SearchParams = { status?: string | string[] };
 export default async function FinanceiroPage({
   searchParams
 }: {
-  searchParams?: SearchParams | Promise<SearchParams>;
+  searchParams?: Promise<SearchParams>;
 }) {
-  const resolvedParams = (await Promise.resolve(searchParams)) ?? {};
+  const resolvedParams = (await searchParams) ?? {};
   const receivablesResponse = await fetchList<Receivable>('/finance/receivables');
   const receivables = receivablesResponse?.data ?? [];
 

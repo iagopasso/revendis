@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import DateRangePicker from '../date-range';
 import { FilterSelect } from '../filters';
 import {
@@ -20,6 +21,25 @@ type Sale = {
   profit?: number | string;
 };
 
+type Customer = {
+  id: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+};
+
+type Product = {
+  id: string;
+  sku: string;
+  name: string;
+  brand?: string | null;
+  barcode?: string | null;
+  image_url?: string | null;
+  price: number | string;
+  active?: boolean;
+  quantity?: number | string;
+};
+
 type Receivable = { sale_id?: string; amount: number | string; status: string; due_date?: string };
 
 type PaymentStatus = 'paid' | 'pending' | 'overdue' | 'partial';
@@ -37,6 +57,8 @@ type ReceivableSummary = {
 type SearchParams = {
   payment?: string | string[];
   delivery?: string | string[];
+  newSale?: string | string[];
+  newCustomer?: string | string[];
   range?: string | string[];
   month?: string | string[];
   from?: string | string[];
@@ -54,20 +76,46 @@ const getPaymentStatus = (summary?: ReceivableSummary): PaymentStatus => {
 export default async function VendasPage({
   searchParams
 }: {
-  searchParams?: SearchParams | Promise<SearchParams>;
+  searchParams?: Promise<SearchParams>;
 }) {
-  const resolvedParams = (await Promise.resolve(searchParams)) ?? {};
-  const [salesResponse, receivablesResponse] = await Promise.all([
+  const resolvedParams = (await searchParams) ?? {};
+  const [salesResponse, receivablesResponse, customersResponse, productsResponse] = await Promise.all([
     fetchList<Sale>('/sales/orders'),
-    fetchList<Receivable>('/finance/receivables')
+    fetchList<Receivable>('/finance/receivables'),
+    fetchList<Customer>('/customers'),
+    fetchList<Product>('/inventory/products')
   ]);
 
   const sales = salesResponse?.data ?? [];
   const receivables = receivablesResponse?.data ?? [];
+  const customers = customersResponse?.data ?? [];
+  const products = productsResponse?.data ?? [];
   const dateRange = getDateRangeFromSearchParams(resolvedParams);
+  const initialCreateOpen = getStringParam(resolvedParams.newSale) === '1';
 
-  const paymentFilter = getStringParam(resolvedParams.payment) || 'all';
-  const deliveryFilter = getStringParam(resolvedParams.delivery) || 'all';
+  const paymentFilterParam = getStringParam(resolvedParams.payment);
+  const deliveryFilterParam = getStringParam(resolvedParams.delivery);
+  const paymentFilter = paymentFilterParam === 'all' ? '' : paymentFilterParam;
+  const deliveryFilter = deliveryFilterParam === 'all' ? '' : deliveryFilterParam;
+
+  const paymentOptions = [
+    { label: 'Pendente', value: 'pending' },
+    { label: 'Pago parcialmente', value: 'partial' },
+    { label: 'Pago', value: 'paid' }
+  ];
+  if (paymentFilter === 'overdue') {
+    paymentOptions.unshift({ label: 'Atrasado', value: 'overdue' });
+  }
+
+  const deliveryOptions = [
+    { label: 'A entregar', value: 'pending' },
+    { label: 'Ja entregue', value: 'delivered' }
+  ];
+  if (deliveryFilter === 'confirmed') {
+    deliveryOptions.unshift({ label: 'Confirmado', value: 'confirmed' });
+  } else if (deliveryFilter === 'cancelled') {
+    deliveryOptions.unshift({ label: 'Cancelado', value: 'cancelled' });
+  }
 
   const receivableSummary = new Map<string, ReceivableSummary>();
   receivables.forEach((receivable) => {
@@ -102,14 +150,19 @@ export default async function VendasPage({
   const filteredSales = salesInRange.filter((sale) => {
     const paymentStatus = getPaymentStatus(receivableSummary.get(sale.id));
     const matchesPayment =
-      paymentFilter === 'all'
+      !paymentFilter
         ? true
         : paymentFilter === 'pending'
-          ? paymentStatus === 'pending' || paymentStatus === 'partial'
+          ? paymentStatus === 'pending' || paymentStatus === 'overdue'
           : paymentFilter === 'partial'
             ? paymentStatus === 'partial'
             : paymentStatus === paymentFilter;
-    const matchesDelivery = deliveryFilter === 'all' || sale.status === deliveryFilter;
+    const matchesDelivery =
+      !deliveryFilter
+        ? true
+        : deliveryFilter === 'delivered'
+          ? sale.status === 'delivered' || sale.status === 'confirmed'
+          : sale.status === deliveryFilter;
     return matchesPayment && matchesDelivery;
   });
 
@@ -125,7 +178,6 @@ export default async function VendasPage({
     };
   });
 
-  const salesCount = enrichedSales.length;
   const totalSales = enrichedSales.reduce((sum, sale) => sum + toNumber(sale.total), 0);
   const profit = enrichedSales.reduce((sum, sale) => sum + toNumber(sale.profit ?? 0), 0);
   const totalReceivable = enrichedSales.reduce((sum, sale) => {
@@ -134,6 +186,15 @@ export default async function VendasPage({
     return sum + summary.pending + summary.overdue;
   }, 0);
   const hasSalesInRange = salesInRange.length > 0;
+  const createSaleParams = new URLSearchParams();
+  Object.entries(resolvedParams).forEach(([key, rawValue]) => {
+    if (key === 'newSale' || key === 'newCustomer') return;
+    const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+    if (!value) return;
+    createSaleParams.set(key, value);
+  });
+  createSaleParams.set('newSale', '1');
+  const createSaleHref = `/vendas?${createSaleParams.toString()}`;
 
   return (
     <main className="page-content">
@@ -144,9 +205,9 @@ export default async function VendasPage({
           <p>Acompanhe performance, lucros e recebimentos do periodo.</p>
         </section>
         <div className="actions">
-          <button className="button primary" type="button">
+          <Link className="button primary" href={createSaleHref}>
             + Nova venda
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -156,24 +217,18 @@ export default async function VendasPage({
             <FilterSelect
               name="payment"
               value={paymentFilter}
-              options={[
-                { label: 'Situacao do pagamento: Todas', value: 'all' },
-                { label: 'Pagamento pendente', value: 'pending' },
-                { label: 'Pagamento atrasado', value: 'overdue' },
-                { label: 'Pagamento parcial', value: 'partial' },
-                { label: 'Pagamento recebido', value: 'paid' }
-              ]}
+              variant="menu"
+              className="sales-filter"
+              placeholder="Situacao do pagamento"
+              options={paymentOptions}
             />
             <FilterSelect
               name="delivery"
               value={deliveryFilter}
-              options={[
-                { label: 'Situacao da entrega: Todas', value: 'all' },
-                { label: 'A entregar', value: 'pending' },
-                { label: 'Entregue', value: 'delivered' },
-                { label: 'Confirmado', value: 'confirmed' },
-                { label: 'Cancelado', value: 'cancelled' }
-              ]}
+              variant="menu"
+              className="sales-filter"
+              placeholder="Situacao da entrega"
+              options={deliveryOptions}
             />
           </div>
           <DateRangePicker />
@@ -182,11 +237,13 @@ export default async function VendasPage({
 
       <SalesPanel
         sales={enrichedSales}
+        customers={customers}
+        products={products}
         totalSales={totalSales}
         profit={profit}
         totalReceivable={totalReceivable}
-        salesCount={salesCount}
         hasSalesInRange={hasSalesInRange}
+        initialCreateOpen={initialCreateOpen}
       />
     </main>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge, Box, Divider, Flex, Heading, SimpleGrid, Stack, Text } from '@chakra-ui/react';
+import { Badge, Box, Flex, Heading, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import { formatCurrency, formatDate } from '../../lib/format';
 
 export type DigitalReceiptData = {
@@ -116,7 +116,7 @@ export default function DigitalReceipt({ receipt = MOCK_DIGITAL_RECEIPT }: { rec
             Emitido em {formatDate(receipt.issuedAt)} às {formatIssueTime(receipt.issuedAt)} no Revendi Web
           </Text>
 
-          <SimpleGrid columns={{ base: 1, md: 2 }} spacingY={4} spacingX={8} mt={6}>
+          <SimpleGrid columns={{ base: 1, md: 2 }} gap={4} mt={6}>
             <Box>
               <Text color="gray.500" fontSize="xs" textTransform="uppercase" letterSpacing="wide">
                 Cliente
@@ -141,9 +141,9 @@ export default function DigitalReceipt({ receipt = MOCK_DIGITAL_RECEIPT }: { rec
             </Box>
           </SimpleGrid>
 
-          <Divider my={4} borderColor="gray.200" />
+          <Box my={4} borderTop="1px solid" borderColor="gray.200" />
 
-          <Stack spacing={3}>
+          <Stack gap={3}>
             <Flex align="center" justify="space-between">
               <Text fontSize="md" fontWeight="600">
                 Produtos
@@ -187,7 +187,7 @@ export default function DigitalReceipt({ receipt = MOCK_DIGITAL_RECEIPT }: { rec
               </Badge>
             </Flex>
 
-            <Stack spacing={3}>
+            <Stack gap={3}>
               {receipt.installments.map((installment) => (
                 <Box
                   key={installment.id}
@@ -238,7 +238,7 @@ export default function DigitalReceipt({ receipt = MOCK_DIGITAL_RECEIPT }: { rec
               px={4}
               py={3}
             >
-              <Stack spacing={3}>
+              <Stack gap={3}>
                 {summaryRows.map((row) => {
                   const value = receipt.summary[row.key];
                   const label = row.label;

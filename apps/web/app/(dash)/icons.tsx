@@ -5,12 +5,14 @@ type IconProps = { className?: string };
 const IconBase = ({ children, className }: { children: ReactNode; className?: string }) => (
   <svg
     viewBox="0 0 24 24"
+    width="16"
+    height="16"
     fill="none"
     stroke="currentColor"
     strokeWidth="1.6"
     strokeLinecap="round"
     strokeLinejoin="round"
-    className={className}
+    className={className ? `app-icon ${className}` : 'app-icon'}
     aria-hidden="true"
   >
     {children}

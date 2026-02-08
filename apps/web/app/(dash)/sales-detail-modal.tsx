@@ -516,8 +516,9 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
   const thermalStatusLabel =
     receiptPaymentStatus === 'Parcial' ? 'PARCIAL' : receiptPaymentStatus.toUpperCase();
 
-  const thermalWidthMm: 80 | 58 = 80;
+  const thermalWidthMm: 80 | 58 = receiptInstallments.length > 4 ? 58 : 80;
   const thermalColumns = thermalWidthMm === 58 ? 24 : 32;
+  const thermalFormat = thermalWidthMm === 58 ? 'thermal-58' : 'thermal-80';
   const thermalLine = repeatChar('=', thermalColumns);
   const thermalDash = repeatChar('-', thermalColumns);
   const thermalSubtotal = toNumber(detail?.subtotal ?? summary.total);
@@ -806,11 +807,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
       return;
     }
     const filename = `venda-${sale.id}-${receiptTab}.pdf`;
-    const format = receiptTab === 'digital'
-      ? 'a4'
-      : thermalWidthMm === 58
-        ? 'thermal-58'
-        : 'thermal-80';
+    const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
 
     try {
       await downloadPdf({ element: node, filename, format });

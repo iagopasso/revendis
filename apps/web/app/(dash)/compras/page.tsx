@@ -76,9 +76,9 @@ type SearchParams = {
 export default async function ComprasPage({
   searchParams
 }: {
-  searchParams?: SearchParams | Promise<SearchParams>;
+  searchParams?: Promise<SearchParams>;
 }) {
-  const resolvedParams = (await Promise.resolve(searchParams)) ?? {};
+  const resolvedParams = (await searchParams) ?? {};
   const query = getStringParam(resolvedParams.q).trim();
   const statusFilter = getStringParam(resolvedParams.status) || 'all';
   const brandFilter = getStringParam(resolvedParams.brand) || 'all';

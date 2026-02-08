@@ -15,31 +15,47 @@ router.get(
   asyncHandler(async (req, res) => {
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const result = await query(
-      `SELECT s.id,
-              s.status,
-              s.subtotal,
-              s.discount_total,
-              s.total,
-              s.created_at,
-              COALESCE(c.name, s.customer_name) AS customer_name,
+      `WITH base_sales AS (
+         SELECT s.id,
+                s.status,
+                s.subtotal,
+                s.discount_total,
+                s.total,
+                s.created_at,
+                s.customer_id,
+                s.customer_name
+         FROM sales s
+         WHERE s.store_id = $1
+         ORDER BY s.created_at DESC
+         LIMIT 100
+       ),
+       item_totals AS (
+         SELECT si.sale_id, COALESCE(SUM(si.quantity), 0) AS total_quantity
+         FROM sale_items si
+         INNER JOIN base_sales bs ON bs.id = si.sale_id
+         GROUP BY si.sale_id
+       ),
+       cost_totals AS (
+         SELECT iu.sale_id, COALESCE(SUM(iu.cost), 0) AS cost_total
+         FROM inventory_units iu
+         INNER JOIN base_sales bs ON bs.id = iu.sale_id
+         GROUP BY iu.sale_id
+       )
+       SELECT bs.id,
+              bs.status,
+              bs.subtotal,
+              bs.discount_total,
+              bs.total,
+              bs.created_at,
+              COALESCE(c.name, bs.customer_name) AS customer_name,
               COALESCE(items.total_quantity, 0) AS items_count,
               COALESCE(costs.cost_total, 0) AS cost_total,
-              (s.total - COALESCE(costs.cost_total, 0)) AS profit
-       FROM sales s
-       LEFT JOIN customers c ON c.id = s.customer_id
-       LEFT JOIN LATERAL (
-         SELECT COALESCE(SUM(si.quantity), 0) AS total_quantity
-         FROM sale_items si
-         WHERE si.sale_id = s.id
-       ) items ON true
-       LEFT JOIN LATERAL (
-         SELECT COALESCE(SUM(iu.cost), 0) AS cost_total
-         FROM inventory_units iu
-         WHERE iu.sale_id = s.id
-       ) costs ON true
-       WHERE s.store_id = $1
-       ORDER BY created_at DESC
-       LIMIT 100`,
+              (bs.total - COALESCE(costs.cost_total, 0)) AS profit
+       FROM base_sales bs
+       LEFT JOIN customers c ON c.id = bs.customer_id
+       LEFT JOIN item_totals items ON items.sale_id = bs.id
+       LEFT JOIN cost_totals costs ON costs.sale_id = bs.id
+       ORDER BY bs.created_at DESC`,
       [storeId]
     );
     res.json({ data: result.rows });

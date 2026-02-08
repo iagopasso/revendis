@@ -49,9 +49,9 @@ const isExpiring = (value?: string | null) => {
 export default async function CategoriasPage({
   searchParams
 }: {
-  searchParams?: SearchParams | Promise<SearchParams>;
+  searchParams?: Promise<SearchParams>;
 }) {
-  const resolvedParams = (await Promise.resolve(searchParams)) ?? {};
+  const resolvedParams = (await searchParams) ?? {};
   const [productsResponse, categoriesResponse] = await Promise.all([
     fetchList<Product>('/inventory/products'),
     fetchList<Category>('/inventory/categories')

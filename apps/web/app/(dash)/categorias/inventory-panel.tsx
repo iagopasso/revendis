@@ -62,6 +62,36 @@ type Customer = {
   name: string;
   phone?: string;
   email?: string | null;
+  birth_date?: string | null;
+  description?: string | null;
+  photo_url?: string | null;
+  cpf_cnpj?: string | null;
+  cep?: string | null;
+  street?: string | null;
+  number?: string | null;
+  complement?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  state?: string | null;
+  tags?: string[] | null;
+};
+
+type CustomerDraft = {
+  photoUrl: string;
+  name: string;
+  birthDate: string;
+  whatsapp: string;
+  description: string;
+  tagsInput: string;
+  tags: string[];
+  cpfCnpj: string;
+  cep: string;
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
 };
 
 type ProductDraft = {
@@ -157,6 +187,26 @@ const emptyDraft: ProductDraft = {
   available: true
 };
 
+const customerTagSuggestions = ['VIP', 'Frequente', 'Atacado', 'Recompra', 'Indicacao'];
+
+const emptyCustomerDraft: CustomerDraft = {
+  photoUrl: '',
+  name: '',
+  birthDate: '',
+  whatsapp: '',
+  description: '',
+  tagsInput: '',
+  tags: [],
+  cpfCnpj: '',
+  cep: '',
+  street: '',
+  number: '',
+  complement: '',
+  neighborhood: '',
+  city: '',
+  state: ''
+};
+
 const EXPIRING_DAYS = 7;
 const LOW_STOCK_THRESHOLD = 2;
 
@@ -197,6 +247,37 @@ const formatShortDate = (value?: string | null) => {
   return date
     .toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
     .toUpperCase();
+};
+
+const formatPhoneInput = (value: string) => {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+};
+
+const formatCpfCnpjInput = (value: string) => {
+  const digits = value.replace(/\D/g, '').slice(0, 14);
+  if (digits.length <= 11) {
+    return digits
+      .replace(/^(\d{3})(\d)/, '$1.$2')
+      .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+      .replace(/\.(\d{3})(\d)/, '.$1-$2');
+  }
+  return digits
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2');
+};
+
+const formatCepInput = (value: string) => {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
 };
 
 const toIsoDate = (value: Date) => value.toISOString().split('T')[0];
@@ -292,6 +373,7 @@ export default function InventoryPanel({
   const [unitMenuOpenId, setUnitMenuOpenId] = useState<string | null>(null);
   const [sellUnit, setSellUnit] = useState<InventoryUnit | null>(null);
   const [sellCustomerName, setSellCustomerName] = useState('');
+  const [sellCustomerQuery, setSellCustomerQuery] = useState('');
   const [sellCustomerId, setSellCustomerId] = useState('');
   const [sellPrice, setSellPrice] = useState('');
   const [sellDate, setSellDate] = useState(toIsoDate(new Date()));
@@ -304,6 +386,12 @@ export default function InventoryPanel({
   const [selling, setSelling] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
+  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
+  const [customerDraft, setCustomerDraft] = useState<CustomerDraft>(emptyCustomerDraft);
+  const [customerSaving, setCustomerSaving] = useState(false);
+  const [customerFormError, setCustomerFormError] = useState<string | null>(null);
+  const [customerAdditionalOpen, setCustomerAdditionalOpen] = useState(false);
+  const [customerTagsOpen, setCustomerTagsOpen] = useState(false);
   const [editUnit, setEditUnit] = useState<InventoryUnit | null>(null);
   const [editUnitCost, setEditUnitCost] = useState('');
   const [editUnitExpiry, setEditUnitExpiry] = useState('');
@@ -320,6 +408,21 @@ export default function InventoryPanel({
   const [localProducts, setLocalProducts] = useState<Product[]>(products);
 
   const view = viewParam === 'grid' ? 'grid' : 'list';
+  const normalizedCustomerQuery = sellCustomerQuery.trim().toLowerCase();
+  const customerSearchResults = normalizedCustomerQuery
+    ? customers.filter(
+        (customer) =>
+          customer.name.toLowerCase().includes(normalizedCustomerQuery) ||
+          (customer.phone || '').toLowerCase().includes(normalizedCustomerQuery)
+      )
+    : customers.slice(0, 8);
+  const customerTagOptions = Array.from(
+    new Set([
+      ...customerTagSuggestions,
+      ...customerDraft.tags,
+      ...(customerDraft.tagsInput.trim() ? [customerDraft.tagsInput.trim()] : [])
+    ])
+  );
 
   const updateView = (nextView: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -451,6 +554,125 @@ export default function InventoryPanel({
     }
   };
 
+  const updateCustomerPhoto = (nextUrl: string) => {
+    setCustomerDraft((prev) => {
+      if (prev.photoUrl && prev.photoUrl.startsWith('blob:') && prev.photoUrl !== nextUrl) {
+        URL.revokeObjectURL(prev.photoUrl);
+      }
+      return { ...prev, photoUrl: nextUrl };
+    });
+  };
+
+  const resetCustomerDraft = () => {
+    setCustomerDraft((prev) => {
+      if (prev.photoUrl && prev.photoUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(prev.photoUrl);
+      }
+      return emptyCustomerDraft;
+    });
+    setCustomerFormError(null);
+    setCustomerAdditionalOpen(false);
+    setCustomerTagsOpen(false);
+  };
+
+  const closeCreateCustomerModal = () => {
+    setCreateCustomerOpen(false);
+    resetCustomerDraft();
+  };
+
+  const openCreateCustomerModal = () => {
+    setCreateCustomerOpen(true);
+    setCustomerFormError(null);
+    setCustomerAdditionalOpen(false);
+    setCustomerTagsOpen(false);
+  };
+
+  const selectSellCustomer = (customer: Customer) => {
+    setSellCustomerName(customer.name);
+    setSellCustomerQuery(customer.name);
+    setSellCustomerId(customer.id);
+  };
+
+  const addCustomerTag = (rawTag: string) => {
+    const nextTag = rawTag.trim();
+    if (!nextTag) return;
+    setCustomerDraft((prev) => {
+      if (prev.tags.some((tag) => tag.toLowerCase() === nextTag.toLowerCase())) {
+        return { ...prev, tagsInput: '' };
+      }
+      return { ...prev, tagsInput: '', tags: [...prev.tags, nextTag] };
+    });
+  };
+
+  const removeCustomerTag = (rawTag: string) => {
+    const normalized = rawTag.toLowerCase();
+    setCustomerDraft((prev) => ({
+      ...prev,
+      tags: prev.tags.filter((tag) => tag.toLowerCase() !== normalized)
+    }));
+  };
+
+  const handleCreateCustomer = async () => {
+    const name = customerDraft.name.trim();
+    const phone = customerDraft.whatsapp.trim();
+    const tags = Array.from(
+      new Set(
+        [...customerDraft.tags, customerDraft.tagsInput.trim()]
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+      )
+    );
+    const phoneDigits = phone.replace(/\D/g, '');
+    if (!name) {
+      setCustomerFormError('Informe o nome do cliente');
+      return;
+    }
+    if (phoneDigits.length < 10) {
+      setCustomerFormError('Informe um WhatsApp valido');
+      return;
+    }
+
+    setCustomerSaving(true);
+    setCustomerFormError(null);
+    try {
+      const res = await fetch(`${API_BASE}/customers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          phone,
+          birthDate: customerDraft.birthDate || undefined,
+          description: customerDraft.description.trim() || undefined,
+          photoUrl: customerDraft.photoUrl || undefined,
+          cpfCnpj: customerDraft.cpfCnpj.trim() || undefined,
+          cep: customerDraft.cep.trim() || undefined,
+          street: customerDraft.street.trim() || undefined,
+          number: customerDraft.number.trim() || undefined,
+          complement: customerDraft.complement.trim() || undefined,
+          neighborhood: customerDraft.neighborhood.trim() || undefined,
+          city: customerDraft.city.trim() || undefined,
+          state: customerDraft.state.trim().toUpperCase() || undefined,
+          tags: tags.length ? tags : undefined
+        })
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        setCustomerFormError(payload?.message || 'Erro ao cadastrar cliente');
+        return;
+      }
+      const payload = (await res.json()) as { data: Customer };
+      const createdCustomer = payload.data;
+      setCustomers((prev) => [createdCustomer, ...prev.filter((item) => item.id !== createdCustomer.id)]);
+      selectSellCustomer(createdCustomer);
+      closeCreateCustomerModal();
+      setToast('Cliente cadastrado');
+    } catch {
+      setCustomerFormError('Erro ao cadastrar cliente');
+    } finally {
+      setCustomerSaving(false);
+    }
+  };
+
   const closeCreateModal = () => {
     setOpenCreate(false);
     setCreateStep('search');
@@ -513,6 +735,7 @@ export default function InventoryPanel({
 
   const resetSellForm = () => {
     setSellCustomerName('');
+    setSellCustomerQuery('');
     setSellCustomerId('');
     setSellPrice('');
     setSellDate(toIsoDate(new Date()));
@@ -522,12 +745,15 @@ export default function InventoryPanel({
     setSellRegisterMethod('');
     setSellInstallments([]);
     setSellRegisterError(null);
+    setCreateCustomerOpen(false);
+    resetCustomerDraft();
   };
 
   const openSellUnit = (unit: InventoryUnit) => {
     if (!selectedProduct) return;
     setSellUnit(unit);
     setSellCustomerName('');
+    setSellCustomerQuery('');
     setSellCustomerId('');
     setSellPrice(
       selectedProduct.price !== null && selectedProduct.price !== undefined && `${selectedProduct.price}` !== ''
@@ -621,6 +847,11 @@ export default function InventoryPanel({
       setToast('Informe o preco de venda');
       return;
     }
+    const customerNameValue = sellCustomerName.trim();
+    if (!customerNameValue) {
+      setToast('Selecione ou cadastre um cliente');
+      return;
+    }
     const registerTotal = parseMoney(sellRegisterAmount);
     if (!sellPaid && sellInstallments.length > 0) {
       if (registerTotal <= 0) {
@@ -644,7 +875,7 @@ export default function InventoryPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: sellCustomerId || undefined,
-          customerName: sellCustomerId ? undefined : sellCustomerName.trim() || undefined,
+          customerName: sellCustomerId ? undefined : customerNameValue,
           createdAt: sellDate ? `${sellDate}T00:00:00` : undefined,
           items: [
             {
@@ -697,7 +928,7 @@ export default function InventoryPanel({
       if (!sellPaid && saleId) {
         setSaleModal({
           id: saleId,
-          customer: sellCustomerName || payload.data?.customer_name || 'Cliente nao informado',
+          customer: customerNameValue || payload.data?.customer_name || 'Cliente nao informado',
           date: saleDateValue,
           status: 'pending',
           total: priceValue,
@@ -1913,7 +2144,7 @@ export default function InventoryPanel({
             resetSellForm();
           }}
         >
-          <div className="modal modal-units" onClick={(event) => event.stopPropagation()}>
+          <div className="modal modal-sale-entry" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <h3>Registrar venda</h3>
               <button
@@ -1941,49 +2172,88 @@ export default function InventoryPanel({
                 <span>{getProductMetaLine(selectedProduct)}</span>
               </div>
             </div>
-            <label className="modal-field">
-              <span>Produto</span>
-              <input value={getProductHeadline(selectedProduct)} readOnly />
-            </label>
-            <label className="modal-field">
-              <span>Cliente</span>
-              <div className="select">
+
+            <section className="sale-customer-picker">
+              <div className="sale-customer-header">
+                <h4>Selecione o cliente</h4>
+                <button className="customer-add-trigger" type="button" onClick={openCreateCustomerModal}>
+                  + Cadastrar cliente
+                </button>
+              </div>
+              <label className="customer-search-field">
                 <input
-                  list="customer-options"
-                  placeholder={customersLoading ? 'Carregando clientes...' : 'Selecione o cliente'}
-                  value={sellCustomerName}
+                  placeholder={customersLoading ? 'Carregando clientes...' : 'Buscar cliente'}
+                  value={sellCustomerQuery}
                   onChange={(event) => {
                     const value = event.target.value;
+                    setSellCustomerQuery(value);
                     setSellCustomerName(value);
-                    const match = customers.find((customer) => customer.name === value);
+                    const match = customers.find(
+                      (customer) => customer.name.trim().toLowerCase() === value.trim().toLowerCase()
+                    );
                     setSellCustomerId(match?.id || '');
                   }}
                 />
-                <span>▾</span>
+                <span>⌕</span>
+              </label>
+
+              {sellCustomerName ? (
+                <div className="sale-selected-customer">
+                  <strong>{sellCustomerName}</strong>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSellCustomerName('');
+                      setSellCustomerId('');
+                      setSellCustomerQuery('');
+                    }}
+                  >
+                    Limpar
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="customer-search-results">
+                {customersLoading ? (
+                  <span className="meta">Carregando clientes...</span>
+                ) : customerSearchResults.length === 0 ? (
+                  <span className="meta">Nenhum cliente encontrado.</span>
+                ) : (
+                  customerSearchResults.map((customer) => (
+                    <button
+                      key={customer.id}
+                      type="button"
+                      className={`customer-result-item${sellCustomerId === customer.id ? ' active' : ''}`}
+                      onClick={() => selectSellCustomer(customer)}
+                    >
+                      <strong>{customer.name}</strong>
+                      <span>{customer.phone || 'Sem telefone'}</span>
+                    </button>
+                  ))
+                )}
               </div>
-              <datalist id="customer-options">
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.name} />
-                ))}
-              </datalist>
-            </label>
-            <label className="modal-field">
-              <span>Preco de venda</span>
-              <input
-                value={sellPrice}
-                inputMode="decimal"
-                placeholder="R$ 0,00"
-                onChange={(event) => setSellPrice(formatCurrencyInput(event.target.value))}
-              />
-            </label>
-            <label className="modal-field">
-              <span>Data da venda</span>
-              <input
-                type="date"
-                value={sellDate}
-                onChange={(event) => setSellDate(event.target.value)}
-              />
-            </label>
+            </section>
+
+            <div className="form-row">
+              <label className="modal-field">
+                <span>Preco de venda</span>
+                <input
+                  value={sellPrice}
+                  inputMode="decimal"
+                  placeholder="R$ 0,00"
+                  onChange={(event) => setSellPrice(formatCurrencyInput(event.target.value))}
+                />
+              </label>
+              <label className="modal-field">
+                <span>Data da venda</span>
+                <input
+                  type="date"
+                  value={sellDate}
+                  onChange={(event) => setSellDate(event.target.value)}
+                />
+              </label>
+            </div>
+
             <div className="toggle-row">
               <label className="switch">
                 <input
@@ -2008,6 +2278,295 @@ export default function InventoryPanel({
               </button>
               <button className="button primary" type="button" onClick={handleConfirmSell} disabled={selling}>
                 {selling ? 'Salvando...' : 'Confirmar venda'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {createCustomerOpen ? (
+        <div className="modal-backdrop" onClick={closeCreateCustomerModal}>
+          <div className="modal modal-customer-create" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header customer-create-header">
+              <h3>Novo cliente</h3>
+              <button className="modal-close customer-create-close" type="button" onClick={closeCreateCustomerModal}>
+                ✕
+              </button>
+            </div>
+
+            <div className="customer-create-grid">
+              <div className="customer-photo-column">
+                <span className="customer-field-title">Foto do cliente</span>
+                <div className="customer-photo-card">
+                  <div className="customer-photo-preview">
+                    {customerDraft.photoUrl ? (
+                      <img src={customerDraft.photoUrl} alt={customerDraft.name || 'Cliente'} />
+                    ) : (
+                      <span>👤</span>
+                    )}
+                  </div>
+                  <label className="customer-upload-button">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        const nextUrl = URL.createObjectURL(file);
+                        updateCustomerPhoto(nextUrl);
+                        event.currentTarget.value = '';
+                      }}
+                    />
+                    <span>⤴ Carregar</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="customer-form-column">
+                <label className="modal-field">
+                  <span>Nome</span>
+                  <input
+                    value={customerDraft.name}
+                    onChange={(event) =>
+                      setCustomerDraft((prev) => ({ ...prev, name: event.target.value }))
+                    }
+                  />
+                </label>
+
+                <div className="form-row">
+                  <label className="modal-field">
+                    <span>Nascimento</span>
+                    <input
+                      type="date"
+                      value={customerDraft.birthDate}
+                      onChange={(event) =>
+                        setCustomerDraft((prev) => ({ ...prev, birthDate: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="modal-field">
+                    <span>WhatsApp</span>
+                    <input
+                      value={customerDraft.whatsapp}
+                      placeholder="(00) 00000-0000"
+                      onChange={(event) =>
+                        setCustomerDraft((prev) => ({
+                          ...prev,
+                          whatsapp: formatPhoneInput(event.target.value)
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+
+                <label className="modal-field">
+                  <span>Descricao</span>
+                  <textarea
+                    rows={4}
+                    value={customerDraft.description}
+                    onChange={(event) =>
+                      setCustomerDraft((prev) => ({ ...prev, description: event.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="modal-field">
+                  <span>Tags</span>
+                  <div className="customer-tags-row">
+                    <div className={`customer-tags-select${customerTagsOpen ? ' open' : ''}`}>
+                      <input
+                        placeholder="Selecione ou crie tags"
+                        value={customerDraft.tagsInput}
+                        onChange={(event) =>
+                          setCustomerDraft((prev) => ({ ...prev, tagsInput: event.target.value }))
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter' && event.key !== ',') return;
+                          event.preventDefault();
+                          addCustomerTag(customerDraft.tagsInput);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="customer-tags-toggle"
+                        onClick={() => setCustomerTagsOpen((prev) => !prev)}
+                      >
+                        ⌄
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="customer-tags-settings"
+                      onClick={() => setCustomerTagsOpen((prev) => !prev)}
+                    >
+                      ⚙
+                    </button>
+                  </div>
+
+                  {customerTagsOpen ? (
+                    <div className="customer-tags-menu">
+                      {customerTagOptions.map((tag) => {
+                        const isSelected = customerDraft.tags.some(
+                          (item) => item.toLowerCase() === tag.toLowerCase()
+                        );
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            className={`customer-tag-option${isSelected ? ' active' : ''}`}
+                            onClick={() => (isSelected ? removeCustomerTag(tag) : addCustomerTag(tag))}
+                          >
+                            {isSelected ? '✓ ' : ''}
+                            {tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
+                  {customerDraft.tags.length > 0 ? (
+                    <div className="customer-tags-list">
+                      {customerDraft.tags.map((tag) => (
+                        <span key={tag} className="customer-tag-pill">
+                          {tag}
+                          <button type="button" onClick={() => removeCustomerTag(tag)}>
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </label>
+              </div>
+            </div>
+
+            <section className={`customer-extra${customerAdditionalOpen ? ' open' : ''}`}>
+              <button
+                type="button"
+                className="customer-extra-toggle"
+                onClick={() => setCustomerAdditionalOpen((prev) => !prev)}
+              >
+                <span>Informacoes adicionais</span>
+                <strong>{customerAdditionalOpen ? '⌃' : '⌄'}</strong>
+              </button>
+              <div className={`customer-extra-content${customerAdditionalOpen ? ' open' : ''}`}>
+                <label className="modal-field">
+                  <span>CPF/CNPJ</span>
+                  <input
+                    placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                    value={customerDraft.cpfCnpj}
+                    onChange={(event) =>
+                      setCustomerDraft((prev) => ({
+                        ...prev,
+                        cpfCnpj: formatCpfCnpjInput(event.target.value)
+                      }))
+                    }
+                  />
+                </label>
+
+                <div className="customer-extra-title">ENDERECO</div>
+
+                <label className="modal-field">
+                  <span>CEP</span>
+                  <input
+                    placeholder="00000-000"
+                    value={customerDraft.cep}
+                    onChange={(event) =>
+                      setCustomerDraft((prev) => ({
+                        ...prev,
+                        cep: formatCepInput(event.target.value)
+                      }))
+                    }
+                  />
+                </label>
+
+                <div className="form-row">
+                  <label className="modal-field">
+                    <span>Rua</span>
+                    <input
+                      placeholder="Nome da rua"
+                      value={customerDraft.street}
+                      onChange={(event) =>
+                        setCustomerDraft((prev) => ({ ...prev, street: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="modal-field">
+                    <span>Numero</span>
+                    <input
+                      placeholder="123"
+                      value={customerDraft.number}
+                      onChange={(event) =>
+                        setCustomerDraft((prev) => ({ ...prev, number: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+
+                <label className="modal-field">
+                  <span>Complemento</span>
+                  <input
+                    placeholder="Apto, bloco, etc."
+                    value={customerDraft.complement}
+                    onChange={(event) =>
+                      setCustomerDraft((prev) => ({ ...prev, complement: event.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="modal-field">
+                  <span>Bairro</span>
+                  <input
+                    placeholder="Nome do bairro"
+                    value={customerDraft.neighborhood}
+                    onChange={(event) =>
+                      setCustomerDraft((prev) => ({ ...prev, neighborhood: event.target.value }))
+                    }
+                  />
+                </label>
+
+                <div className="form-row">
+                  <label className="modal-field">
+                    <span>Cidade</span>
+                    <input
+                      placeholder="Nome da cidade"
+                      value={customerDraft.city}
+                      onChange={(event) =>
+                        setCustomerDraft((prev) => ({ ...prev, city: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="modal-field">
+                    <span>Estado</span>
+                    <input
+                      placeholder="UF"
+                      value={customerDraft.state}
+                      maxLength={2}
+                      onChange={(event) =>
+                        setCustomerDraft((prev) => ({
+                          ...prev,
+                          state: event.target.value.toUpperCase()
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            {customerFormError ? <div className="field-error customer-form-error">{customerFormError}</div> : null}
+
+            <div className="modal-footer customer-create-footer">
+              <button className="button ghost" type="button" onClick={closeCreateCustomerModal}>
+                Cancelar
+              </button>
+              <button
+                className="button primary customer-create-submit"
+                type="button"
+                onClick={handleCreateCustomer}
+                disabled={customerSaving}
+              >
+                {customerSaving ? 'Salvando...' : 'Adicionar'}
               </button>
             </div>
           </div>

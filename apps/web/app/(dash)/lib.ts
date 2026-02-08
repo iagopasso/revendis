@@ -1,14 +1,19 @@
 export type ListResponse<T> = { data: T[] };
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const API_TIMEOUT_MS = Math.max(2000, Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 10000));
 
 export const fetchList = async <T,>(path: string): Promise<ListResponse<T> | null> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   try {
-    const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store' });
+    const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store', signal: controller.signal });
     if (!res.ok) return null;
     return (await res.json()) as ListResponse<T>;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 };
 
