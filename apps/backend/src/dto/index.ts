@@ -119,6 +119,32 @@ export type ReceivableUpdateInput = {
   method?: string;
 };
 
+export type FinanceExpenseInput = {
+  description: string;
+  amount: number;
+  dueDate: string;
+  method?: string;
+  customerId?: string;
+  paid?: boolean;
+};
+
+export type FinanceExpensePayInput = {
+  paidAt?: string;
+};
+
+export type PurchaseInput = {
+  supplier: string;
+  total: number;
+  items: number;
+  brand?: string;
+  status?: 'pending' | 'received' | 'cancelled';
+  purchaseDate?: string;
+};
+
+export type PurchaseStatusUpdateInput = {
+  status: 'pending' | 'received' | 'cancelled';
+};
+
 export type CustomerInput = {
   name: string;
   phone: string;

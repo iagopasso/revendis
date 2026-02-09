@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 const reportSections = [
   {
     title: 'Vendas',
@@ -5,12 +7,14 @@ const reportSections = [
       {
         title: 'Vendas',
         description: 'Vendas realizadas em determinado periodo',
-        icon: '🏷️'
+        icon: '🏷️',
+        href: '/relatorios/vendas'
       },
       {
         title: 'Produtos mais vendidos',
         description: 'Produtos mais vendidos em determinado periodo',
-        icon: '📊'
+        icon: '📊',
+        href: '/relatorios/produtos-mais-vendidos'
       }
     ]
   },
@@ -20,12 +24,14 @@ const reportSections = [
       {
         title: 'Estoque atual',
         description: 'Quantidades disponiveis em estoque para cada produto',
-        icon: '📦'
+        icon: '📦',
+        href: '/relatorios/estoque-atual'
       },
       {
         title: 'Proximos de vencer',
         description: 'Produtos proximos de vencer em determinado periodo',
-        icon: '📅'
+        icon: '📅',
+        href: '/relatorios/proximos-de-vencer'
       }
     ]
   },
@@ -35,7 +41,8 @@ const reportSections = [
       {
         title: 'Maiores compradores',
         description: 'Clientes que mais compraram em determinado periodo',
-        icon: '👥'
+        icon: '👥',
+        href: '/relatorios/maiores-compradores'
       }
     ]
   }
@@ -58,13 +65,13 @@ export default function RelatoriosPage() {
             <h2 className="panel-title">{section.title}</h2>
             <div className="report-cards">
               {section.items.map((item) => (
-                <div key={item.title} className="report-card">
+                <Link key={item.title} href={item.href} className="report-card report-link">
                   <div className="icon">{item.icon}</div>
                   <div>
                     <strong>{item.title}</strong>
                     <p>{item.description}</p>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>

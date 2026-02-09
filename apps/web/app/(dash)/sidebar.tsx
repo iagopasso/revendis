@@ -18,7 +18,7 @@ import {
 
 const navItems = [
   { href: '/', label: 'Painel', icon: IconDashboard },
-  { href: '/categorias', label: 'Categoria', icon: IconBox },
+  { href: '/estoque', label: 'Estoque', icon: IconBox },
   { href: '/vendas', label: 'Vendas', icon: IconTag },
   { href: '/compras', label: 'Compras', icon: IconCart },
   { href: '/clientes', label: 'Clientes', icon: IconUsers },

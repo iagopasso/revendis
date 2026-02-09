@@ -231,6 +231,15 @@ const getStockTone = (quantity: number, active: boolean) => {
   return 'success';
 };
 
+const uniqueBrands = (values: Array<string | null | undefined>) =>
+  Array.from(
+    new Set(
+      values
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value))
+    )
+  ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
 const formatDate = (value?: string | null) => {
   if (!value) return '-';
   const normalized = value.includes('T') ? value : `${value}T00:00:00`;
@@ -408,6 +417,9 @@ export default function InventoryPanel({
   const [localProducts, setLocalProducts] = useState<Product[]>(products);
 
   const view = viewParam === 'grid' ? 'grid' : 'list';
+  const filterBrandOptions = uniqueBrands(brands);
+  const productBrandOptions = uniqueBrands([...filterBrandOptions, formDraft.brand]);
+  const fallbackBrand = productBrandOptions[0] || '';
   const normalizedCustomerQuery = sellCustomerQuery.trim().toLowerCase();
   const customerSearchResults = normalizedCustomerQuery
     ? customers.filter(
@@ -1399,7 +1411,7 @@ export default function InventoryPanel({
                     >
                       Todas marcas
                     </Link>
-                    {brands.map((brand) => (
+                    {filterBrandOptions.map((brand) => (
                       <Link
                         key={brand}
                         href={buildBrandHref(brand)}
@@ -1637,7 +1649,7 @@ export default function InventoryPanel({
                       ? products.map((product) => ({
                           id: product.id,
                           name: product.name,
-                          brand: product.brand || 'Avon',
+                          brand: product.brand || fallbackBrand || 'Sem marca',
                           brandCode: product.sku
                         }))
                       : suggestions
@@ -1725,9 +1737,11 @@ export default function InventoryPanel({
                           }
                         >
                           <option value="">Selecione a marca</option>
-                          <option value="Avon">Avon</option>
-                          <option value="Natura">Natura</option>
-                          <option value="Tupper">Tupper</option>
+                          {productBrandOptions.map((brand) => (
+                            <option key={brand} value={brand}>
+                              {brand}
+                            </option>
+                          ))}
                         </select>
                       </label>
                       <label className="modal-field">

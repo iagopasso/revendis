@@ -65,12 +65,14 @@ type SearchParams = {
   to?: string | string[];
 };
 
-const getPaymentStatus = (summary?: ReceivableSummary): PaymentStatus => {
+const getPaymentStatus = (saleTotal: number | string, summary?: ReceivableSummary): PaymentStatus => {
   if (!summary) return 'paid';
+  const total = Math.max(0, toNumber(saleTotal));
+  const outstanding = Math.max(0, summary.pending + summary.overdue);
   if (summary.hasOverdue) return 'overdue';
-  if (summary.hasPending && summary.hasPaid) return 'partial';
-  if (summary.hasPending) return 'pending';
-  return 'paid';
+  if (outstanding <= 0.01) return 'paid';
+  if (outstanding >= Math.max(0, total - 0.01)) return 'pending';
+  return 'partial';
 };
 
 export default async function VendasPage({
@@ -148,7 +150,7 @@ export default async function VendasPage({
   const salesInRange = sales.filter((sale) => isInDateRange(sale.created_at, dateRange));
 
   const filteredSales = salesInRange.filter((sale) => {
-    const paymentStatus = getPaymentStatus(receivableSummary.get(sale.id));
+    const paymentStatus = getPaymentStatus(sale.total, receivableSummary.get(sale.id));
     const matchesPayment =
       !paymentFilter
         ? true
@@ -168,7 +170,7 @@ export default async function VendasPage({
 
   const enrichedSales = filteredSales.map((sale) => {
     const summary = receivableSummary.get(sale.id);
-    const paymentStatus = getPaymentStatus(summary);
+    const paymentStatus = getPaymentStatus(sale.total, summary);
     const profitValue = toNumber(sale.profit ?? toNumber(sale.total) - toNumber(sale.cost_total));
     return {
       ...sale,

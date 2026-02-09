@@ -23,3 +23,20 @@ export const receivableUpdateSchema = z
     method: z.string().optional()
   })
   .strict();
+
+export const financeExpenseInputSchema = z
+  .object({
+    description: z.string().min(1),
+    amount: z.number().positive(),
+    dueDate: z.string().min(1),
+    method: z.string().optional(),
+    customerId: z.string().optional(),
+    paid: z.boolean().optional()
+  })
+  .strict();
+
+export const financeExpensePaySchema = z
+  .object({
+    paidAt: z.string().optional()
+  })
+  .strict();

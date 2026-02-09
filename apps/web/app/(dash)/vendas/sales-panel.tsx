@@ -229,6 +229,25 @@ const parseMoney = (value: string) => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+const normalizePaymentMethod = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const isCreditCardMethod = (value: string) =>
+  normalizePaymentMethod(value).includes('cartao de credito');
+
+const CUSTOMER_RETURN_BACK = '__back__';
+
+const parseReturnPath = (value?: string | null) => {
+  const next = (value || '').trim();
+  if (!next) return null;
+  if (!next.startsWith('/')) return null;
+  return next;
+};
+
 const addMonths = (dateValue: string, months: number) => {
   const base = new Date(`${dateValue}T00:00:00`);
   if (Number.isNaN(base.getTime())) return dateValue;
@@ -347,6 +366,7 @@ export default function SalesPanel({
   const [customerAdditionalOpen, setCustomerAdditionalOpen] = useState(false);
   const [customerTagsOpen, setCustomerTagsOpen] = useState(false);
   const [autoOpenedFromQuery, setAutoOpenedFromQuery] = useState(false);
+  const [customerReturnTarget, setCustomerReturnTarget] = useState<string | null>(null);
 
   const saleProducts = useMemo(
     () => localProducts.filter((product) => product.active !== false),
@@ -405,13 +425,16 @@ export default function SalesPanel({
   const saleTotalValue = saleItemsDetailed.reduce((sum, item) => sum + item.subtotal, 0);
   const saleRegisterTotal = parseMoney(saleRegisterAmount);
   const saleDownPaymentTotal = parseMoney(saleDownPayment);
-  const salePendingTotal = Math.max(0, saleRegisterTotal - saleDownPaymentTotal);
+  const saleIsCreditCardPayment = isCreditCardMethod(saleRegisterMethod);
+  const saleEffectiveDownPaymentTotal = saleIsCreditCardPayment ? saleRegisterTotal : saleDownPaymentTotal;
+  const salePendingTotal = Math.max(0, saleRegisterTotal - saleEffectiveDownPaymentTotal);
 
   const clearCreateParams = () => {
     const params = new URLSearchParams(searchParams.toString());
-    if (!params.has('newSale') && !params.has('newCustomer')) return;
+    if (!params.has('newSale') && !params.has('newCustomer') && !params.has('returnTo')) return;
     params.delete('newSale');
     params.delete('newCustomer');
+    params.delete('returnTo');
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname);
   };
@@ -430,10 +453,12 @@ export default function SalesPanel({
 
   const closeCreateCustomerModal = () => {
     setCreateCustomerOpen(false);
+    setCustomerReturnTarget(null);
     resetCustomerDraft();
   };
 
   const openCreateCustomerModal = () => {
+    setCustomerReturnTarget(null);
     setCreateCustomerOpen(true);
     setCustomerFormError(null);
     setCustomerAdditionalOpen(false);
@@ -574,6 +599,9 @@ export default function SalesPanel({
     const shouldOpenCustomer = searchParams.get('newCustomer') === '1';
     if (!shouldOpenSale && !shouldOpenCustomer) return;
     setAutoOpenedFromQuery(true);
+    if (shouldOpenCustomer) {
+      setCustomerReturnTarget(parseReturnPath(searchParams.get('returnTo')) || CUSTOMER_RETURN_BACK);
+    }
     resetCreateSaleForm();
     if (shouldOpenSale) {
       setCreateSaleOpen(true);
@@ -616,6 +644,28 @@ export default function SalesPanel({
       setSaleDownPayment(formatCurrency(saleRegisterTotal));
     }
   }, [createSaleOpen, salePaid, saleRegisterTotal, saleDownPaymentTotal]);
+
+  useEffect(() => {
+    if (!createSaleOpen || salePaid || !saleIsCreditCardPayment) return;
+    if (saleRegisterTotal <= 0) {
+      setSaleDownPayment('');
+      setSaleInstallments([]);
+      return;
+    }
+    if (Math.abs(saleDownPaymentTotal - saleRegisterTotal) > 0.01) {
+      setSaleDownPayment(formatCurrency(saleRegisterTotal));
+    }
+    if (saleInstallments.length > 0) {
+      setSaleInstallments([]);
+    }
+  }, [
+    createSaleOpen,
+    salePaid,
+    saleIsCreditCardPayment,
+    saleRegisterTotal,
+    saleDownPaymentTotal,
+    saleInstallments.length
+  ]);
 
   const updateSaleInstallment = (id: string, field: 'dueDate' | 'amount', value: string) => {
     if (field === 'amount') {
@@ -729,6 +779,18 @@ export default function SalesPanel({
         return;
       }
       setLocalCustomers((prev) => [createdCustomer, ...prev.filter((item) => item.id !== createdCustomer.id)]);
+      if (customerReturnTarget) {
+        const target = customerReturnTarget;
+        closeCreateCustomerModal();
+        setToast('Cliente cadastrado');
+        setCustomerReturnTarget(null);
+        if (target === CUSTOMER_RETURN_BACK) {
+          router.back();
+        } else {
+          router.push(target);
+        }
+        return;
+      }
       selectSaleCustomer(createdCustomer);
       closeCreateCustomerModal();
       setToast('Cliente cadastrado');
@@ -798,10 +860,10 @@ export default function SalesPanel({
 
     const totalAmount = normalizedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
     const saleDateValue = saleDate || toIsoDate(new Date());
-    const downPaymentAmount = Math.max(0, saleDownPaymentTotal);
+    const downPaymentAmount = Math.max(0, saleIsCreditCardPayment ? saleRegisterTotal : saleDownPaymentTotal);
     const remainingAmount = Math.max(0, saleRegisterTotal - downPaymentAmount);
     const normalizedInstallments =
-      remainingAmount > 0
+      !saleIsCreditCardPayment && remainingAmount > 0
         ? saleInstallments.length > 0
           ? saleInstallments
           : buildInstallments(1, remainingAmount, saleDateValue)
@@ -818,12 +880,12 @@ export default function SalesPanel({
         return;
       }
 
-      if (downPaymentAmount > saleRegisterTotal) {
+      if (!saleIsCreditCardPayment && downPaymentAmount > saleRegisterTotal) {
         setCreateSaleError('A entrada nao pode ser maior que o valor do pagamento');
         return;
       }
 
-      if (remainingAmount > 0) {
+      if (!saleIsCreditCardPayment && remainingAmount > 0) {
         if (normalizedInstallments.some((installment) => !installment.dueDate)) {
           setCreateSaleError('Informe o vencimento de todas as parcelas');
           return;
@@ -1292,7 +1354,7 @@ export default function SalesPanel({
             {!salePaid ? (
               <>
                 <label className="modal-field">
-                  <span>Valor do pagamento</span>
+                  <span>{saleIsCreditCardPayment ? 'Valor pago total' : 'Valor do pagamento'}</span>
                   <input
                     value={saleRegisterAmount}
                     inputMode="decimal"
@@ -1302,21 +1364,26 @@ export default function SalesPanel({
                       if (createSaleError) setCreateSaleError(null);
                     }}
                   />
+                  {saleIsCreditCardPayment ? (
+                    <small className="meta">Pagamento no credito registra o valor total da venda.</small>
+                  ) : null}
                 </label>
 
-                <label className="modal-field">
-                  <span>Entrada inicial</span>
-                  <input
-                    value={saleDownPayment}
-                    inputMode="decimal"
-                    placeholder="R$ 0,00"
-                    onChange={(event) => {
-                      setSaleDownPayment(formatCurrencyInput(event.target.value));
-                      if (createSaleError) setCreateSaleError(null);
-                    }}
-                  />
-                  <small className="meta">Restante para parcelar: {formatCurrency(salePendingTotal)}</small>
-                </label>
+                {!saleIsCreditCardPayment ? (
+                  <label className="modal-field">
+                    <span>Entrada inicial</span>
+                    <input
+                      value={saleDownPayment}
+                      inputMode="decimal"
+                      placeholder="R$ 0,00"
+                      onChange={(event) => {
+                        setSaleDownPayment(formatCurrencyInput(event.target.value));
+                        if (createSaleError) setCreateSaleError(null);
+                      }}
+                    />
+                    <small className="meta">Restante para parcelar: {formatCurrency(salePendingTotal)}</small>
+                  </label>
+                ) : null}
 
                 <label className="modal-field">
                   <span>Forma do pagamento</span>
@@ -1344,59 +1411,61 @@ export default function SalesPanel({
                   </div>
                 </label>
 
-                <div className="installments">
-                  <div className="installments-header">
-                    <strong>Parcelas</strong>
-                    <div className="installments-controls">
-                      <button className="button icon small" type="button" onClick={handleDecreaseSaleInstallments}>
-                        −
-                      </button>
-                      <span>{saleInstallments.length || 0}</span>
-                      <button className="button icon small" type="button" onClick={handleIncreaseSaleInstallments}>
-                        +
-                      </button>
+                {!saleIsCreditCardPayment ? (
+                  <div className="installments">
+                    <div className="installments-header">
+                      <strong>Parcelas</strong>
+                      <div className="installments-controls">
+                        <button className="button icon small" type="button" onClick={handleDecreaseSaleInstallments}>
+                          −
+                        </button>
+                        <span>{saleInstallments.length || 0}</span>
+                        <button className="button icon small" type="button" onClick={handleIncreaseSaleInstallments}>
+                          +
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  {salePendingTotal > 0 ? (
-                    <div className="installments-list">
-                      {saleInstallments.map((installment, index) => (
-                        <div key={installment.id} className="installment-row">
-                          <div className="installment-index">{index + 1}</div>
-                          <div className="installment-fields">
-                            <label>
-                              <span>Vencimento</span>
-                              <input
-                                type="date"
-                                value={installment.dueDate}
-                                onChange={(event) =>
-                                  updateSaleInstallment(installment.id, 'dueDate', event.target.value)
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Valor</span>
-                              <input
-                                value={installment.amount}
-                                inputMode="decimal"
-                                placeholder="R$ 0,00"
-                                onChange={(event) =>
-                                  updateSaleInstallment(
-                                    installment.id,
-                                    'amount',
-                                    formatCurrencyInput(event.target.value)
-                                  )
-                                }
-                              />
-                            </label>
+                    {salePendingTotal > 0 ? (
+                      <div className="installments-list">
+                        {saleInstallments.map((installment, index) => (
+                          <div key={installment.id} className="installment-row">
+                            <div className="installment-index">{index + 1}</div>
+                            <div className="installment-fields">
+                              <label>
+                                <span>Vencimento</span>
+                                <input
+                                  type="date"
+                                  value={installment.dueDate}
+                                  onChange={(event) =>
+                                    updateSaleInstallment(installment.id, 'dueDate', event.target.value)
+                                  }
+                                />
+                              </label>
+                              <label>
+                                <span>Valor</span>
+                                <input
+                                  value={installment.amount}
+                                  inputMode="decimal"
+                                  placeholder="R$ 0,00"
+                                  onChange={(event) =>
+                                    updateSaleInstallment(
+                                      installment.id,
+                                      'amount',
+                                      formatCurrencyInput(event.target.value)
+                                    )
+                                  }
+                                />
+                              </label>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="installments-empty">Sem parcelas pendentes.</div>
-                  )}
-                </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="installments-empty">Sem parcelas pendentes.</div>
+                    )}
+                  </div>
+                ) : null}
               </>
             ) : null}
 

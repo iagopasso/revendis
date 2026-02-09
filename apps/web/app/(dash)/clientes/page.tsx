@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { FilterSelect } from '../filters';
+import { IconGrid, IconList } from '../icons';
 import { fetchList, getStringParam } from '../lib';
 import CustomersListEditor from './customers-list-editor';
 
@@ -22,7 +23,12 @@ type Customer = {
   neighborhood?: string | null;
 };
 
-type SearchParams = { q?: string | string[]; city?: string | string[]; tag?: string | string[] };
+type SearchParams = {
+  q?: string | string[];
+  city?: string | string[];
+  tag?: string | string[];
+  view?: string | string[];
+};
 
 const normalizeText = (value?: string | null) => (value || '').trim().toLowerCase();
 
@@ -37,6 +43,7 @@ export default async function ClientesPage({
   const query = getStringParam(resolvedParams.q).trim();
   const cityFilter = getStringParam(resolvedParams.city) || 'all';
   const tagFilter = getStringParam(resolvedParams.tag) || 'all';
+  const viewFilter = getStringParam(resolvedParams.view) === 'grid' ? 'grid' : 'table';
   const normalizedQuery = query.toLowerCase();
 
   const cities = Array.from(
@@ -77,7 +84,15 @@ export default async function ClientesPage({
     return matchesQuery && matchesCity && matchesTag;
   });
 
-  const topCustomers = filteredCustomers.slice(0, 10);
+  const buildViewHref = (view: 'table' | 'grid') => {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (cityFilter !== 'all') params.set('city', cityFilter);
+    if (tagFilter !== 'all') params.set('tag', tagFilter);
+    params.set('view', view);
+    const queryString = params.toString();
+    return queryString ? `/clientes?${queryString}` : '/clientes';
+  };
 
   return (
     <main className="page-content">
@@ -88,7 +103,23 @@ export default async function ClientesPage({
           <p>Centralize informacoes de relacionamento e historico.</p>
         </section>
         <div className="actions">
-          <Link className="button primary" href="/vendas?newCustomer=1">
+          <div className="toggle-group customers-view-toggle">
+            <Link
+              href={buildViewHref('grid')}
+              className={`button icon view-toggle${viewFilter === 'grid' ? ' active' : ''}`}
+              aria-label="Visualizacao em grade"
+            >
+              <IconGrid />
+            </Link>
+            <Link
+              href={buildViewHref('table')}
+              className={`button icon view-toggle${viewFilter === 'table' ? ' active' : ''}`}
+              aria-label="Visualizacao em tabela"
+            >
+              <IconList />
+            </Link>
+          </div>
+          <Link className="button primary" href="/vendas?newCustomer=1&returnTo=%2Fclientes">
             + Cadastrar cliente
           </Link>
         </div>
@@ -128,7 +159,7 @@ export default async function ClientesPage({
             <div className="empty-icon">👥</div>
             <strong>Nenhum cliente cadastrado</strong>
             <span>Cadastre clientes para agilizar vendas e recebimentos.</span>
-            <Link className="button primary" href="/vendas?newCustomer=1">
+            <Link className="button primary" href="/vendas?newCustomer=1&returnTo=%2Fclientes">
               + Cadastrar cliente
             </Link>
           </div>
@@ -139,7 +170,7 @@ export default async function ClientesPage({
             <span>Revise os filtros ou busque por outro termo.</span>
           </div>
         ) : (
-          <CustomersListEditor customers={topCustomers} />
+          <CustomersListEditor customers={filteredCustomers} viewMode={viewFilter} />
         )}
       </section>
     </main>

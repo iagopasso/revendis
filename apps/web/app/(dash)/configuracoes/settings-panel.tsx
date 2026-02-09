@@ -238,6 +238,15 @@ const formatMemberDate = (value?: string) => {
   return parsed.toLocaleDateString('pt-BR');
 };
 
+const uniqueBrands = (values: Array<string | null | undefined>) =>
+  Array.from(
+    new Set(
+      values
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value))
+    )
+  ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
 const toAccountForm = (value: AccountSettings): AccountForm => ({
   ownerName: value.ownerName || '',
   ownerEmail: value.ownerEmail || '',
@@ -285,16 +294,24 @@ export default function SettingsPanel({
     isSection(initialSection) ? initialSection : 'marcas'
   );
   const [brands, setBrands] = useState<ResellerBrand[]>(initialBrands);
+  const existingCreateOptions = useMemo(
+    () => uniqueBrands([...existingBrandOptions, ...brands.map((brand) => brand.name)]),
+    [existingBrandOptions, brands]
+  );
+  const catalogCreateOptions = useMemo(
+    () => uniqueBrands([...catalogBrandOptions, ...brands.map((brand) => brand.name)]),
+    [catalogBrandOptions, brands]
+  );
   const [toast, setToast] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createMode, setCreateMode] = useState<BrandSource>(
-    existingBrandOptions.length > 0 ? 'existing' : catalogBrandOptions.length > 0 ? 'catalog' : 'manual'
+    existingCreateOptions.length > 0 ? 'existing' : catalogCreateOptions.length > 0 ? 'catalog' : 'manual'
   );
   const [createSaving, setCreateSaving] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [selectedExistingBrand, setSelectedExistingBrand] = useState(existingBrandOptions[0] || '');
-  const [selectedCatalogBrand, setSelectedCatalogBrand] = useState(catalogBrandOptions[0] || '');
+  const [selectedExistingBrand, setSelectedExistingBrand] = useState(existingCreateOptions[0] || '');
+  const [selectedCatalogBrand, setSelectedCatalogBrand] = useState(catalogCreateOptions[0] || '');
   const [manualName, setManualName] = useState('');
   const [manualProfitability, setManualProfitability] = useState('');
   const [manualLogoUrl, setManualLogoUrl] = useState('');
@@ -362,13 +379,13 @@ export default function SettingsPanel({
 
   useEffect(() => {
     if (createMode !== 'existing' || selectedExistingBrand) return;
-    setSelectedExistingBrand(existingBrandOptions[0] || '');
-  }, [createMode, selectedExistingBrand, existingBrandOptions]);
+    setSelectedExistingBrand(existingCreateOptions[0] || '');
+  }, [createMode, selectedExistingBrand, existingCreateOptions]);
 
   useEffect(() => {
     if (createMode !== 'catalog' || selectedCatalogBrand) return;
-    setSelectedCatalogBrand(catalogBrandOptions[0] || '');
-  }, [createMode, selectedCatalogBrand, catalogBrandOptions]);
+    setSelectedCatalogBrand(catalogCreateOptions[0] || '');
+  }, [createMode, selectedCatalogBrand, catalogCreateOptions]);
 
   const nextBrandName = useMemo(() => {
     if (createMode === 'existing') return selectedExistingBrand.trim();
@@ -381,12 +398,12 @@ export default function SettingsPanel({
       URL.revokeObjectURL(manualLogoUrl);
     }
     setCreateMode(
-      existingBrandOptions.length > 0 ? 'existing' : catalogBrandOptions.length > 0 ? 'catalog' : 'manual'
+      existingCreateOptions.length > 0 ? 'existing' : catalogCreateOptions.length > 0 ? 'catalog' : 'manual'
     );
     setCreateError(null);
     setCreateSaving(false);
-    setSelectedExistingBrand(existingBrandOptions[0] || '');
-    setSelectedCatalogBrand(catalogBrandOptions[0] || '');
+    setSelectedExistingBrand(existingCreateOptions[0] || '');
+    setSelectedCatalogBrand(catalogCreateOptions[0] || '');
     setManualName('');
     setManualProfitability('');
     setManualLogoUrl('');
@@ -1220,7 +1237,7 @@ export default function SettingsPanel({
                     }
                   >
                     <option value="">Selecione uma marca</option>
-                    {(createMode === 'existing' ? existingBrandOptions : catalogBrandOptions).map((brand) => (
+                    {(createMode === 'existing' ? existingCreateOptions : catalogCreateOptions).map((brand) => (
                       <option key={brand} value={brand}>
                         {brand}
                       </option>

@@ -59,13 +59,13 @@ export default function Reminders({
   const expiringHref = useMemo(() => {
     const params = new URLSearchParams(rangeParams.toString());
     params.set('stock', 'empty');
-    return buildHref('/categorias', params);
+    return buildHref('/estoque', params);
   }, [rangeParams]);
 
   const lowStockHref = useMemo(() => {
     const params = new URLSearchParams(rangeParams.toString());
     params.set('stock', 'low');
-    return buildHref('/categorias', params);
+    return buildHref('/estoque', params);
   }, [rangeParams]);
 
   const cobrancasHref = useMemo(() => {

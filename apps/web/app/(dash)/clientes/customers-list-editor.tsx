@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { IconEdit, IconTrash } from '../icons';
 import { API_BASE } from '../lib';
 
 type Customer = {
@@ -38,8 +39,11 @@ type CustomerForm = {
   state: string;
 };
 
+type ViewMode = 'table' | 'grid';
+
 type CustomersListEditorProps = {
   customers: Customer[];
+  viewMode: ViewMode;
 };
 
 const formatPhoneInput = (value: string) => {
@@ -101,24 +105,79 @@ const createFormFromCustomer = (customer: Customer): CustomerForm => ({
   state: (customer.state || '').toUpperCase().slice(0, 2)
 });
 
-export default function CustomersListEditor({ customers }: CustomersListEditorProps) {
+const getInitials = (name: string) => {
+  const words = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (!words.length) return 'CL';
+  return words.map((word) => word[0]).join('').toUpperCase();
+};
+
+const toWhatsAppHref = (phone?: string | null) => {
+  const digits = (phone || '').replace(/\D/g, '');
+  if (!digits) return '#';
+  return `https://wa.me/${digits}`;
+};
+
+export default function CustomersListEditor({ customers, viewMode }: CustomersListEditorProps) {
   const [localCustomers, setLocalCustomers] = useState<Customer[]>(customers);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<CustomerForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [additionalOpen, setAdditionalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalCustomers(customers);
   }, [customers]);
+
+  const selectedCustomer = useMemo(
+    () => localCustomers.find((customer) => customer.id === selectedId) || null,
+    [selectedId, localCustomers]
+  );
 
   const editingCustomer = useMemo(
     () => localCustomers.find((customer) => customer.id === editingId) || null,
     [editingId, localCustomers]
   );
 
+  useEffect(() => {
+    if (!selectedId) return;
+    if (!selectedCustomer) {
+      setSelectedId(null);
+      setDetailsError(null);
+    }
+  }, [selectedCustomer, selectedId]);
+
+  useEffect(() => {
+    if (!editingId) return;
+    if (!editingCustomer) {
+      setEditingId(null);
+      setForm(null);
+      setSaving(false);
+      setError(null);
+      setAdditionalOpen(false);
+    }
+  }, [editingCustomer, editingId]);
+
+  const openDetails = (customer: Customer) => {
+    setSelectedId(customer.id);
+    setDetailsError(null);
+  };
+
+  const closeDetails = () => {
+    setSelectedId(null);
+    setDeleting(false);
+    setDetailsError(null);
+  };
+
   const openEditor = (customer: Customer) => {
+    setSelectedId(null);
     setEditingId(customer.id);
     setForm(createFormFromCustomer(customer));
     setError(null);
@@ -209,35 +268,137 @@ export default function CustomersListEditor({ customers }: CustomersListEditorPr
     }
   };
 
+  const handleDeleteSelected = async () => {
+    if (!selectedCustomer) return;
+    setDeleting(true);
+    setDetailsError(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/customers/${selectedCustomer.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        setDetailsError(payload?.message || 'Erro ao excluir cliente');
+        return;
+      }
+      setLocalCustomers((prev) => prev.filter((customer) => customer.id !== selectedCustomer.id));
+      closeDetails();
+    } catch {
+      setDetailsError('Erro ao excluir cliente');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <>
-      <div className="data-list">
-        <div className="data-row cols-4 header">
-          <span>Cliente</span>
-          <span>Contato</span>
-          <span>Cidade</span>
-          <span>Tags</span>
+      {viewMode === 'grid' ? (
+        <div className="customers-grid-view">
+          {localCustomers.map((customer) => (
+            <button
+              key={customer.id}
+              type="button"
+              className="customer-grid-card"
+              onClick={() => openDetails(customer)}
+            >
+              <div className="customer-grid-avatar">{getInitials(customer.name)}</div>
+              <strong>{customer.name.toUpperCase()}</strong>
+              <span className="customer-grid-contact">{customer.phone || '--'}</span>
+              <span className="customer-grid-location">
+                {customer.city || '--'}
+                {customer.state ? `/${customer.state}` : ''}
+              </span>
+            </button>
+          ))}
         </div>
-        {localCustomers.map((customer) => (
-          <div key={customer.id} className="data-row cols-4">
-            <div>
-              <button type="button" className="customer-name-button" onClick={() => openEditor(customer)}>
-                <strong>{customer.name}</strong>
-              </button>
-              <div className="meta">Clique no nome para editar</div>
-            </div>
-            <div className="data-cell">
-              <div className="mono">{customer.phone || '--'}</div>
-              <div className="meta">{customer.email || '--'}</div>
-            </div>
-            <div className="data-cell mono">
-              {customer.city || '--'}
-              {customer.state ? `/${customer.state}` : ''}
-            </div>
-            <div className="data-cell">{(customer.tags || []).join(', ') || '--'}</div>
+      ) : (
+        <div className="data-list">
+          <div className="data-row cols-4 header">
+            <span>Cliente</span>
+            <span>Contato</span>
+            <span>Cidade</span>
+            <span>Tags</span>
           </div>
-        ))}
-      </div>
+          {localCustomers.map((customer) => (
+            <div key={customer.id} className="data-row cols-4">
+              <div>
+                <button type="button" className="customer-name-button" onClick={() => openDetails(customer)}>
+                  <strong>{customer.name}</strong>
+                </button>
+                <div className="meta">Clique no nome para visualizar</div>
+              </div>
+              <div className="data-cell">
+                <div className="mono">{customer.phone || '--'}</div>
+                <div className="meta">{customer.email || '--'}</div>
+              </div>
+              <div className="data-cell mono">
+                {customer.city || '--'}
+                {customer.state ? `/${customer.state}` : ''}
+              </div>
+              <div className="data-cell">{(customer.tags || []).join(', ') || '--'}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {selectedCustomer ? (
+        <div className="modal-backdrop" onClick={closeDetails}>
+          <div className="modal modal-customer-profile" onClick={(event) => event.stopPropagation()}>
+            <button className="modal-close customer-profile-close" type="button" onClick={closeDetails}>
+              ✕
+            </button>
+            <div className="customer-profile-layout">
+              <aside className="customer-profile-side">
+                <div className="customer-profile-avatar">{getInitials(selectedCustomer.name)}</div>
+                <strong className="customer-profile-name">{selectedCustomer.name.toUpperCase()}</strong>
+                <a
+                  className="customer-profile-phone"
+                  href={toWhatsAppHref(selectedCustomer.phone)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  ☏ {selectedCustomer.phone || '--'}
+                </a>
+                <span className="meta">
+                  {(selectedCustomer.tags || []).length
+                    ? `Tags: ${(selectedCustomer.tags || []).join(', ')}`
+                    : 'Nenhuma tag atribuida'}
+                </span>
+
+                <div className="customer-profile-actions-row">
+                  <button
+                    className="button ghost customer-profile-delete"
+                    type="button"
+                    onClick={handleDeleteSelected}
+                    disabled={deleting}
+                  >
+                    <IconTrash />
+                    {deleting ? 'Excluindo...' : 'Excluir'}
+                  </button>
+                  <button className="button primary customer-profile-edit" type="button" onClick={() => openEditor(selectedCustomer)}>
+                    <IconEdit /> Editar
+                  </button>
+                </div>
+                {detailsError ? <div className="field-error">{detailsError}</div> : null}
+              </aside>
+
+              <section className="customer-profile-main">
+                <div className="customer-profile-balance-card">
+                  <div>
+                    <span className="meta">Saldo da conta</span>
+                    <strong className="customer-profile-balance-value">R$ 0,00</strong>
+                  </div>
+                  <span className="customer-profile-balance-icon">💼</span>
+                </div>
+
+                <div className="customer-profile-sales-section">
+                  <h4>Vendas</h4>
+                  <div className="customer-profile-sales-empty">Nenhum registro</div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {editingCustomer && form ? (
         <div className="modal-backdrop" onClick={closeEditor}>
@@ -407,6 +568,7 @@ export default function CustomersListEditor({ customers }: CustomersListEditorPr
           </div>
         </div>
       ) : null}
+
     </>
   );
 }

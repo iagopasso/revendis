@@ -333,4 +333,44 @@ router.patch(
   })
 );
 
+router.delete(
+  '/customers/:id',
+  validateRequest({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const userId = req.header('x-user-id') || null;
+    const customerId = req.params.id;
+
+    const removed = await withTransaction(async (client) => {
+      const result = await client.query(
+        `DELETE FROM customers
+         WHERE id = $1 AND organization_id = $2
+         RETURNING id`,
+        [customerId, orgId]
+      );
+
+      if (!result.rows.length) return result;
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        userId,
+        entityType: 'customer',
+        entityId: customerId,
+        action: 'deleted'
+      });
+
+      return result;
+    });
+
+    if (!removed.rows.length) {
+      return res.status(404).json({
+        code: 'not_found',
+        message: 'Cliente nao encontrado.'
+      });
+    }
+
+    return res.status(204).send();
+  })
+);
+
 export default router;
