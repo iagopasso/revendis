@@ -16,6 +16,10 @@ const presets: Preset[] = [
   { label: 'Todo o periodo', value: 'all' }
 ];
 
+type DateRangePickerProps = {
+  defaultPreset?: string;
+};
+
 const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 const pad = (value: number) => value.toString().padStart(2, '0');
@@ -27,7 +31,7 @@ const formatDate = (value: string) => {
   return date.toLocaleDateString('pt-BR');
 };
 
-const getLabelFromParams = (params: URLSearchParams) => {
+const getLabelFromParams = (params: URLSearchParams, defaultPreset: string) => {
   const range = params.get('range');
   const monthValue = params.get('month');
   const from = params.get('from');
@@ -47,7 +51,7 @@ const getLabelFromParams = (params: URLSearchParams) => {
     if (to) return `Ate ${formatDate(to)}`;
   }
 
-  const preset = presets.find((item) => item.value === range);
+  const preset = presets.find((item) => item.value === range || (!range && item.value === defaultPreset));
   if (preset) return preset.label;
   return 'Ultimos 7 dias';
 };
@@ -61,7 +65,7 @@ const getInitialYear = (params: URLSearchParams) => {
   return new Date().getFullYear();
 };
 
-export default function DateRangePicker() {
+export default function DateRangePicker({ defaultPreset = '7d' }: DateRangePickerProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -79,7 +83,7 @@ export default function DateRangePicker() {
     }
   }, [open, searchParams]);
 
-  const label = useMemo(() => getLabelFromParams(searchParams), [searchParams]);
+  const label = useMemo(() => getLabelFromParams(searchParams, defaultPreset), [defaultPreset, searchParams]);
 
   const updateParams = (updater: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(searchParams.toString());

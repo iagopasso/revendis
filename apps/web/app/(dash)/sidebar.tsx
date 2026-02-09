@@ -17,18 +17,39 @@ import {
 } from './icons';
 
 const navItems = [
-  { href: '/', label: 'Painel', icon: IconDashboard },
-  { href: '/estoque', label: 'Estoque', icon: IconBox },
-  { href: '/vendas', label: 'Vendas', icon: IconTag },
-  { href: '/compras', label: 'Compras', icon: IconCart },
-  { href: '/clientes', label: 'Clientes', icon: IconUsers },
-  { href: '/financeiro', label: 'Financeiro', icon: IconDollar },
-  { href: '/relatorios', label: 'Relatorios', icon: IconChart }
+  { href: '/', label: 'Painel', icon: IconDashboard, section: 'painel' },
+  { href: '/estoque', label: 'Estoque', icon: IconBox, section: 'estoque' },
+  { href: '/vendas', label: 'Vendas', icon: IconTag, section: 'vendas' },
+  { href: '/compras', label: 'Compras', icon: IconCart, section: 'compras' },
+  { href: '/clientes', label: 'Clientes', icon: IconUsers, section: 'clientes' },
+  { href: '/financeiro', label: 'Financeiro', icon: IconDollar, section: 'financeiro' },
+  { href: '/relatorios', label: 'Relatorios', icon: IconChart, section: 'relatorios' }
 ];
+
+const normalizePath = (pathname: string) => pathname.replace(/\/+$/, '') || '/';
+
+const getSectionFromPath = (pathname: string) => {
+  const normalized = normalizePath(pathname);
+  if (normalized === '/') return 'painel';
+
+  const firstSegment = normalized.split('/').filter(Boolean)[0] || '';
+  const aliases: Record<string, string> = {
+    categorias: 'estoque',
+    estoque: 'estoque',
+    vendas: 'vendas',
+    compras: 'compras',
+    clientes: 'clientes',
+    financeiro: 'financeiro',
+    relatorios: 'relatorios'
+  };
+
+  return aliases[firstSegment] || '';
+};
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const activeSection = getSectionFromPath(pathname || '/');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -60,13 +81,14 @@ export default function Sidebar() {
       </Link>
       <nav className="nav">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = activeSection === item.section;
           const Icon = item.icon;
           return (
             <Link
               key={item.href}
               href={item.href}
               className={isActive ? 'active' : ''}
+              aria-current={isActive ? 'page' : undefined}
               aria-label={item.label}
               title={item.label}
             >

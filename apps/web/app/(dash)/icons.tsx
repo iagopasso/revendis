@@ -151,6 +151,14 @@ export const IconUpload = ({ className }: IconProps) => (
   </IconBase>
 );
 
+export const IconDownload = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M12 21V9" />
+    <path d="M8 17l4 4 4-4" />
+    <path d="M4 5v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5" />
+  </IconBase>
+);
+
 export const IconPlus = ({ className }: IconProps) => (
   <IconBase className={className}>
     <path d="M12 5v14" />

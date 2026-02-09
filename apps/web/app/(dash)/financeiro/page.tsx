@@ -28,20 +28,33 @@ type Expense = {
   created_at?: string;
 };
 
+type Payment = {
+  id: string;
+  sale_id: string;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  amount: number | string;
+  due_date?: string;
+  method?: string | null;
+  created_at?: string;
+};
+
 type Customer = {
   id: string;
   name: string;
 };
 
 export default async function FinanceiroPage() {
-  const [receivablesResponse, expensesResponse, customersResponse] = await Promise.all([
+  const [receivablesResponse, expensesResponse, paymentsResponse, customersResponse] = await Promise.all([
     fetchList<Receivable>('/finance/receivables'),
     fetchList<Expense>('/finance/expenses'),
+    fetchList<Payment>('/finance/payments'),
     fetchList<Customer>('/customers')
   ]);
 
   const receivables = receivablesResponse?.data ?? [];
   const expenses = expensesResponse?.data ?? [];
+  const payments = paymentsResponse?.data ?? [];
   const customers = customersResponse?.data ?? [];
 
   return (
@@ -54,7 +67,12 @@ export default async function FinanceiroPage() {
         </section>
       </div>
 
-      <FinancePanel initialReceivables={receivables} initialExpenses={expenses} customers={customers} />
+      <FinancePanel
+        initialReceivables={receivables}
+        initialExpenses={expenses}
+        initialPayments={payments}
+        customers={customers}
+      />
     </main>
   );
 }

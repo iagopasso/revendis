@@ -72,7 +72,8 @@ const parseMonthValue = (value: string) => {
 };
 
 export const getDateRangeFromSearchParams = (
-  searchParams?: Record<string, string | string[] | undefined>
+  searchParams?: Record<string, string | string[] | undefined>,
+  defaultPreset: string = '7d'
 ): DateRange => {
   const range = getStringParam(searchParams?.range);
   const month = getStringParam(searchParams?.month);
@@ -96,8 +97,10 @@ export const getDateRangeFromSearchParams = (
     }
   }
 
-  if (range === 'all') {
-    return { source: 'all' };
+  const effectiveRange = range || defaultPreset;
+
+  if (effectiveRange === 'all') {
+    return { source: range === 'all' ? 'all' : 'default' };
   }
 
   const daysMap: Record<string, number> = {
@@ -107,7 +110,7 @@ export const getDateRangeFromSearchParams = (
     '90d': 90,
     '365d': 365
   };
-  const days = daysMap[range] || 7;
+  const days = daysMap[effectiveRange] || daysMap[defaultPreset] || 7;
   const today = new Date();
   const to = endOfDay(today);
   const from = startOfDay(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (days - 1)));

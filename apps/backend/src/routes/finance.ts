@@ -92,6 +92,30 @@ const ensureFinanceExpensesTable = async () => {
 };
 
 router.get(
+  '/finance/payments',
+  asyncHandler(async (req, res) => {
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
+    const result = await query(
+      `SELECT p.id,
+              p.sale_id,
+              s.customer_id,
+              COALESCE(c.name, s.customer_name) AS customer_name,
+              p.amount,
+              p.method,
+              p.created_at,
+              TO_CHAR(p.created_at::date, 'YYYY-MM-DD') AS due_date
+       FROM payments p
+       JOIN sales s ON s.id = p.sale_id
+       LEFT JOIN customers c ON c.id = s.customer_id
+       WHERE s.store_id = $1
+       ORDER BY p.created_at DESC`,
+      [storeId]
+    );
+    res.json({ data: result.rows });
+  })
+);
+
+router.get(
   '/finance/receivables',
   asyncHandler(async (req, res) => {
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;

@@ -71,6 +71,31 @@ test('settles receivable', async () => {
   expect(settleRes.body.data.status).toBe('paid');
 });
 
+test('lists finance payments from sales', async () => {
+  if (!dbReady) {
+    return;
+  }
+
+  const saleRes = await query(
+    `INSERT INTO sales (store_id, subtotal, discount_total, total)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id`,
+    [DEFAULT_STORE_ID, 80, 0, 80]
+  );
+  const saleId = saleRes.rows[0].id as string;
+
+  await query(
+    `INSERT INTO payments (sale_id, method, amount)
+     VALUES ($1, $2, $3)`,
+    [saleId, 'pix', 80]
+  );
+
+  const listRes = await request(app).get('/api/finance/payments');
+  expect(listRes.status).toBe(200);
+  expect(Array.isArray(listRes.body.data)).toBe(true);
+  expect(listRes.body.data.some((item: { sale_id?: string }) => item.sale_id === saleId)).toBe(true);
+});
+
 test('creates and pays expense', async () => {
   if (!dbReady) {
     return;

@@ -92,6 +92,8 @@ main {
 
 .content {
   min-height: 100vh;
+  grid-column: 2;
+  min-width: 0;
 }
 
 .page-content {
@@ -110,6 +112,13 @@ main {
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 20px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 88px;
+  height: 100vh;
+  height: 100dvh;
+  z-index: 40;
 }
 
 .sidebar .logo {
@@ -1811,25 +1820,34 @@ main {
 
 .report-grid {
   display: grid;
-  gap: 16px;
+  gap: 22px;
 }
 
 .report-section {
+  border: 1px solid #d3ddea;
+  border-radius: 12px;
+  background: #f4f7fb;
+  padding: 16px;
   display: grid;
-  gap: 12px;
+  gap: 14px;
+}
+
+.report-section .panel-title {
+  font-size: 2rem;
+  margin: 0;
 }
 
 .report-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 14px;
 }
 
 .report-card {
-  background: var(--panel-2);
-  border-radius: 14px;
-  border: 1px solid var(--stroke);
-  padding: 16px;
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1px solid #cdd8e8;
+  padding: 16px 18px;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -1837,50 +1855,70 @@ main {
 
 .report-link {
   text-decoration: none;
-  transition: border-color 0.2s ease, transform 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .report-link:hover {
-  border-color: rgba(63, 194, 255, 0.45);
-  transform: translateY(-1px);
+  border-color: #b5c6df;
+  box-shadow: 0 8px 20px rgba(148, 163, 184, 0.2);
 }
 
 .report-card .icon {
   width: 46px;
   height: 46px;
-  border-radius: 12px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, rgba(63, 194, 255, 0.9), rgba(77, 141, 255, 0.9));
-  color: #061118;
+  background: #f1e7fb;
+  color: #8b5bd8;
+  font-size: 1.35rem;
+}
+
+.report-card strong {
+  font-size: 1.1rem;
+  color: #1f2937;
 }
 
 .report-card p {
   margin: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
+  color: #6b7a93;
+  font-size: 0.98rem;
 }
 
-.reports-sales-panel {
+.report-detail-shell {
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
-.reports-sales-header {
+.report-detail-header-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 14px;
+  gap: 16px;
 }
 
-.reports-sales-header h2 {
-  margin: 6px 0 0;
-  font-size: 2rem;
+.report-detail-title {
+  margin: 10px 0 0;
+  font-size: 2.1rem;
+  color: #1f2937;
 }
 
-.reports-breadcrumb {
-  color: #4b5563;
-  font-size: 0.95rem;
+.report-detail-breadcrumb {
+  color: #374151;
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-detail-breadcrumb-link {
+  color: #374151;
+  text-decoration: none;
+}
+
+.report-detail-breadcrumb-link:hover {
+  text-decoration: underline;
 }
 
 .reports-download-wrap {
@@ -1888,11 +1926,17 @@ main {
 }
 
 .reports-download-button {
-  min-width: 142px;
+  min-width: 126px;
   justify-content: center;
-  background: #5b3b8b;
+  background: #9f67e7;
   color: #ffffff;
   border: none;
+  font-weight: 600;
+}
+
+.reports-download-button .app-icon {
+  width: 15px !important;
+  height: 15px !important;
 }
 
 .reports-download-menu {
@@ -1928,20 +1972,44 @@ main {
   background: #edf2f9;
 }
 
-.reports-sales-toolbar {
+.report-detail-toolbar {
   display: flex;
   align-items: center;
   justify-content: flex-start;
 }
 
-.reports-range-chip {
-  box-shadow: none;
+.report-detail-toolbar .date-range-trigger {
+  border-radius: 8px;
+  border: 1px solid #d6ddeb;
+  background: #e8edf4;
+  color: #1f2937;
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.report-detail-period {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  border: 1px solid #d6ddeb;
+  background: #e8edf4;
+  color: #1f2937;
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.report-detail-period .app-icon {
+  width: 15px !important;
+  height: 15px !important;
 }
 
 .reports-empty {
-  min-height: 350px;
+  min-height: 260px;
   border: 1px dashed #d5deea;
-  border-radius: 16px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
   text-align: center;
@@ -1960,8 +2028,51 @@ main {
   font-size: 1.6rem;
 }
 
-.reports-sales-list {
-  margin-top: 0;
+.report-table-wrap {
+  border: 1px solid #ccd7e6;
+  border-radius: 10px;
+  background: #ffffff;
+  overflow: auto;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 920px;
+}
+
+.report-table thead th {
+  padding: 14px 18px;
+  border-bottom: 1px solid #d5deea;
+  color: #4b5563;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+}
+
+.report-table tbody td {
+  padding: 16px 18px;
+  border-top: 1px solid #e5eaf3;
+  color: #1f2937;
+  font-size: 1.02rem;
+  white-space: nowrap;
+}
+
+.report-table tbody tr:first-child td {
+  border-top: none;
+}
+
+.report-table .align-left {
+  text-align: left;
+}
+
+.report-table .align-center {
+  text-align: center;
+}
+
+.report-table .align-right {
+  text-align: right;
 }
 
 .finance-toolbar-panel {
@@ -2013,6 +2124,8 @@ main {
 .finance-expense-button {
   min-width: 185px;
   justify-content: center;
+  background: #9f67e7;
+  border: none;
   color: #ffffff;
 }
 
@@ -2142,6 +2255,11 @@ main {
   position: relative;
   display: flex;
   justify-content: flex-end;
+}
+
+.finance-entry-action-placeholder {
+  color: #94a3b8;
+  font-size: 0.95rem;
 }
 
 .finance-entry-menu {
@@ -5140,11 +5258,19 @@ main {
     grid-template-columns: 1fr;
   }
 
+  .content {
+    grid-column: 1;
+  }
+
   .sidebar {
     grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
     grid-auto-flow: column;
     grid-template-rows: none;
     padding: 16px;
+    position: static;
+    top: auto;
+    align-self: stretch;
+    height: auto;
   }
 
   .profile-menu {
@@ -5275,7 +5401,7 @@ main {
     justify-content: flex-start;
   }
 
-  .reports-sales-header {
+  .report-detail-header-row {
     flex-direction: column;
     align-items: stretch;
   }
@@ -5290,6 +5416,10 @@ main {
 
   .reports-download-menu {
     width: 100%;
+  }
+
+  .report-table {
+    min-width: 760px;
   }
 
   .settings-main {

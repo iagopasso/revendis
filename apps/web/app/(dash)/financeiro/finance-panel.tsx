@@ -31,6 +31,17 @@ type Expense = {
   created_at?: string;
 };
 
+type Payment = {
+  id: string;
+  sale_id: string;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  amount: number | string;
+  due_date?: string;
+  method?: string | null;
+  created_at?: string;
+};
+
 type Customer = {
   id: string;
   name: string;
@@ -39,6 +50,7 @@ type Customer = {
 type EntryStatus = 'pending' | 'paid' | 'overdue';
 type EntryKind = 'income' | 'expense';
 type TransactionFilter =
+  | 'all'
   | 'expenses'
   | 'expenses_pending'
   | 'expenses_paid'
@@ -59,11 +71,13 @@ type FinanceEntry = {
   method?: string | null;
   sourceId: string;
   createdAt?: string;
+  incomeSource?: 'receivable' | 'payment';
 };
 
 type FinancePanelProps = {
   initialReceivables: Receivable[];
   initialExpenses: Expense[];
+  initialPayments: Payment[];
   customers: Customer[];
 };
 
@@ -91,6 +105,7 @@ const monthNames = [
 ];
 
 const transactionFilterOptions: Array<{ value: TransactionFilter; label: string }> = [
+  { value: 'all', label: 'Situacao da transacao' },
   { value: 'expenses', label: 'Despesas' },
   { value: 'expenses_pending', label: 'Despesas nao pagas' },
   { value: 'expenses_paid', label: 'Despesas pagas' },
@@ -118,15 +133,22 @@ const toInputDate = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+const parseDateValue = (value: string | null | undefined) => {
+  if (!value) return null;
+  const normalized = value.includes('T') ? value : `${value}T00:00:00`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
 const formatDate = (value: string) => {
-  if (!value) return '--';
-  return new Date(`${value}T00:00:00`).toLocaleDateString('pt-BR');
+  const date = parseDateValue(value);
+  if (!date) return '--';
+  return date.toLocaleDateString('pt-BR');
 };
 
 const isSameMonth = (value: string, monthCursor: Date) => {
-  if (!value) return false;
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return false;
+  const date = parseDateValue(value);
+  if (!date) return false;
   return date.getFullYear() === monthCursor.getFullYear() && date.getMonth() === monthCursor.getMonth();
 };
 
@@ -168,11 +190,11 @@ const shortSaleCode = (saleId: string) => saleId.slice(0, 8).toUpperCase();
 
 const sortByDateDesc = (entries: FinanceEntry[]) => {
   return [...entries].sort((a, b) => {
-    const dueA = new Date(`${a.dueDate}T00:00:00`).getTime();
-    const dueB = new Date(`${b.dueDate}T00:00:00`).getTime();
+    const dueA = parseDateValue(a.dueDate)?.getTime() || 0;
+    const dueB = parseDateValue(b.dueDate)?.getTime() || 0;
     if (dueB !== dueA) return dueB - dueA;
-    const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    const createdA = parseDateValue(a.createdAt || undefined)?.getTime() || 0;
+    const createdB = parseDateValue(b.createdAt || undefined)?.getTime() || 0;
     return createdB - createdA;
   });
 };
@@ -188,14 +210,20 @@ const createDefaultForm = (monthCursor: Date): ExpenseForm => {
   };
 };
 
-export default function FinancePanel({ initialReceivables, initialExpenses, customers }: FinancePanelProps) {
+export default function FinancePanel({
+  initialReceivables,
+  initialExpenses,
+  initialPayments,
+  customers
+}: FinancePanelProps) {
   const [receivables, setReceivables] = useState<Receivable[]>(initialReceivables);
   const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
+  const [payments, setPayments] = useState<Payment[]>(initialPayments);
   const [monthCursor, setMonthCursor] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  const [transactionFilter, setTransactionFilter] = useState<TransactionFilter>('expenses');
+  const [transactionFilter, setTransactionFilter] = useState<TransactionFilter>('all');
   const [customerFilter, setCustomerFilter] = useState<string>('all');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState<ExpenseForm>(() => createDefaultForm(new Date()));
@@ -214,6 +242,10 @@ export default function FinancePanel({ initialReceivables, initialExpenses, cust
   }, [initialExpenses]);
 
   useEffect(() => {
+    setPayments(initialPayments);
+  }, [initialPayments]);
+
+  useEffect(() => {
     const handleOutside = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
@@ -227,7 +259,7 @@ export default function FinancePanel({ initialReceivables, initialExpenses, cust
   }, []);
 
   const allEntries = useMemo(() => {
-    const incomeEntries: FinanceEntry[] = receivables.map((item) => {
+    const incomeEntriesFromReceivables: FinanceEntry[] = receivables.map((item) => {
       const customerName = item.customer_name?.trim() || null;
       const description = customerName ? `Venda - ${customerName}` : `Venda #${shortSaleCode(item.sale_id)}`;
       return {
@@ -242,7 +274,28 @@ export default function FinancePanel({ initialReceivables, initialExpenses, cust
         customerName,
         method: item.method,
         sourceId: item.id,
-        createdAt: item.created_at
+        createdAt: item.created_at,
+        incomeSource: 'receivable'
+      };
+    });
+
+    const incomeEntriesFromPayments: FinanceEntry[] = payments.map((item) => {
+      const customerName = item.customer_name?.trim() || null;
+      const description = customerName ? `Venda - ${customerName}` : `Venda #${shortSaleCode(item.sale_id)}`;
+      return {
+        id: `payment-${item.id}`,
+        kind: 'income',
+        description,
+        subtitle: `Pagamento - ${paymentMethodLabel(item.method)}`,
+        amount: toNumber(item.amount),
+        dueDate: item.due_date || (item.created_at ? item.created_at.slice(0, 10) : toInputDate(new Date())),
+        status: 'paid',
+        customerId: item.customer_id || null,
+        customerName,
+        method: item.method,
+        sourceId: item.id,
+        createdAt: item.created_at,
+        incomeSource: 'payment'
       };
     });
 
@@ -261,8 +314,8 @@ export default function FinancePanel({ initialReceivables, initialExpenses, cust
       createdAt: item.created_at
     }));
 
-    return sortByDateDesc([...incomeEntries, ...expenseEntries]);
-  }, [expenses, receivables]);
+    return sortByDateDesc([...incomeEntriesFromReceivables, ...incomeEntriesFromPayments, ...expenseEntries]);
+  }, [expenses, payments, receivables]);
 
   const monthEntries = useMemo(() => {
     return allEntries.filter((entry) => {
@@ -274,6 +327,7 @@ export default function FinancePanel({ initialReceivables, initialExpenses, cust
 
   const visibleEntries = useMemo(() => {
     const filterByTransaction = (entry: FinanceEntry) => {
+      if (transactionFilter === 'all') return true;
       if (transactionFilter === 'expenses') return entry.kind === 'expense';
       if (transactionFilter === 'expenses_pending') {
         return entry.kind === 'expense' && entry.status !== 'paid';
@@ -651,35 +705,41 @@ export default function FinancePanel({ initialReceivables, initialExpenses, cust
                 </div>
                 <div className="mono">{formatDate(entry.dueDate)}</div>
                 <div className="finance-entry-actions">
-                  <button
-                    type="button"
-                    className={`button icon small${menuOpenId === entry.id ? ' active' : ''}`}
-                    onClick={() => setMenuOpenId((current) => (current === entry.id ? null : entry.id))}
-                    aria-label="Acoes"
-                    disabled={processingId === entry.id}
-                  >
-                    <IconDots />
-                  </button>
+                  {entry.kind === 'expense' || entry.incomeSource === 'receivable' ? (
+                    <>
+                      <button
+                        type="button"
+                        className={`button icon small${menuOpenId === entry.id ? ' active' : ''}`}
+                        onClick={() => setMenuOpenId((current) => (current === entry.id ? null : entry.id))}
+                        aria-label="Acoes"
+                        disabled={processingId === entry.id}
+                      >
+                        <IconDots />
+                      </button>
 
-                  {menuOpenId === entry.id ? (
-                    <div className="finance-entry-menu">
-                      {entry.status === 'paid' ? (
-                        <button type="button" onClick={() => markAsPending(entry)}>
-                          Marcar como pendente
-                        </button>
-                      ) : (
-                        <button type="button" onClick={() => markAsPaid(entry)}>
-                          Marcar como pago
-                        </button>
-                      )}
+                      {menuOpenId === entry.id ? (
+                        <div className="finance-entry-menu">
+                          {entry.status === 'paid' ? (
+                            <button type="button" onClick={() => markAsPending(entry)}>
+                              Marcar como pendente
+                            </button>
+                          ) : (
+                            <button type="button" onClick={() => markAsPaid(entry)}>
+                              Marcar como pago
+                            </button>
+                          )}
 
-                      {entry.kind === 'expense' ? (
-                        <button type="button" className="danger" onClick={() => deleteExpense(entry)}>
-                          Excluir
-                        </button>
+                          {entry.kind === 'expense' ? (
+                            <button type="button" className="danger" onClick={() => deleteExpense(entry)}>
+                              Excluir
+                            </button>
+                          ) : null}
+                        </div>
                       ) : null}
-                    </div>
-                  ) : null}
+                    </>
+                  ) : (
+                    <span className="finance-entry-action-placeholder">--</span>
+                  )}
                 </div>
               </div>
             ))}

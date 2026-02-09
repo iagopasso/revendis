@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { IconBox, IconCalendar, IconChart, IconTag, IconUsers } from '../icons';
 
 const reportSections = [
   {
@@ -7,13 +8,13 @@ const reportSections = [
       {
         title: 'Vendas',
         description: 'Vendas realizadas em determinado periodo',
-        icon: '🏷️',
+        icon: <IconTag />,
         href: '/relatorios/vendas'
       },
       {
         title: 'Produtos mais vendidos',
         description: 'Produtos mais vendidos em determinado periodo',
-        icon: '📊',
+        icon: <IconChart />,
         href: '/relatorios/produtos-mais-vendidos'
       }
     ]
@@ -24,13 +25,13 @@ const reportSections = [
       {
         title: 'Estoque atual',
         description: 'Quantidades disponiveis em estoque para cada produto',
-        icon: '📦',
+        icon: <IconBox />,
         href: '/relatorios/estoque-atual'
       },
       {
-        title: 'Proximos de vencer',
-        description: 'Produtos proximos de vencer em determinado periodo',
-        icon: '📅',
+        title: 'Próximos de vencer',
+        description: 'Produtos próximos de vencer em determinado periodo',
+        icon: <IconCalendar />,
         href: '/relatorios/proximos-de-vencer'
       }
     ]
@@ -41,7 +42,7 @@ const reportSections = [
       {
         title: 'Maiores compradores',
         description: 'Clientes que mais compraram em determinado periodo',
-        icon: '👥',
+        icon: <IconUsers />,
         href: '/relatorios/maiores-compradores'
       }
     ]
@@ -53,9 +54,7 @@ export default function RelatoriosPage() {
     <main className="page-content">
       <div className="topbar">
         <section className="hero">
-          <span className="section-title">Relatorios</span>
-          <h1>Relatorios</h1>
-          <p>Gere visoes estrategicas para estoque, clientes e vendas.</p>
+          <h1>Relatórios</h1>
         </section>
       </div>
 
