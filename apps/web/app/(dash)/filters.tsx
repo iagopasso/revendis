@@ -51,7 +51,7 @@ export function FilterSelect({
   useEffect(() => {
     if (!open) return;
 
-    const handleOutsideClick = (event: MouseEvent) => {
+    const handleOutsideClick = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Node)) return;
       if (!wrapperRef.current?.contains(target)) {
@@ -65,10 +65,10 @@ export function FilterSelect({
       }
     };
 
-    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('pointerdown', handleOutsideClick);
     document.addEventListener('keydown', handleEscape);
     return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('pointerdown', handleOutsideClick);
       document.removeEventListener('keydown', handleEscape);
     };
   }, [open]);
@@ -87,7 +87,10 @@ export function FilterSelect({
   if (variant === 'menu') {
     const triggerLabel = selected?.label || placeholder || options[0]?.label || '';
     return (
-      <div ref={wrapperRef} className={`${wrapperClass} menu-select${open ? ' open' : ''}`}>
+      <div
+        ref={wrapperRef}
+        className={`${wrapperClass} menu-select${open ? ' open' : ''}${selected ? ' has-value' : ''}`}
+      >
         <button
           type="button"
           className={`menu-select-trigger${!selected && placeholder ? ' placeholder' : ''}`}

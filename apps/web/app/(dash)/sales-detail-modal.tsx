@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, formatCurrency, toNumber } from './lib';
+import { IconBox } from './icons';
 import { downloadPdf } from '../lib/pdf';
 
 export type SaleDetail = {
@@ -221,14 +222,6 @@ const getOverdueDays = (dueDate?: string) => {
   return diff > 0 ? Math.ceil(diff / (1000 * 60 * 60 * 24)) : 0;
 };
 
-const getInitials = (value: string) => {
-  const parts = value.trim().split(/\s+/).filter(Boolean);
-  const first = parts[0]?.[0] || '';
-  const second = parts[1]?.[0] || '';
-  const initials = `${first}${second}`.toUpperCase();
-  return initials || value.slice(0, 2).toUpperCase();
-};
-
 const getPaymentStatus = (
   total: number,
   payments: PaymentDetail[],
@@ -350,6 +343,38 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     return () => clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    if (!open || (!statusOpen && !actionsOpen && !activePaymentMenu)) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (statusOpen && !target.closest('.sale-dropdown.status-dropdown')) {
+        setStatusOpen(false);
+      }
+      if (actionsOpen && !target.closest('.sale-dropdown.actions-dropdown')) {
+        setActionsOpen(false);
+      }
+      if (activePaymentMenu && !target.closest('.payment-item')) {
+        setActivePaymentMenu(null);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setStatusOpen(false);
+      setActionsOpen(false);
+      setActivePaymentMenu(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open, statusOpen, actionsOpen, activePaymentMenu]);
+
   const payments = detail?.payments ?? [];
   const receivables = detail?.receivables ?? [];
   const totalValue = toNumber(detail?.total ?? sale?.total ?? paymentState.amount);
@@ -450,6 +475,12 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     if (!itemCode) return '';
     return `${item.product_brand || 'Sem marca'} • ${itemCode}`;
   };
+
+  const getItemImage = (item: SaleItemDetail) => {
+    const value = item.product_image_url?.trim();
+    return value || '';
+  };
+
   const profitValue = detail
     ? toNumber(detail.profit ?? totalValue - toNumber(detail.cost_total))
     : 0;
@@ -866,7 +897,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
             </div>
           </div>
           <div className="sale-header-actions">
-            <div className="sale-dropdown">
+            <div className="sale-dropdown status-dropdown">
               <button
                 className={`button status-button ${statusClass(deliveryStatus)}`}
                 type="button"
@@ -906,7 +937,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                 </div>
               ) : null}
             </div>
-            <div className="sale-dropdown">
+            <div className="sale-dropdown actions-dropdown">
               <button className="button ghost" type="button" onClick={() => setActionsOpen((prev) => !prev)}>
                 <span className="status-icon">⚙</span>Acoes ▾
               </button>
@@ -954,14 +985,16 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                 const totalItem = qty * price;
                 const itemTitle = getItemTitle(item);
                 const itemMetaLine = getItemMetaLine(item);
-                const itemImage = item.product_image_url || '';
+                const itemImage = getItemImage(item);
                 return (
                   <div key={item.id} className="sale-item">
                     <div className="sale-thumb">
                       {itemImage ? (
-                        <img src={itemImage} alt={itemTitle} />
+                        <img className="product-thumb-image" src={itemImage} alt={itemTitle || 'Produto'} />
                       ) : (
-                        <span className="sale-thumb-initial">{getInitials(itemTitle)}</span>
+                        <span className="product-thumb-placeholder" aria-hidden="true">
+                          <IconBox />
+                        </span>
                       )}
                     </div>
                     <div className="sale-item-info">

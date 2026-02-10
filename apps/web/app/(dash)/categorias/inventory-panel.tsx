@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
+  IconBox,
+  IconCalendar,
+  IconDollar,
   IconDots,
   IconEdit,
   IconGrid,
@@ -56,6 +59,8 @@ type ProductSale = {
   sku: string;
   payment_status?: 'paid' | 'pending';
 };
+
+type BulkUnitAction = 'cost' | 'expiry' | 'delete' | null;
 
 type Customer = {
   id: string;
@@ -313,11 +318,6 @@ const buildInstallments = (count: number, total: number, startDate: string): Ins
   });
 };
 
-const getProductImage = (product?: Product | null) => {
-  if (!product) return '';
-  return product.image_url || '';
-};
-
 const getProductCode = (product?: Product | null) => {
   if (!product) return '';
   return product.barcode || product.sku || '';
@@ -333,13 +333,9 @@ const getProductMetaLine = (product?: Product | null) => {
   return `${product.brand || 'Sem marca'} • ${getProductCode(product)}`;
 };
 
-const getProductInitials = (product?: Product | null) => {
-  if (!product) return 'P';
-  const parts = product.name.trim().split(/\s+/).filter(Boolean);
-  const first = parts[0]?.[0] || '';
-  const second = parts[1]?.[0] || '';
-  const initials = `${first}${second}`.toUpperCase();
-  return initials || product.name.slice(0, 2).toUpperCase();
+const getProductImage = (product?: Product | null) => {
+  const value = product?.image_url?.trim();
+  return value || '';
 };
 
 export default function InventoryPanel({
@@ -405,6 +401,11 @@ export default function InventoryPanel({
   const [editUnitCost, setEditUnitCost] = useState('');
   const [editUnitExpiry, setEditUnitExpiry] = useState('');
   const [deleteUnit, setDeleteUnit] = useState<InventoryUnit | null>(null);
+  const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
+  const [bulkUnitAction, setBulkUnitAction] = useState<BulkUnitAction>(null);
+  const [bulkUnitCost, setBulkUnitCost] = useState('');
+  const [bulkUnitExpiry, setBulkUnitExpiry] = useState('');
+  const [bulkUnitSaving, setBulkUnitSaving] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [categoryMode, setCategoryMode] = useState<'list' | 'create' | 'edit'>('list');
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -1039,6 +1040,171 @@ export default function InventoryPanel({
     }
   };
 
+  const closeBulkUnitAction = () => {
+    setBulkUnitAction(null);
+    setBulkUnitCost('');
+    setBulkUnitExpiry('');
+  };
+
+  const clearUnitSelection = () => {
+    setSelectedUnitIds([]);
+    setUnitMenuOpenId(null);
+  };
+
+  const toggleUnitSelection = (unitId: string) => {
+    setSelectedUnitIds((prev) =>
+      prev.includes(unitId) ? prev.filter((id) => id !== unitId) : [...prev, unitId]
+    );
+    setUnitMenuOpenId(null);
+  };
+
+  const toggleAllUnitSelection = () => {
+    if (!availableUnits.length) return;
+    setSelectedUnitIds((prev) =>
+      prev.length === availableUnits.length ? [] : availableUnits.map((unit) => unit.id)
+    );
+    setUnitMenuOpenId(null);
+  };
+
+  const openBulkCostAction = () => {
+    if (!selectedUnitIds.length) return;
+    setBulkUnitAction('cost');
+    const firstSelectedUnit = availableUnits.find((unit) => selectedUnitIds.includes(unit.id));
+    setBulkUnitCost(
+      firstSelectedUnit && `${firstSelectedUnit.cost}` !== ''
+        ? formatCurrency(toNumber(firstSelectedUnit.cost))
+        : ''
+    );
+    setBulkUnitExpiry('');
+  };
+
+  const openBulkExpiryAction = () => {
+    if (!selectedUnitIds.length) return;
+    setBulkUnitAction('expiry');
+    const firstSelectedUnit = availableUnits.find((unit) => selectedUnitIds.includes(unit.id));
+    setBulkUnitExpiry(firstSelectedUnit?.expires_at || '');
+    setBulkUnitCost('');
+  };
+
+  const openBulkDeleteAction = () => {
+    if (!selectedUnitIds.length) return;
+    setBulkUnitAction('delete');
+    setBulkUnitCost('');
+    setBulkUnitExpiry('');
+  };
+
+  const handleApplyBulkUnitAction = async () => {
+    if (!selectedProduct || !bulkUnitAction) return;
+    const targetUnits = availableUnits.filter((unit) => selectedUnitIds.includes(unit.id));
+    if (!targetUnits.length) {
+      closeBulkUnitAction();
+      return;
+    }
+    if (bulkUnitAction === 'cost' && !bulkUnitCost) {
+      setToast('Informe o preco de compra');
+      return;
+    }
+    if (bulkUnitAction === 'expiry' && !bulkUnitExpiry) {
+      setToast('Informe a data de validade');
+      return;
+    }
+
+    setBulkUnitSaving(true);
+    let successCount = 0;
+    let failedCount = 0;
+    let conflictCount = 0;
+
+    try {
+      if (bulkUnitAction === 'delete') {
+        for (const unit of targetUnits) {
+          try {
+            const res = await fetch(`${API_BASE}/inventory/units/${unit.id}`, {
+              method: 'DELETE'
+            });
+            if (res.status === 409) {
+              conflictCount += 1;
+              continue;
+            }
+            if (!res.ok) {
+              failedCount += 1;
+              continue;
+            }
+            successCount += 1;
+          } catch {
+            failedCount += 1;
+          }
+        }
+      } else {
+        const payload: { cost?: number; expiresAt?: string } = {};
+        if (bulkUnitAction === 'cost') {
+          payload.cost = parseMoney(bulkUnitCost);
+        } else if (bulkUnitAction === 'expiry') {
+          payload.expiresAt = bulkUnitExpiry;
+        }
+        for (const unit of targetUnits) {
+          try {
+            const res = await fetch(`${API_BASE}/inventory/units/${unit.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+              failedCount += 1;
+              continue;
+            }
+            successCount += 1;
+          } catch {
+            failedCount += 1;
+          }
+        }
+      }
+
+      if (successCount > 0) {
+        if (bulkUnitAction === 'delete') {
+          adjustLocalQuantity(selectedProduct.id, -successCount);
+        }
+        refreshProductDetails(selectedProduct.id);
+        router.refresh();
+      }
+
+      clearUnitSelection();
+      closeBulkUnitAction();
+
+      if (bulkUnitAction === 'delete') {
+        if (successCount > 0 && failedCount === 0 && conflictCount === 0) {
+          setToast(`${successCount} ${successCount === 1 ? 'unidade removida' : 'unidades removidas'}`);
+          return;
+        }
+        if (successCount === 0 && conflictCount > 0 && failedCount === 0) {
+          setToast(
+            `${conflictCount} ${
+              conflictCount === 1 ? 'unidade ja vendida' : 'unidades ja vendidas'
+            }`
+          );
+          return;
+        }
+        setToast(
+          `Removidas: ${successCount}. Falhas: ${failedCount + conflictCount}.`
+        );
+        return;
+      }
+
+      if (successCount > 0 && failedCount === 0) {
+        setToast(
+          `${successCount} ${successCount === 1 ? 'unidade atualizada' : 'unidades atualizadas'}`
+        );
+        return;
+      }
+      if (successCount > 0) {
+        setToast(`Atualizadas: ${successCount}. Falhas: ${failedCount}.`);
+        return;
+      }
+      setToast('Erro ao atualizar unidades');
+    } finally {
+      setBulkUnitSaving(false);
+    }
+  };
+
   const openSaleDetail = (sale: ProductSale) => {
     const mappedStatus: SaleDetail['status'] =
       sale.status === 'cancelled' ? 'cancelled' : sale.status === 'pending' ? 'pending' : 'delivered';
@@ -1276,11 +1442,28 @@ export default function InventoryPanel({
       setSellUnit(null);
       setEditUnit(null);
       setDeleteUnit(null);
+      setSelectedUnitIds([]);
+      closeBulkUnitAction();
       return;
     }
     refreshProductDetails(selectedProduct.id);
     setUnitMenuOpenId(null);
+    setSelectedUnitIds([]);
+    closeBulkUnitAction();
   }, [selectedProduct?.id]);
+
+  useEffect(() => {
+    setSelectedUnitIds((prev) =>
+      prev.filter((id) => productUnits.some((unit) => unit.status === 'available' && unit.id === id))
+    );
+  }, [productUnits]);
+
+  useEffect(() => {
+    if (productTab !== 'estoque') {
+      setSelectedUnitIds([]);
+      closeBulkUnitAction();
+    }
+  }, [productTab]);
 
   useEffect(() => {
     if (!sellUnit) return;
@@ -1294,6 +1477,8 @@ export default function InventoryPanel({
   }, [toast]);
 
   const availableUnits = productUnits.filter((unit) => unit.status === 'available');
+  const selectedUnitsCount = selectedUnitIds.length;
+  const allUnitsSelected = availableUnits.length > 0 && selectedUnitsCount === availableUnits.length;
 
   return (
     <>
@@ -1305,13 +1490,13 @@ export default function InventoryPanel({
         </section>
         <div className="actions">
           <button
-            className="button icon view-toggle"
+            className={`button icon view-toggle${view === 'grid' ? ' active' : ''}`}
             type="button"
             onClick={() => updateView(view === 'grid' ? 'list' : 'grid')}
-            title={view === 'grid' ? 'Layout de lista' : 'Layout de grade'}
-            aria-label={view === 'grid' ? 'Layout de lista' : 'Layout de grade'}
+            title={view === 'grid' ? 'Alternar para lista' : 'Alternar para grade'}
+            aria-label={view === 'grid' ? 'Alternar para lista' : 'Alternar para grade'}
           >
-            {view === 'grid' ? <IconList /> : <IconGrid />}
+            {view === 'grid' ? <IconGrid /> : <IconList />}
           </button>
           <button className="button ghost" type="button" onClick={() => setOpenImport(true)}>
             <IconUpload /> Importar
@@ -1365,7 +1550,7 @@ export default function InventoryPanel({
           </div>
         </aside>
 
-        <section className="panel">
+        <section className="panel filters-panel-static inventory-filters-panel">
           <div className="toolbar">
             <form className="search" method="get">
               <span>🔍</span>
@@ -1469,13 +1654,13 @@ export default function InventoryPanel({
                       <span className="inventory-thumb-badge">{stockLabel}</span>
                       {getProductImage(product) ? (
                         <img
-                          className="inventory-thumb-img"
+                          className="product-thumb-image"
                           src={getProductImage(product)}
                           alt={product.name}
                         />
                       ) : (
-                        <span className="inventory-thumb-img product-initial">
-                          {getProductInitials(product)}
+                        <span className="product-thumb-placeholder" aria-hidden="true">
+                          <IconBox />
                         </span>
                       )}
                     </button>
@@ -1559,9 +1744,15 @@ export default function InventoryPanel({
                     >
                       <span className="inventory-row-thumb">
                         {getProductImage(product) ? (
-                          <img src={getProductImage(product)} alt={product.name} />
+                          <img
+                            className="product-thumb-image"
+                            src={getProductImage(product)}
+                            alt={product.name}
+                          />
                         ) : (
-                          <span className="product-initial">{getProductInitials(product)}</span>
+                          <span className="product-thumb-placeholder" aria-hidden="true">
+                            <IconBox />
+                          </span>
                         )}
                       </span>
                       <div>
@@ -1877,14 +2068,20 @@ export default function InventoryPanel({
               <div className="modal-product-header">
                 <div className="modal-product-thumb">
                   {getProductImage(selectedProduct) ? (
-                    <img src={getProductImage(selectedProduct)} alt={selectedProduct.name} />
+                    <img
+                      className="product-thumb-image"
+                      src={getProductImage(selectedProduct)}
+                      alt={selectedProduct.name}
+                    />
                   ) : (
-                    <span className="product-initial">{getProductInitials(selectedProduct)}</span>
+                    <span className="product-thumb-placeholder" aria-hidden="true">
+                      <IconBox />
+                    </span>
                   )}
                 </div>
                 <div>
-                  <strong>{getProductHeadline(selectedProduct)}</strong>
-                  <span>{getProductMetaLine(selectedProduct)}</span>
+                  <strong>{selectedProduct.name}</strong>
+                  <span>{selectedProduct.brand || 'Sem marca'}</span>
                 </div>
               </div>
               <button className="modal-close" type="button" onClick={() => setSelectedProduct(null)}>
@@ -1919,14 +2116,80 @@ export default function InventoryPanel({
                   </div>
                 ) : availableUnits.length > 0 && selectedProduct.active ? (
                   <>
+                    {selectedUnitsCount > 0 ? (
+                      <div className="modal-unit-selection">
+                        <div className="modal-unit-selection-main">
+                          <button
+                            className="modal-unit-selection-clear"
+                            type="button"
+                            title="Limpar selecao"
+                            aria-label="Limpar selecao"
+                            onClick={clearUnitSelection}
+                          >
+                            ✕
+                          </button>
+                          <strong>
+                            {selectedUnitsCount}{' '}
+                            {selectedUnitsCount === 1 ? 'un. selecionada' : 'un. selecionadas'}
+                          </strong>
+                        </div>
+                        <div className="modal-unit-selection-actions">
+                          <button
+                            type="button"
+                            title="Alterar preco das selecionadas"
+                            aria-label="Alterar preco das selecionadas"
+                            onClick={openBulkCostAction}
+                          >
+                            <IconDollar />
+                          </button>
+                          <button
+                            type="button"
+                            title="Alterar validade das selecionadas"
+                            aria-label="Alterar validade das selecionadas"
+                            onClick={openBulkExpiryAction}
+                          >
+                            <IconCalendar />
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            title="Excluir selecionadas"
+                            aria-label="Excluir selecionadas"
+                            onClick={openBulkDeleteAction}
+                          >
+                            <IconTrash />
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="modal-product-table">
                       <div className="modal-table-header">
+                        <button
+                          className={`unit-select-check${allUnitsSelected ? ' checked' : ''}`}
+                          type="button"
+                          title={allUnitsSelected ? 'Desmarcar todas' : 'Selecionar todas'}
+                          aria-label={allUnitsSelected ? 'Desmarcar todas' : 'Selecionar todas'}
+                          onClick={toggleAllUnitSelection}
+                        >
+                          {allUnitsSelected ? '✓' : ''}
+                        </button>
                         <span>Preco de compra</span>
                         <span>Vencimento</span>
                         <span>Acoes</span>
                       </div>
-                      {availableUnits.map((unit) => (
+                      {availableUnits.map((unit) => {
+                        const selected = selectedUnitIds.includes(unit.id);
+                        return (
                         <div key={unit.id} className="modal-table-row">
+                          <button
+                            className={`unit-select-check${selected ? ' checked' : ''}`}
+                            type="button"
+                            title={selected ? 'Desmarcar unidade' : 'Selecionar unidade'}
+                            aria-label={selected ? 'Desmarcar unidade' : 'Selecionar unidade'}
+                            onClick={() => toggleUnitSelection(unit.id)}
+                          >
+                            {selected ? '✓' : ''}
+                          </button>
                           <span>{formatCurrency(toNumber(unit.cost))}</span>
                           <span>{unit.expires_at ? formatDate(unit.expires_at) : '-'}</span>
                           <div className="unit-actions">
@@ -1974,7 +2237,7 @@ export default function InventoryPanel({
                             ) : null}
                           </div>
                         </div>
-                      ))}
+                      )})}
                     </div>
                     <div className="modal-footer">
                       <button className="button ghost" type="button" onClick={() => openEditForm(selectedProduct)}>
@@ -2101,9 +2364,15 @@ export default function InventoryPanel({
             <div className="unit-product">
               <div className="unit-thumb">
                 {getProductImage(adjustProduct) ? (
-                  <img src={getProductImage(adjustProduct)} alt={adjustProduct.name} />
+                  <img
+                    className="product-thumb-image"
+                    src={getProductImage(adjustProduct)}
+                    alt={adjustProduct.name}
+                  />
                 ) : (
-                  <span className="product-initial">{getProductInitials(adjustProduct)}</span>
+                  <span className="product-thumb-placeholder" aria-hidden="true">
+                    <IconBox />
+                  </span>
                 )}
               </div>
               <div>
@@ -2175,9 +2444,15 @@ export default function InventoryPanel({
             <div className="unit-product">
               <div className="unit-thumb">
                 {getProductImage(selectedProduct) ? (
-                  <img src={getProductImage(selectedProduct)} alt={selectedProduct.name} />
+                  <img
+                    className="product-thumb-image"
+                    src={getProductImage(selectedProduct)}
+                    alt={selectedProduct.name}
+                  />
                 ) : (
-                  <span className="product-initial">{getProductInitials(selectedProduct)}</span>
+                  <span className="product-thumb-placeholder" aria-hidden="true">
+                    <IconBox />
+                  </span>
                 )}
               </div>
               <div>
@@ -2700,6 +2975,93 @@ export default function InventoryPanel({
         </div>
       ) : null}
 
+      {bulkUnitAction === 'cost' || bulkUnitAction === 'expiry' ? (
+        <div className="modal-backdrop" onClick={closeBulkUnitAction}>
+          <div className="modal modal-units" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{bulkUnitAction === 'cost' ? 'Atualizar preco de compra' : 'Atualizar validade'}</h3>
+              <button className="modal-close" type="button" onClick={closeBulkUnitAction}>
+                ✕
+              </button>
+            </div>
+            <div className="modal-unit-bulk-summary">
+              <strong>
+                {selectedUnitsCount} {selectedUnitsCount === 1 ? 'unidade selecionada' : 'unidades selecionadas'}
+              </strong>
+              <span>
+                {bulkUnitAction === 'cost'
+                  ? 'Aplicar novo preco para todas as unidades selecionadas.'
+                  : 'Aplicar nova validade para todas as unidades selecionadas.'}
+              </span>
+            </div>
+            {bulkUnitAction === 'cost' ? (
+              <label className="modal-field">
+                <span>Preco de compra</span>
+                <input
+                  value={bulkUnitCost}
+                  inputMode="decimal"
+                  placeholder="R$ 0,00"
+                  onChange={(event) => setBulkUnitCost(formatCurrencyInput(event.target.value))}
+                />
+              </label>
+            ) : (
+              <label className="modal-field">
+                <span>Data de validade</span>
+                <input
+                  type="date"
+                  value={bulkUnitExpiry}
+                  onChange={(event) => setBulkUnitExpiry(event.target.value)}
+                />
+              </label>
+            )}
+            <div className="modal-footer">
+              <button className="button ghost" type="button" onClick={closeBulkUnitAction} disabled={bulkUnitSaving}>
+                Cancelar
+              </button>
+              <button
+                className="button primary"
+                type="button"
+                onClick={handleApplyBulkUnitAction}
+                disabled={bulkUnitSaving}
+              >
+                {bulkUnitSaving ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {bulkUnitAction === 'delete' ? (
+        <div className="modal-backdrop" onClick={closeBulkUnitAction}>
+          <div className="modal modal-delete" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Excluir unidades</h3>
+              <button className="modal-close" type="button" onClick={closeBulkUnitAction}>
+                ✕
+              </button>
+            </div>
+            <p>
+              Tem certeza que deseja excluir {selectedUnitsCount}{' '}
+              {selectedUnitsCount === 1 ? 'unidade selecionada' : 'unidades selecionadas'}?
+              Unidades vendidas nao podem ser removidas.
+            </p>
+            <div className="modal-footer">
+              <button className="button ghost" type="button" onClick={closeBulkUnitAction} disabled={bulkUnitSaving}>
+                Cancelar
+              </button>
+              <button
+                className="button danger"
+                type="button"
+                onClick={handleApplyBulkUnitAction}
+                disabled={bulkUnitSaving}
+              >
+                {bulkUnitSaving ? 'Excluindo...' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {editUnit && selectedProduct ? (
         <div className="modal-backdrop" onClick={() => setEditUnit(null)}>
           <div className="modal modal-units" onClick={(event) => event.stopPropagation()}>
@@ -2712,9 +3074,15 @@ export default function InventoryPanel({
             <div className="unit-product">
               <div className="unit-thumb">
                 {getProductImage(selectedProduct) ? (
-                  <img src={getProductImage(selectedProduct)} alt={selectedProduct.name} />
+                  <img
+                    className="product-thumb-image"
+                    src={getProductImage(selectedProduct)}
+                    alt={selectedProduct.name}
+                  />
                 ) : (
-                  <span className="product-initial">{getProductInitials(selectedProduct)}</span>
+                  <span className="product-thumb-placeholder" aria-hidden="true">
+                    <IconBox />
+                  </span>
                 )}
               </div>
               <div>

@@ -125,7 +125,7 @@ export default async function ClientesPage({
         </div>
       </div>
 
-      <section className="panel">
+      <section className="panel filters-panel-static clients-filters-panel">
         <div className="toolbar">
           <form className="search" method="get">
             <span>🔍</span>

@@ -593,7 +593,7 @@ export default function FinancePanel({
 
   return (
     <>
-      <section className="panel finance-toolbar-panel">
+      <section className="panel finance-toolbar-panel filters-panel-static">
         <div className="finance-toolbar-row">
           <div className="finance-month-picker">
             <button type="button" className="button icon" onClick={() => changeMonth(-1)} aria-label="Mes anterior">

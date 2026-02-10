@@ -5,6 +5,7 @@
   "packageManager": "pnpm@10.28.2",
   "scripts": {
     "dev": "turbo dev",
+    "dev:restart": "bash scripts/dev-restart.sh",
     "build": "turbo build",
     "lint": "turbo lint",
     "test": "turbo test",

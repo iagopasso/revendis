@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { API_BASE, formatCurrency, toNumber } from '../lib';
+import { IconChart, IconCreditCard, IconDollar, IconPercent } from '../icons';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
 
 type PaymentStatus = 'paid' | 'pending' | 'overdue' | 'partial';
@@ -367,6 +368,8 @@ export default function SalesPanel({
   const [customerTagsOpen, setCustomerTagsOpen] = useState(false);
   const [autoOpenedFromQuery, setAutoOpenedFromQuery] = useState(false);
   const [customerReturnTarget, setCustomerReturnTarget] = useState<string | null>(null);
+  const customerSearchRef = useRef<HTMLDivElement>(null);
+  const customerTagsRef = useRef<HTMLLabelElement>(null);
 
   const saleProducts = useMemo(
     () => localProducts.filter((product) => product.active !== false),
@@ -408,7 +411,7 @@ export default function SalesPanel({
       )
     : localCustomers.slice(0, 8);
   const shouldShowCustomerResults =
-    customerSearchOpen || (normalizedCustomerQuery.length > 0 && !selectedCustomerMatchesQuery);
+    customerSearchOpen && (normalizedCustomerQuery.length === 0 || !selectedCustomerMatchesQuery);
 
   const customerTagOptions = useMemo(
     () =>
@@ -592,6 +595,34 @@ export default function SalesPanel({
     const timer = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if ((!createSaleOpen || !customerSearchOpen) && (!createCustomerOpen || !customerTagsOpen)) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (createSaleOpen && customerSearchOpen && !customerSearchRef.current?.contains(target)) {
+        setCustomerSearchOpen(false);
+      }
+      if (createCustomerOpen && customerTagsOpen && !customerTagsRef.current?.contains(target)) {
+        setCustomerTagsOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setCustomerSearchOpen(false);
+      setCustomerTagsOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [createSaleOpen, customerSearchOpen, createCustomerOpen, customerTagsOpen]);
 
   useEffect(() => {
     if (autoOpenedFromQuery) return;
@@ -1011,38 +1042,46 @@ export default function SalesPanel({
 
   return (
     <>
-      <section className="stat-grid">
+      <section className="stat-grid sales-stat-grid">
         <div className="stat-card">
           <div>
             <div className="stat-label">Quantidade de vendas</div>
             <div className="stat-value">{totalRows}</div>
           </div>
-          <div className="stat-icon">⬆</div>
+          <div className="stat-icon sales-count">
+            <IconChart />
+          </div>
         </div>
         <div className="stat-card">
           <div>
             <div className="stat-label">Valor em vendas</div>
             <div className="stat-value">{formatCurrency(totalSales)}</div>
           </div>
-          <div className="stat-icon">$</div>
+          <div className="stat-icon sales-total">
+            <IconDollar />
+          </div>
         </div>
         <div className="stat-card">
           <div>
             <div className="stat-label">Lucros</div>
             <div className="stat-value">{formatCurrency(profit)}</div>
           </div>
-          <div className="stat-icon">%</div>
+          <div className="stat-icon sales-profit">
+            <IconPercent />
+          </div>
         </div>
         <div className="stat-card">
           <div>
             <div className="stat-label">Total a receber</div>
             <div className="stat-value">{formatCurrency(totalReceivable)}</div>
           </div>
-          <div className="stat-icon">💳</div>
+          <div className="stat-icon sales-receivable">
+            <IconCreditCard />
+          </div>
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel sales-table-panel">
         {totalRows === 0 ? (
           <div className="empty-state">
             {hasSalesInRange ? (
@@ -1258,71 +1297,74 @@ export default function SalesPanel({
                   + Cadastrar cliente
                 </button>
               </div>
-              <label className="customer-search-field">
-                <input
-                  placeholder="Buscar cliente"
-                  value={saleCustomerQuery}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setSaleCustomerQuery(value);
-                    setCustomerSearchOpen(value.trim().length > 0);
-                    const match = localCustomers.find(
-                      (customer) => customer.name.trim().toLowerCase() === value.trim().toLowerCase()
-                    );
-                    if (match) {
-                      setSaleCustomerId(match.id);
-                      setSaleCustomerName(match.name);
-                    } else {
-                      setSaleCustomerId('');
-                      setSaleCustomerName('');
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setCustomerSearchOpen(true)}
-                  aria-label="Pesquisar clientes"
-                >
-                  ⌕
-                </button>
-              </label>
-
-              {saleCustomerName ? (
-                <div className="sale-selected-customer">
-                  <strong>{saleCustomerName}</strong>
+              <div ref={customerSearchRef} className="customer-search-area">
+                <label className="customer-search-field">
+                  <input
+                    placeholder="Buscar cliente"
+                    value={saleCustomerQuery}
+                    onFocus={() => setCustomerSearchOpen(true)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSaleCustomerQuery(value);
+                      setCustomerSearchOpen(value.trim().length > 0);
+                      const match = localCustomers.find(
+                        (customer) => customer.name.trim().toLowerCase() === value.trim().toLowerCase()
+                      );
+                      if (match) {
+                        setSaleCustomerId(match.id);
+                        setSaleCustomerName(match.name);
+                      } else {
+                        setSaleCustomerId('');
+                        setSaleCustomerName('');
+                      }
+                    }}
+                  />
                   <button
                     type="button"
-                    onClick={() => {
-                      setSaleCustomerName('');
-                      setSaleCustomerId('');
-                      setSaleCustomerQuery('');
-                      setCustomerSearchOpen(false);
-                    }}
+                    onClick={() => setCustomerSearchOpen(true)}
+                    aria-label="Pesquisar clientes"
                   >
-                    Limpar
+                    ⌕
                   </button>
-                </div>
-              ) : null}
+                </label>
 
-              {shouldShowCustomerResults ? (
-                <div className="customer-search-results">
-                  {customerSearchResults.length === 0 ? (
-                    <span className="meta">Nenhum cliente encontrado.</span>
-                  ) : (
-                    customerSearchResults.map((customer) => (
-                      <button
-                        key={customer.id}
-                        type="button"
-                        className={`customer-result-item${saleCustomerId === customer.id ? ' active' : ''}`}
-                        onClick={() => selectSaleCustomer(customer)}
-                      >
-                        <strong>{customer.name}</strong>
-                        <span>{customer.phone || 'Sem telefone'}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              ) : null}
+                {saleCustomerName ? (
+                  <div className="sale-selected-customer">
+                    <strong>{saleCustomerName}</strong>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSaleCustomerName('');
+                        setSaleCustomerId('');
+                        setSaleCustomerQuery('');
+                        setCustomerSearchOpen(false);
+                      }}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                ) : null}
+
+                {shouldShowCustomerResults ? (
+                  <div className="customer-search-results">
+                    {customerSearchResults.length === 0 ? (
+                      <span className="meta">Nenhum cliente encontrado.</span>
+                    ) : (
+                      customerSearchResults.map((customer) => (
+                        <button
+                          key={customer.id}
+                          type="button"
+                          className={`customer-result-item${saleCustomerId === customer.id ? ' active' : ''}`}
+                          onClick={() => selectSaleCustomer(customer)}
+                        >
+                          <strong>{customer.name}</strong>
+                          <span>{customer.phone || 'Sem telefone'}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                ) : null}
+              </div>
             </section>
 
             <div className="form-row">
@@ -1569,7 +1611,7 @@ export default function SalesPanel({
                   />
                 </label>
 
-                <label className="modal-field">
+                <label ref={customerTagsRef} className="modal-field">
                   <span>Tags</span>
                   <div className="customer-tags-row">
                     <div className={`customer-tags-select${customerTagsOpen ? ' open' : ''}`}>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 type TabKey = 'presets' | 'months' | 'custom';
@@ -70,6 +70,7 @@ export default function DateRangePicker({ defaultPreset = '7d' }: DateRangePicke
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<TabKey>('presets');
   const [year, setYear] = useState(getInitialYear(searchParams));
   const [from, setFrom] = useState(searchParams.get('from') || '');
@@ -82,6 +83,31 @@ export default function DateRangePicker({ defaultPreset = '7d' }: DateRangePicke
       setTo(searchParams.get('to') || '');
     }
   }, [open, searchParams]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (!wrapperRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
 
   const label = useMemo(() => getLabelFromParams(searchParams, defaultPreset), [defaultPreset, searchParams]);
 
@@ -135,7 +161,7 @@ export default function DateRangePicker({ defaultPreset = '7d' }: DateRangePicke
   };
 
   return (
-    <div className="date-range">
+    <div ref={wrapperRef} className="date-range">
       <button className="chip date-range-trigger" type="button" onClick={() => setOpen(!open)}>
         📅 {label}
       </button>

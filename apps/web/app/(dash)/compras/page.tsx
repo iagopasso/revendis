@@ -1,4 +1,10 @@
-import { fetchList } from '../lib';
+import Link from 'next/link';
+import {
+  fetchList,
+  getDateRangeFromSearchParams,
+  getStringParam,
+  isInDateRange
+} from '../lib';
 import PurchasesPanel from './purchases-panel';
 
 type Purchase = {
@@ -17,6 +23,25 @@ type ResellerBrand = {
   name: string;
 };
 
+type Product = {
+  id: string;
+  sku: string;
+  name: string;
+  brand?: string | null;
+  barcode?: string | null;
+  image_url?: string | null;
+  price: number | string;
+  active?: boolean;
+};
+
+type SearchParams = {
+  range?: string | string[];
+  month?: string | string[];
+  from?: string | string[];
+  to?: string | string[];
+  newPurchase?: string | string[];
+};
+
 const uniqueBrands = (values: Array<string | null | undefined>) =>
   Array.from(
     new Set(
@@ -26,19 +51,41 @@ const uniqueBrands = (values: Array<string | null | undefined>) =>
     )
   ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
-export default async function ComprasPage() {
-  const [purchasesResponse, resellerBrandsResponse] = await Promise.all([
+export default async function ComprasPage({
+  searchParams
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
+  const resolvedParams = (await searchParams) ?? {};
+  const [purchasesResponse, resellerBrandsResponse, productsResponse] = await Promise.all([
     fetchList<Purchase>('/purchases'),
-    fetchList<ResellerBrand>('/settings/brands')
+    fetchList<ResellerBrand>('/settings/brands'),
+    fetchList<Product>('/inventory/products')
   ]);
 
   const purchases = purchasesResponse?.data ?? [];
+  const products = productsResponse?.data ?? [];
+  const dateRange = getDateRangeFromSearchParams(resolvedParams);
+  const purchasesInRange = purchases.filter((purchase) =>
+    isInDateRange(purchase.purchase_date || purchase.created_at, dateRange)
+  );
+  const initialCreateOpen = getStringParam(resolvedParams.newPurchase) === '1';
   const resellerBrands = resellerBrandsResponse?.data ?? [];
 
   const availableBrands = uniqueBrands([
     ...purchases.map((purchase) => purchase.brand),
+    ...products.map((product) => product.brand),
     ...resellerBrands.map((brand) => brand.name)
   ]);
+  const createPurchaseParams = new URLSearchParams();
+  Object.entries(resolvedParams).forEach(([key, rawValue]) => {
+    if (key === 'newPurchase') return;
+    const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+    if (!value) return;
+    createPurchaseParams.set(key, value);
+  });
+  createPurchaseParams.set('newPurchase', '1');
+  const createPurchaseHref = `/compras?${createPurchaseParams.toString()}`;
 
   return (
     <main className="page-content">
@@ -48,9 +95,19 @@ export default async function ComprasPage() {
           <h1>Compras</h1>
           <p>Controle pedidos de fornecedores e entradas no estoque.</p>
         </section>
+        <div className="actions">
+          <Link className="button primary" href={createPurchaseHref}>
+            + Nova compra
+          </Link>
+        </div>
       </div>
 
-      <PurchasesPanel initialPurchases={purchases} availableBrands={availableBrands} />
+      <PurchasesPanel
+        initialPurchases={purchasesInRange}
+        availableBrands={availableBrands}
+        products={products}
+        initialCreateOpen={initialCreateOpen}
+      />
     </main>
   );
 }

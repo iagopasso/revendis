@@ -199,7 +199,7 @@ export default async function VendasPage({
   const createSaleHref = `/vendas?${createSaleParams.toString()}`;
 
   return (
-    <main className="page-content">
+    <main className="page-content sales-page">
       <div className="topbar">
         <section className="hero">
           <span className="section-title">Vendas</span>
@@ -213,9 +213,9 @@ export default async function VendasPage({
         </div>
       </div>
 
-      <section className="panel">
-        <div className="toolbar">
-          <div className="toolbar-group">
+      <section className="panel sales-filters-panel filters-panel-static">
+        <div className="toolbar toolbar-sales">
+          <div className="toolbar-group toolbar-sales-group">
             <FilterSelect
               name="payment"
               value={paymentFilter}
