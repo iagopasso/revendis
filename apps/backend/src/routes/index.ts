@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import brands from './brands';
+import catalog from './catalog';
 import customers from './customers';
 import finance from './finance';
 import health from './health';
@@ -14,6 +15,7 @@ const router = Router();
 
 router.use(health);
 router.use(brands);
+router.use(catalog);
 router.use(customers);
 router.use(finance);
 router.use(inventory);

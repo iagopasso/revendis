@@ -9,6 +9,7 @@ import { downloadPdf } from '../lib/pdf';
 export type SaleDetail = {
   id: string;
   customer: string;
+  customerPhotoUrl?: string;
   date: string;
   status: 'delivered' | 'pending' | 'cancelled';
   total: number;
@@ -58,7 +59,9 @@ type SaleDetailResponse = {
   subtotal: number | string;
   discount_total: number | string;
   created_at: string;
+  customer_id?: string | null;
   customer_name?: string | null;
+  customer_photo_url?: string | null;
   items: SaleItemDetail[];
   payments: PaymentDetail[];
   receivables: ReceivableDetail[];
@@ -450,6 +453,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
   const receiptStatus = isPaid ? 'Pago' : isOverdue ? `Atrasado (${overdueDays} dias)` : 'Pendente';
 
   const customerName = detail?.customer_name || sale.customer;
+  const customerPhotoUrl = detail?.customer_photo_url || sale.customerPhotoUrl;
   const saleItems =
     detail?.items && detail.items.length
       ? detail.items
@@ -887,7 +891,9 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
       <div className="modal modal-sale" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div className="sale-header-left">
-            <div className="avatar-circle">👤</div>
+            <div className="avatar-circle">
+              {customerPhotoUrl ? <img src={customerPhotoUrl} alt={customerName} /> : '👤'}
+            </div>
             <div className="sale-header-text">
               <strong>{customerName}</strong>
               <div className="sale-header-meta">

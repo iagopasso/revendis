@@ -22,10 +22,22 @@ test('creates storefront order', async () => {
     return;
   }
 
+  const sku = `SKU-STOREFRONT-${Date.now()}`;
+  const createProduct = await request(app)
+    .post('/api/inventory/products')
+    .send({
+      name: 'Produto Storefront',
+      sku,
+      price: 49.9,
+      stock: 2
+    });
+
+  expect(createProduct.status).toBe(201);
+
   const response = await request(app)
     .post('/api/storefront/orders')
     .send({
-      items: [{ sku: 'SKU-001', quantity: 1, price: 49.9 }],
+      items: [{ sku, quantity: 1, price: 49.9 }],
       customer: { name: 'Cliente Web', email: 'cliente@exemplo.com' }
     });
 

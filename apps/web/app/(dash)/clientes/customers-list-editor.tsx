@@ -8,6 +8,7 @@ type Customer = {
   id: string;
   name: string;
   phone: string;
+  photo_url?: string | null;
   email?: string | null;
   birth_date?: string | null;
   description?: string | null;
@@ -300,7 +301,13 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
               className="customer-grid-card"
               onClick={() => openDetails(customer)}
             >
-              <div className="customer-grid-avatar">{getInitials(customer.name)}</div>
+              <div className="customer-grid-avatar">
+                {customer.photo_url ? (
+                  <img src={customer.photo_url} alt={customer.name} />
+                ) : (
+                  getInitials(customer.name)
+                )}
+              </div>
               <strong>{customer.name.toUpperCase()}</strong>
               <span className="customer-grid-contact">{customer.phone || '--'}</span>
               <span className="customer-grid-location">
@@ -348,7 +355,13 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
             </button>
             <div className="customer-profile-layout">
               <aside className="customer-profile-side">
-                <div className="customer-profile-avatar">{getInitials(selectedCustomer.name)}</div>
+                <div className="customer-profile-avatar">
+                  {selectedCustomer.photo_url ? (
+                    <img src={selectedCustomer.photo_url} alt={selectedCustomer.name} />
+                  ) : (
+                    getInitials(selectedCustomer.name)
+                  )}
+                </div>
                 <strong className="customer-profile-name">{selectedCustomer.name.toUpperCase()}</strong>
                 <a
                   className="customer-profile-phone"

@@ -13,7 +13,9 @@ type Sale = {
   status: string;
   total: number | string;
   created_at: string;
+  customer_id?: string | null;
   customer_name?: string | null;
+  customer_photo_url?: string | null;
   items_count?: number | string;
   cost_total?: number | string;
   profit?: number | string;
@@ -184,6 +186,21 @@ const getInitials = (value: string) => {
 };
 
 const toIsoDate = (value: Date) => value.toISOString().split('T')[0];
+
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === 'string') {
+        resolve(result);
+        return;
+      }
+      reject(new Error('invalid_file_data'));
+    };
+    reader.onerror = () => reject(new Error('invalid_file_data'));
+    reader.readAsDataURL(file);
+  });
 
 const formatPhoneInput = (value: string) => {
   const digits = value.replace(/\D/g, '').slice(0, 11);
@@ -728,6 +745,7 @@ export default function SalesPanel({
     setSelectedSale({
       id: sale.id,
       customer: sale.customer_name || 'Cliente nao informado',
+      customerPhotoUrl: sale.customer_photo_url || undefined,
       date: sale.created_at,
       status: mappedStatus,
       total: Number(sale.total),
@@ -1128,7 +1146,13 @@ export default function SalesPanel({
                     onClick={() => openModal(sale)}
                   >
                     <div className="sale-customer">
-                      <div className="sale-avatar">{getInitials(customerName)}</div>
+                      <div className="sale-avatar">
+                        {sale.customer_photo_url ? (
+                          <img src={sale.customer_photo_url} alt={customerName} />
+                        ) : (
+                          getInitials(customerName)
+                        )}
+                      </div>
                       <div>
                         <strong>{customerName}</strong>
                         <div className="meta">Venda #{sale.id.slice(0, 6)}</div>
@@ -1550,11 +1574,15 @@ export default function SalesPanel({
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={(event) => {
+                      onChange={async (event) => {
                         const file = event.target.files?.[0];
                         if (!file) return;
-                        const nextUrl = URL.createObjectURL(file);
-                        updateCustomerPhoto(nextUrl);
+                        try {
+                          const nextUrl = await fileToDataUrl(file);
+                          updateCustomerPhoto(nextUrl);
+                        } catch {
+                          setCustomerFormError('Nao foi possivel carregar a imagem do cliente');
+                        }
                         event.currentTarget.value = '';
                       }}
                     />

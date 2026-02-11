@@ -22,11 +22,27 @@ test('creates, updates and deletes purchase', async () => {
     return;
   }
 
+  const sku = `PUR-${Date.now()}`;
+  const productRes = await request(app).post('/api/inventory/products').send({
+    name: 'Produto Compra Teste',
+    sku,
+    price: 15.5
+  });
+  expect(productRes.status).toBe(201);
+  const productId = productRes.body.data.id as string;
+
   const createRes = await request(app).post('/api/purchases').send({
     supplier: 'Fornecedor Teste',
     total: 450.75,
     items: 9,
-    brand: 'Marca Teste'
+    brand: 'Marca Teste',
+    purchaseItems: [
+      {
+        productId,
+        quantity: 3,
+        unitCost: 10.25
+      }
+    ]
   });
 
   expect(createRes.status).toBe(201);
@@ -37,6 +53,14 @@ test('creates, updates and deletes purchase', async () => {
   expect(listRes.status).toBe(200);
   expect(Array.isArray(listRes.body.data)).toBe(true);
   expect(listRes.body.data.some((item: { id: string }) => item.id === purchaseId)).toBe(true);
+
+  const inventoryRes = await request(app).get('/api/inventory/products');
+  expect(inventoryRes.status).toBe(200);
+  const createdProduct = (inventoryRes.body.data as Array<{ id: string; quantity: number }>).find(
+    (item) => item.id === productId
+  );
+  expect(createdProduct).toBeTruthy();
+  expect(Number(createdProduct?.quantity || 0)).toBe(3);
 
   const statusRes = await request(app).patch(`/api/purchases/${purchaseId}/status`).send({
     status: 'received'

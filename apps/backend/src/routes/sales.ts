@@ -42,12 +42,14 @@ router.get(
          GROUP BY iu.sale_id
        )
        SELECT bs.id,
+              bs.customer_id,
               bs.status,
               bs.subtotal,
               bs.discount_total,
               bs.total,
               bs.created_at,
               COALESCE(c.name, bs.customer_name) AS customer_name,
+              c.photo_url AS customer_photo_url,
               COALESCE(items.total_quantity, 0) AS items_count,
               COALESCE(costs.cost_total, 0) AS cost_total,
               (bs.total - COALESCE(costs.cost_total, 0)) AS profit
@@ -236,7 +238,9 @@ router.get(
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const saleRes = await query(
       `SELECT s.id, s.status, s.subtotal, s.discount_total, s.total, s.created_at,
-              COALESCE(c.name, s.customer_name) AS customer_name
+              s.customer_id,
+              COALESCE(c.name, s.customer_name) AS customer_name,
+              c.photo_url AS customer_photo_url
        FROM sales s
        LEFT JOIN customers c ON c.id = s.customer_id
        WHERE s.id = $1 AND s.store_id = $2`,

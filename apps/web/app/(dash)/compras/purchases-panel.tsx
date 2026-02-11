@@ -55,6 +55,13 @@ type PurchaseDraftItem = {
   quantity: string;
 };
 
+type PurchasePayloadItem = {
+  productId: string;
+  quantity: number;
+  unitCost: number;
+  expiresAt?: string;
+};
+
 type DraftSnapshot = {
   form: PurchaseForm;
   items: PurchaseDraftItem[];
@@ -117,6 +124,23 @@ const formatDateMask = (value: string) => {
   if (digits.length <= 2) return digits;
   if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+};
+
+const parseMaskedDateToIso = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+  const day = match[1];
+  const month = match[2];
+  const year = match[3];
+  const iso = `${year}-${month}-${day}`;
+  const date = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  if (date.getUTCFullYear() !== Number(year)) return null;
+  if (date.getUTCMonth() + 1 !== Number(month)) return null;
+  if (date.getUTCDate() !== Number(day)) return null;
+  return iso;
 };
 
 const createDefaultForm = (): PurchaseForm => ({
@@ -575,6 +599,43 @@ export default function PurchasesPanel({
     const supplier = form.supplier.trim() || 'Fornecedor nao informado';
     const items = Number(form.items);
     const total = parseCurrencyInput(form.total);
+    const purchaseItems: PurchasePayloadItem[] = [];
+
+    if (purchaseDraftItems.length <= 0) {
+      setFormError('Inclua ao menos um produto.');
+      return;
+    }
+
+    for (const draftItem of purchaseDraftItems) {
+      const quantity = Number.parseInt(draftItem.quantity, 10);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        setFormError('Informe uma quantidade valida para todos os produtos.');
+        return;
+      }
+
+      const unitCost = parseCurrencyInput(draftItem.price);
+      if (!Number.isFinite(unitCost) || unitCost < 0) {
+        setFormError('Informe um preco valido para todos os produtos.');
+        return;
+      }
+
+      let expiresAt: string | undefined;
+      if (draftItem.expiryDate.trim()) {
+        const parsedDate = parseMaskedDateToIso(draftItem.expiryDate);
+        if (!parsedDate) {
+          setFormError('Informe uma validade no formato dd/mm/aaaa.');
+          return;
+        }
+        expiresAt = parsedDate;
+      }
+
+      purchaseItems.push({
+        productId: draftItem.productId,
+        quantity,
+        unitCost,
+        expiresAt
+      });
+    }
 
     if (!Number.isInteger(items) || items <= 0) {
       setFormError('Informe uma quantidade de itens valida.');
@@ -604,7 +665,8 @@ export default function PurchasesPanel({
           total,
           brand: form.brand.trim() || undefined,
           purchaseDate: form.purchaseDate,
-          status: 'pending'
+          status: 'pending',
+          purchaseItems
         })
       });
 

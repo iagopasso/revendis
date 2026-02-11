@@ -1505,6 +1505,14 @@ main {
   font-size: 0.78rem;
   color: #7a889f;
   font-weight: 600;
+  overflow: hidden;
+}
+
+.sale-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .table-footer {
@@ -1873,6 +1881,14 @@ main {
   display: grid;
   place-items: center;
   font-size: 1.1rem;
+  overflow: hidden;
+}
+
+.avatar-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .status-pill {
@@ -3896,6 +3912,14 @@ main {
   place-items: center;
   font-size: 2rem;
   margin-bottom: 4px;
+  overflow: hidden;
+}
+
+.customer-grid-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .customer-grid-card strong {
@@ -3952,6 +3976,14 @@ main {
   place-items: center;
   font-size: 2.8rem;
   font-weight: 600;
+  overflow: hidden;
+}
+
+.customer-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .customer-profile-name {
@@ -4322,6 +4354,34 @@ main {
   justify-content: center;
   background: linear-gradient(180deg, #b91cfe, #8b0ee2);
   color: #ffffff;
+}
+
+.catalog-brand-selector {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.catalog-brand-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.catalog-brand-chip {
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.catalog-brand-chip.active {
+  border-color: rgba(63, 194, 255, 0.55);
+  background: rgba(63, 194, 255, 0.15);
 }
 
 .modal-suggestions {

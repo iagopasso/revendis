@@ -50,14 +50,26 @@ type InventoryUnit = {
 
 type ProductSale = {
   sale_id: string;
+  customer_id?: string | null;
   status: string;
   total: number | string;
   created_at: string;
   customer_name?: string | null;
+  customer_photo_url?: string | null;
   quantity: number | string;
   price: number | string;
   sku: string;
   payment_status?: 'paid' | 'pending';
+};
+
+type CatalogSuggestionProduct = {
+  id: string;
+  sku: string;
+  name: string;
+  brand?: string | null;
+  price?: number | string | null;
+  imageUrl?: string | null;
+  sourceBrand?: string;
 };
 
 type BulkUnitAction = 'cost' | 'expiry' | 'delete' | null;
@@ -133,31 +145,6 @@ type InventoryPanelProps = {
   viewParam: string;
 };
 
-const suggestions = [
-  {
-    id: '1',
-    name: '174929 - Footworks Creme Hidratante para os Pes Noturno',
-    brand: 'Avon',
-    brandCode: '174929'
-  },
-  {
-    id: '2',
-    name: '1 Garrafa Aquavibe Motivacional 2 L + 3 Garrafas Eco Tupper Plus 500 ml',
-    brand: 'Tupper',
-    brandCode: 'TP-200'
-  },
-  { id: '3', name: '1 TOUCH FRESH QUAD 1,2L BORDEA', brand: 'Tupper', brandCode: 'TF-120' },
-  { id: '4', name: '1 TOUCH FRESH QUAD 370ML BORD', brand: 'Tupper', brandCode: 'TF-037' },
-  { id: '5', name: '1 TOUCH FRESH QUAD 810ML BORD', brand: 'Tupper', brandCode: 'TF-081' },
-  { id: '6', name: '1 TOUCH FRESH RET 2,85L BORDEA', brand: 'Tupper', brandCode: 'TF-285' },
-  {
-    id: '7',
-    name: '2 de 250 ml (1 Ouro e 1 Morango) + 1 de 740 ml + 1 de 3,5 L',
-    brand: 'Natura',
-    brandCode: 'NT-250'
-  }
-];
-
 const paymentMethods = [
   'Dinheiro',
   'Cartao de Credito',
@@ -167,18 +154,6 @@ const paymentMethods = [
   'Boleto',
   'TED/DOC',
   'App de Pagamento'
-];
-
-const buildSampleImage = (label: string, primary: string, secondary: string) => {
-  const svg = `<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"200\" viewBox=\"0 0 200 200\">\n  <rect width=\"200\" height=\"200\" rx=\"24\" fill=\"#0f172a\"/>\n  <rect x=\"50\" y=\"26\" width=\"100\" height=\"148\" rx=\"18\" fill=\"${primary}\"/>\n  <rect x=\"68\" y=\"48\" width=\"64\" height=\"84\" rx=\"10\" fill=\"${secondary}\"/>\n  <rect x=\"78\" y=\"140\" width=\"44\" height=\"10\" rx=\"5\" fill=\"#0f172a\" opacity=\"0.2\"/>\n  <text x=\"100\" y=\"168\" font-size=\"16\" text-anchor=\"middle\" fill=\"#e2e8f0\" font-family=\"Arial, sans-serif\">${label}</text>\n</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-};
-
-const sampleImages = [
-  { id: 'sample-1', label: 'LO', url: buildSampleImage('LO', '#8b5cf6', '#e2e8f0') },
-  { id: 'sample-2', label: 'CX', url: buildSampleImage('CX', '#38bdf8', '#e2e8f0') },
-  { id: 'sample-3', label: 'PF', url: buildSampleImage('PF', '#f472b6', '#e2e8f0') },
-  { id: 'sample-4', label: 'SN', url: buildSampleImage('SN', '#fbbf24', '#111827') }
 ];
 
 const emptyDraft: ProductDraft = {
@@ -193,6 +168,128 @@ const emptyDraft: ProductDraft = {
 };
 
 const customerTagSuggestions = ['VIP', 'Frequente', 'Atacado', 'Recompra', 'Indicacao'];
+
+const catalogBrandOptions = [
+  { slug: 'avon', label: 'Avon', aliases: ['avon'] },
+  { slug: 'mary-kay', label: 'Mary Kay', aliases: ['mary kay', 'marykay', 'mary-kay'] },
+  {
+    slug: 'tupperware',
+    label: 'Tupperware',
+    aliases: ['tupperware', 'tupper', 'tuppware', 'tupware', 'tupparware']
+  },
+  { slug: 'eudora', label: 'Eudora', aliases: ['eudora'] },
+  { slug: 'boticario', label: 'Boticario', aliases: ['boticario', 'o boticario', 'o-boticario'] },
+  { slug: 'oui', label: 'Oui', aliases: ['oui'] },
+  { slug: 'natura', label: 'Natura', aliases: ['natura'] },
+  { slug: 'extase', label: 'Extase', aliases: ['extase', 'extasee', 'extasis'] },
+  { slug: 'diamante', label: 'Diamante', aliases: ['diamante'] }
+] as const;
+
+type CatalogBrandSlug = (typeof catalogBrandOptions)[number]['slug'];
+
+const normalizeBrandToken = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+
+const catalogBrandAliasMap = catalogBrandOptions.reduce<Record<string, CatalogBrandSlug>>(
+  (acc, option) => {
+    acc[normalizeBrandToken(option.slug)] = option.slug;
+    option.aliases.forEach((alias) => {
+      acc[normalizeBrandToken(alias)] = option.slug;
+    });
+    return acc;
+  },
+  {}
+);
+
+const resolveCatalogBrandSlug = (value?: string | null): CatalogBrandSlug | null => {
+  if (!value) return null;
+  return catalogBrandAliasMap[normalizeBrandToken(value)] || null;
+};
+
+const getCatalogBrandLabel = (slug?: string | null) => {
+  if (!slug) return '';
+  return catalogBrandOptions.find((option) => option.slug === slug)?.label || slug;
+};
+
+const catalogSampleSuggestions: CatalogSuggestionProduct[] = [
+  {
+    id: 'MOCK-AVON-001',
+    sku: 'AV-FA-BEYOND-050',
+    name: 'Far Away Beyond Deo Parfum 50ml',
+    brand: 'Avon',
+    price: 119.9,
+    sourceBrand: 'avon'
+  },
+  {
+    id: 'MOCK-MK-001',
+    sku: 'MK-TW3D-CR-DIA',
+    name: 'TimeWise 3D Creme Dia FPS 30',
+    brand: 'Mary Kay',
+    price: 139.9,
+    sourceBrand: 'mary-kay'
+  },
+  {
+    id: 'MOCK-TP-001',
+    sku: 'TP-TM-43L',
+    name: 'Tigela Maravilhosa 4.3L',
+    brand: 'Tupperware',
+    price: 119,
+    sourceBrand: 'tupperware'
+  },
+  {
+    id: 'MOCK-EU-001',
+    sku: 'EU-SI-SHAM-NR',
+    name: 'Siage Shampoo Nutri Rose 250ml',
+    brand: 'Eudora',
+    price: 42.9,
+    sourceBrand: 'eudora'
+  },
+  {
+    id: 'MOCK-BO-001',
+    sku: 'BO-MALBEC-100',
+    name: 'Malbec Desodorante Colonia 100ml',
+    brand: 'Boticario',
+    price: 149.9,
+    sourceBrand: 'boticario'
+  },
+  {
+    id: 'MOCK-OUI-001',
+    sku: 'OUI-MADAME-075',
+    name: 'Oui Madame Olympe Deo Parfum 75ml',
+    brand: 'Oui',
+    price: 239.9,
+    sourceBrand: 'oui'
+  },
+  {
+    id: 'MOCK-NAT-001',
+    sku: 'NAT-KAIAK-OCE-100',
+    name: 'Kaiak Oceano Masculino 100ml',
+    brand: 'Natura',
+    price: 134.9,
+    sourceBrand: 'natura'
+  },
+  {
+    id: 'MOCK-EXT-001',
+    sku: 'EX-EAU-GOLD-100',
+    name: 'Extase Gold Eau de Parfum 100ml',
+    brand: 'Extase',
+    price: 169.9,
+    sourceBrand: 'extase'
+  },
+  {
+    id: 'MOCK-DIA-001',
+    sku: 'DI-BR-PERF-100',
+    name: 'Diamante Brilho Perfume 100ml',
+    brand: 'Diamante',
+    price: 114.9,
+    sourceBrand: 'diamante'
+  }
+];
 
 const emptyCustomerDraft: CustomerDraft = {
   photoUrl: '',
@@ -245,6 +342,17 @@ const uniqueBrands = (values: Array<string | null | undefined>) =>
     )
   ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
+const filterCatalogSampleSuggestions = (query: string): CatalogSuggestionProduct[] => {
+  const normalizedQuery = query.trim().toLowerCase();
+  return catalogSampleSuggestions
+    .filter((product) => {
+      if (!normalizedQuery) return true;
+      const searchable = `${product.name} ${product.sku} ${product.brand || ''}`.toLowerCase();
+      return searchable.includes(normalizedQuery);
+    })
+    .slice(0, 30);
+};
+
 const formatDate = (value?: string | null) => {
   if (!value) return '-';
   const normalized = value.includes('T') ? value : `${value}T00:00:00`;
@@ -295,6 +403,21 @@ const formatCepInput = (value: string) => {
 };
 
 const toIsoDate = (value: Date) => value.toISOString().split('T')[0];
+
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === 'string') {
+        resolve(result);
+        return;
+      }
+      reject(new Error('invalid_file_data'));
+    };
+    reader.onerror = () => reject(new Error('invalid_file_data'));
+    reader.readAsDataURL(file);
+  });
 
 const addMonths = (dateValue: string, months: number) => {
   const base = new Date(`${dateValue}T00:00:00`);
@@ -414,13 +537,36 @@ export default function InventoryPanel({
   const [deleteCategory, setDeleteCategory] = useState<Category | null>(null);
   const [brandOpen, setBrandOpen] = useState(false);
   const [saleModal, setSaleModal] = useState<SaleDetail | null>(null);
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const [selectedCatalogBrand, setSelectedCatalogBrand] = useState<CatalogBrandSlug | null>(null);
+  const [catalogProducts, setCatalogProducts] = useState<CatalogSuggestionProduct[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [localProducts, setLocalProducts] = useState<Product[]>(products);
 
   const view = viewParam === 'grid' ? 'grid' : 'list';
   const filterBrandOptions = uniqueBrands(brands);
   const productBrandOptions = uniqueBrands([...filterBrandOptions, formDraft.brand]);
-  const fallbackBrand = productBrandOptions[0] || '';
+  const catalogRegisteredBrands = Array.from(
+    new Set(
+      brands
+        .map((brand) => resolveCatalogBrandSlug(brand))
+        .filter((brand): brand is CatalogBrandSlug => brand !== null)
+    )
+  );
+  const catalogSelectableBrands = (
+    catalogRegisteredBrands.length
+      ? catalogRegisteredBrands
+      : catalogBrandOptions.map((option) => option.slug)
+  ).map((slug) => ({
+    slug,
+    label: getCatalogBrandLabel(slug)
+  }));
+  const activeCatalogLabel = selectedCatalogBrand
+    ? getCatalogBrandLabel(selectedCatalogBrand)
+    : 'mock/sample';
   const normalizedCustomerQuery = sellCustomerQuery.trim().toLowerCase();
   const customerSearchResults = normalizedCustomerQuery
     ? customers.filter(
@@ -472,6 +618,123 @@ export default function InventoryPanel({
   useEffect(() => {
     setLocalProducts(products);
   }, [products]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      if (brandOpen && !target.closest('.inventory-filters-panel .select-wrapper')) {
+        setBrandOpen(false);
+      }
+
+      if (
+        menuOpenId &&
+        !target.closest('.inventory-menu') &&
+        !target.closest('.inventory-dropdown') &&
+        !target.closest('.inventory-row-actions')
+      ) {
+        setMenuOpenId(null);
+      }
+
+      if (unitMenuOpenId && !target.closest('.unit-actions')) {
+        setUnitMenuOpenId(null);
+      }
+
+      if (
+        customerTagsOpen &&
+        !target.closest('.customer-tags-row') &&
+        !target.closest('.customer-tags-menu') &&
+        !target.closest('.customer-tags-list')
+      ) {
+        setCustomerTagsOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (brandOpen) setBrandOpen(false);
+      if (menuOpenId) setMenuOpenId(null);
+      if (unitMenuOpenId) setUnitMenuOpenId(null);
+      if (customerTagsOpen) setCustomerTagsOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [brandOpen, customerTagsOpen, menuOpenId, unitMenuOpenId]);
+
+  useEffect(() => {
+    if (!openCreate || formMode !== 'create' || createStep !== 'search') {
+      return;
+    }
+
+    if (!selectedCatalogBrand) {
+      setCatalogLoading(false);
+      setCatalogError(null);
+      setCatalogProducts(filterCatalogSampleSuggestions(catalogQuery));
+      setCatalogLoaded(true);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    const brandLabel = getCatalogBrandLabel(selectedCatalogBrand);
+    setCatalogLoaded(false);
+
+    const timer = setTimeout(async () => {
+      setCatalogLoading(true);
+      setCatalogError(null);
+      try {
+        const params = new URLSearchParams({
+          limit: '30',
+          inStock: 'true'
+        });
+        const normalizedQuery = catalogQuery.trim();
+        if (normalizedQuery) {
+          params.set('q', normalizedQuery);
+        }
+
+        const res = await fetch(`${API_BASE}/catalog/brands/${selectedCatalogBrand}/products?${params.toString()}`, {
+          cache: 'no-store',
+          signal: controller.signal
+        });
+
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+          if (cancelled) return;
+          setCatalogProducts([]);
+          setCatalogError(payload?.message || `Nao foi possivel carregar produtos ${brandLabel}`);
+          return;
+        }
+
+        const payload = (await res.json()) as { data?: CatalogSuggestionProduct[] };
+        if (cancelled) return;
+        setCatalogProducts(payload.data || []);
+      } catch (error) {
+        if (cancelled) return;
+        if ((error as Error).name === 'AbortError') {
+          return;
+        }
+        setCatalogProducts([]);
+        setCatalogError(`Nao foi possivel carregar produtos ${brandLabel}`);
+      } finally {
+        if (cancelled) return;
+        setCatalogLoading(false);
+        setCatalogLoaded(true);
+      }
+    }, 320);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [catalogQuery, createStep, formMode, openCreate, selectedCatalogBrand]);
 
   const displayProducts = localProducts;
 
@@ -692,6 +955,12 @@ export default function InventoryPanel({
     setFormMode('create');
     setFormDraft(emptyDraft);
     setEditingId(null);
+    setSelectedCatalogBrand(null);
+    setCatalogQuery('');
+    setCatalogProducts([]);
+    setCatalogLoading(false);
+    setCatalogLoaded(false);
+    setCatalogError(null);
   };
 
   const openCreateSearch = () => {
@@ -700,6 +969,12 @@ export default function InventoryPanel({
     setCreateStep('search');
     setFormDraft(emptyDraft);
     setEditingId(null);
+    setSelectedCatalogBrand(null);
+    setCatalogQuery('');
+    setCatalogProducts([]);
+    setCatalogLoading(false);
+    setCatalogLoaded(false);
+    setCatalogError(null);
   };
 
   const openForm = (draft: ProductDraft, mode: 'create' | 'edit', id?: string | null) => {
@@ -939,9 +1214,11 @@ export default function InventoryPanel({
 
       const saleDateValue = payload.data?.created_at || `${sellDate}T00:00:00`;
       if (!sellPaid && saleId) {
+        const selectedCustomerData = customers.find((customer) => customer.id === sellCustomerId);
         setSaleModal({
           id: saleId,
           customer: customerNameValue || payload.data?.customer_name || 'Cliente nao informado',
+          customerPhotoUrl: selectedCustomerData?.photo_url || undefined,
           date: saleDateValue,
           status: 'pending',
           total: priceValue,
@@ -1211,6 +1488,7 @@ export default function InventoryPanel({
     setSaleModal({
       id: sale.sale_id,
       customer: sale.customer_name || 'Cliente nao informado',
+      customerPhotoUrl: sale.customer_photo_url || undefined,
       date: sale.created_at,
       status: mappedStatus,
       total: toNumber(sale.total),
@@ -1827,44 +2105,78 @@ export default function InventoryPanel({
               </button>
             </div>
 
-                    {createStep === 'search' && formMode === 'create' ? (
+            {createStep === 'search' && formMode === 'create' ? (
               <>
                 <label className="modal-field">
                   <span>Nome ou codigo</span>
-                  <input placeholder="Busque pelo nome ou codigo do produto" />
+                  <input
+                    placeholder="Busque pelo nome ou codigo do produto"
+                    value={catalogQuery}
+                    onChange={(event) => setCatalogQuery(event.target.value)}
+                  />
                 </label>
-                <div className="modal-suggestions">
-                  <div className="modal-suggestions-title">Sugestoes</div>
-                  <div className="modal-suggestions-list">
-                    {(products.length
-                      ? products.map((product) => ({
-                          id: product.id,
-                          name: product.name,
-                          brand: product.brand || fallbackBrand || 'Sem marca',
-                          brandCode: product.sku
-                        }))
-                      : suggestions
-                    ).map((item) => (
+                <div className="catalog-brand-selector">
+                  <span className="meta">Fonte de sugestoes</span>
+                  <div className="catalog-brand-list">
+                    <button
+                      type="button"
+                      className={`catalog-brand-chip ${selectedCatalogBrand === null ? 'active' : ''}`}
+                      onClick={() => setSelectedCatalogBrand(null)}
+                    >
+                      Mock/sample
+                    </button>
+                    {catalogSelectableBrands.map((brand) => (
                       <button
-                        key={item.id}
-                        className="modal-suggestion"
+                        key={brand.slug}
                         type="button"
-                        onClick={() =>
-                          openForm(
-                            {
-                              ...emptyDraft,
-                              name: item.name,
-                              brand: item.brand,
-                              brandCode: item.brandCode
-                            },
-                            'create'
-                          )
-                        }
+                        className={`catalog-brand-chip ${selectedCatalogBrand === brand.slug ? 'active' : ''}`}
+                        onClick={() => setSelectedCatalogBrand(brand.slug)}
                       >
-                        <span className="modal-suggestion-thumb">🧴</span>
-                        <span>{item.name}</span>
+                        {brand.label}
                       </button>
                     ))}
+                  </div>
+                </div>
+                <div className="modal-suggestions">
+                  <div className="modal-suggestions-title">
+                    {selectedCatalogBrand ? `Produtos ${activeCatalogLabel}` : 'Sugestoes mock/sample'}
+                  </div>
+                  <div className="modal-suggestions-list">
+                    {catalogLoading ? <span className="meta">Buscando produtos {activeCatalogLabel}...</span> : null}
+                    {!catalogLoading && catalogError ? <span className="meta">{catalogError}</span> : null}
+                    {!catalogLoading && !catalogError && catalogLoaded && catalogProducts.length === 0 ? (
+                      <span className="meta">Nenhum produto encontrado para {activeCatalogLabel}.</span>
+                    ) : null}
+                    {!catalogLoading && !catalogError
+                      ? catalogProducts.map((item) => (
+                          <button
+                            key={item.id}
+                            className="modal-suggestion"
+                            type="button"
+                            onClick={() =>
+                              openForm(
+                                {
+                                  ...emptyDraft,
+                                  name: item.name,
+                                  brand: item.brand || '',
+                                  brandCode: item.sku || item.id,
+                                  price:
+                                    item.price !== undefined &&
+                                    item.price !== null &&
+                                    `${item.price}` !== ''
+                                      ? formatCurrency(toNumber(item.price))
+                                      : '',
+                                  imageUrl: item.imageUrl || ''
+                                },
+                                'create'
+                              )
+                            }
+                          >
+                            <span className="modal-suggestion-thumb">🧴</span>
+                            <span>{item.name}</span>
+                          </button>
+                        ))
+                      : null}
                   </div>
                 </div>
                 <div className="modal-footer">
@@ -1894,19 +2206,6 @@ export default function InventoryPanel({
                         <p>Arraste a imagem ou clique para enviar</p>
                       </div>
                     )}
-                    <div className="sample-images">
-                      {sampleImages.map((image) => (
-                        <button
-                          key={image.id}
-                          className={`sample-image${formDraft.imageUrl === image.url ? ' active' : ''}`}
-                          type="button"
-                          onClick={() => setFormDraft((prev) => ({ ...prev, imageUrl: image.url }))}
-                          title="Selecionar imagem"
-                        >
-                          <img src={image.url} alt={image.label} />
-                        </button>
-                      ))}
-                    </div>
                   </div>
                   <div className="product-fields">
                     <label className="modal-field">
@@ -2598,11 +2897,15 @@ export default function InventoryPanel({
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={(event) => {
+                      onChange={async (event) => {
                         const file = event.target.files?.[0];
                         if (!file) return;
-                        const nextUrl = URL.createObjectURL(file);
-                        updateCustomerPhoto(nextUrl);
+                        try {
+                          const nextUrl = await fileToDataUrl(file);
+                          updateCustomerPhoto(nextUrl);
+                        } catch {
+                          setCustomerFormError('Nao foi possivel carregar a imagem do cliente');
+                        }
                         event.currentTarget.value = '';
                       }}
                     />

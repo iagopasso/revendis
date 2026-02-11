@@ -391,11 +391,13 @@ router.get(
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const productId = req.params.id;
     const result = await query(
-      `SELECT s.id AS sale_id,
+       `SELECT s.id AS sale_id,
+              s.customer_id,
               s.status,
               s.total,
               s.created_at,
               COALESCE(c.name, s.customer_name) AS customer_name,
+              c.photo_url AS customer_photo_url,
               si.quantity,
               si.price,
               si.sku,

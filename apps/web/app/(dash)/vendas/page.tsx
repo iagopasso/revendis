@@ -15,7 +15,9 @@ type Sale = {
   status: string;
   total: number | string;
   created_at: string;
+  customer_id?: string | null;
   customer_name?: string | null;
+  customer_photo_url?: string | null;
   items_count?: number | string;
   cost_total?: number | string;
   profit?: number | string;

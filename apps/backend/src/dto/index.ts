@@ -132,6 +132,13 @@ export type FinanceExpensePayInput = {
   paidAt?: string;
 };
 
+export type PurchaseItemInput = {
+  productId: string;
+  quantity: number;
+  unitCost?: number;
+  expiresAt?: string;
+};
+
 export type PurchaseInput = {
   supplier: string;
   total: number;
@@ -139,6 +146,7 @@ export type PurchaseInput = {
   brand?: string;
   status?: 'pending' | 'received' | 'cancelled';
   purchaseDate?: string;
+  purchaseItems?: PurchaseItemInput[];
 };
 
 export type PurchaseStatusUpdateInput = {
