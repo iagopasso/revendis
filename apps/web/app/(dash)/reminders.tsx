@@ -164,7 +164,7 @@ export default function Reminders({
                       <div className="overdue-item">
                         <div className="overdue-thumb">🧴</div>
                         <div>
-                          <strong>Produto demonstracao</strong>
+                          <strong>Item da venda</strong>
                           <span>1 unidade</span>
                         </div>
                         <span className="overdue-price">

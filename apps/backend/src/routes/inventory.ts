@@ -35,11 +35,10 @@ router.get(
     const result = await query(
       `SELECT p.id, p.sku, p.name, p.brand, p.barcode, p.image_url, p.price, p.cost, p.active, p.created_at, p.expires_at,
               p.category_id, COALESCE(b.quantity, 0) AS quantity
-       FROM products p
-       LEFT JOIN inventory_balances b ON b.product_id = p.id AND b.store_id = $2
-       WHERE p.organization_id = $1
-       ORDER BY p.created_at DESC
-       LIMIT 100`,
+      FROM products p
+      LEFT JOIN inventory_balances b ON b.product_id = p.id AND b.store_id = $2
+      WHERE p.organization_id = $1
+       ORDER BY p.created_at DESC`,
       [orgId, storeId]
     );
     res.json({

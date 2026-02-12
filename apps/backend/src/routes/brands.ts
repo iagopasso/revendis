@@ -52,7 +52,7 @@ router.post(
     }
 
     const source = payload.source || 'manual';
-    const profitability = Math.max(0, Math.min(100, Number(payload.profitability ?? 0)));
+    const profitability = Math.max(0, Math.min(100, Number(payload.profitability ?? 30)));
 
     const result = await withTransaction(async (client) => {
       const inserted = await client.query(
@@ -120,11 +120,21 @@ router.delete(
       const deleted = await client.query(
         `DELETE FROM reseller_brands
          WHERE id = $1 AND organization_id = $2
-         RETURNING id`,
+         RETURNING id,
+                   name,
+                   source,
+                   source_brand`,
         [brandId, orgId]
       );
 
       if (!deleted.rows.length) return null;
+
+      const deletedBrand = deleted.rows[0] as {
+        id: string;
+        name: string;
+        source: string;
+        source_brand?: string | null;
+      };
 
       await writeAudit(client, {
         organizationId: orgId,
@@ -132,10 +142,13 @@ router.delete(
         entityType: 'reseller_brand',
         entityId: brandId,
         action: 'deleted',
-        payload: {}
+        payload: {
+          source: deletedBrand.source,
+          sourceBrand: deletedBrand.source_brand || null
+        }
       });
 
-      return deleted.rows[0];
+      return deletedBrand;
     });
 
     if (!removed) {

@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import {
   fetchNaturaCatalogProducts,
+  type FetchNaturaFailureDetail,
   type NaturaCatalogProduct
 } from './natura-catalog';
 
@@ -12,6 +13,17 @@ export const CATALOG_BRANDS = [
   'boticario',
   'oui',
   'natura',
+  'demillus',
+  'farmasi',
+  'hinode',
+  'jequiti',
+  'loccitane-au-bresil',
+  'mahogany',
+  'moments-paris',
+  'odorata',
+  'quem-disse-berenice',
+  'racco',
+  'skelt',
   'extase',
   'diamante'
 ] as const;
@@ -21,6 +33,7 @@ export type CatalogBrandSlug = (typeof CATALOG_BRANDS)[number];
 export type BrandCatalogProduct = {
   id: string;
   sku: string;
+  barcode?: string | null;
   name: string;
   brand: string;
   price: number | null;
@@ -37,6 +50,7 @@ export type FetchBrandCatalogResult = {
   products: BrandCatalogProduct[];
   source: BrandCatalogSource;
   failedSources: string[];
+  failedDetails: FetchNaturaFailureDetail[];
 };
 
 export const CATALOG_BRAND_LABELS: Record<CatalogBrandSlug, string> = {
@@ -47,6 +61,17 @@ export const CATALOG_BRAND_LABELS: Record<CatalogBrandSlug, string> = {
   boticario: 'Boticario',
   oui: 'Oui',
   natura: 'Natura',
+  demillus: 'Demillus',
+  farmasi: 'Farmasi',
+  hinode: 'Hinode',
+  jequiti: 'Jequiti',
+  'loccitane-au-bresil': "L'Occitane au Bresil",
+  mahogany: 'Mahogany',
+  'moments-paris': 'Moments Paris',
+  odorata: 'Odorata',
+  'quem-disse-berenice': 'Quem Disse, Berenice?',
+  racco: 'Racco',
+  skelt: 'Skelt',
   extase: 'Extase',
   diamante: 'Diamante'
 };
@@ -59,8 +84,19 @@ const CATALOG_BRAND_ALIASES: Record<CatalogBrandSlug, string[]> = {
   boticario: ['boticario', 'o boticario', 'o-boticario'],
   oui: ['oui'],
   natura: ['natura'],
+  demillus: ['demillus', 'de millus'],
+  farmasi: ['farmasi'],
+  hinode: ['hinode'],
+  jequiti: ['jequiti'],
+  'loccitane-au-bresil': ["l'occitane au bresil", 'loccitane au bresil', 'loccitane', 'l occitane'],
+  mahogany: ['mahogany'],
+  'moments-paris': ['moments paris', 'moments-paris'],
+  odorata: ['odorata'],
+  'quem-disse-berenice': ['quem disse berenice', 'quem disse, berenice?', 'qdb', 'quemdisseberenice'],
+  racco: ['racco'],
+  skelt: ['skelt'],
   extase: ['extase', 'extasee', 'extasis', 'extasecosmeticos'],
-  diamante: ['diamante']
+  diamante: ['diamante', 'diamanteq', 'diamante q']
 };
 
 const BRAND_BASE_URL: Record<CatalogBrandSlug, string> = {
@@ -71,8 +107,21 @@ const BRAND_BASE_URL: Record<CatalogBrandSlug, string> = {
   boticario: 'https://www.boticario.com.br',
   oui: 'https://www.boticario.com.br/perfumaria/oui',
   natura: 'https://www.natura.com.br',
-  extase: 'https://www.extase.com.br',
-  diamante: 'https://www.diamante.com.br'
+  demillus: 'https://www.demillus.com.br',
+  farmasi: 'https://www.farmasi.com.br',
+  hinode: 'https://www.hinode.com.br',
+  jequiti: 'https://www.jequiti.com.br',
+  'loccitane-au-bresil': 'https://br.loccitaneaubresil.com',
+  mahogany: 'https://www.mahogany.com.br',
+  'moments-paris': 'https://www.momentsparis.com.br',
+  odorata: 'https://www.odorata.com.br',
+  'quem-disse-berenice': 'https://www.quemdisseberenice.com.br',
+  racco: 'https://www.racco.com.br',
+  skelt: 'https://www.skelt.com.br',
+  // Uses a public storefront with Extase products.
+  extase: 'https://www.flattercosmeticos.com.br',
+  // Official e-commerce storefront for Diamante.
+  diamante: 'https://www.diamanteprofissional.com.br'
 };
 
 type SampleProductInput = {
@@ -96,13 +145,34 @@ type FetchJsonResult = {
 };
 
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 8000;
-const MAX_VTEX_PAGES = 4;
+const MAX_VTEX_PAGES = 20;
 const VTEX_PAGE_SIZE = 50;
-const MAX_SHOPIFY_PAGES = 4;
+const MAX_SHOPIFY_PAGES = 12;
 const SHOPIFY_PAGE_SIZE = 250;
+const MAX_SITEMAP_FILES = 25;
+const MAX_SITEMAP_PRODUCT_URLS = 220;
+const MAX_SITEMAP_FETCH_CONCURRENCY = 6;
 const AVON_PATHS = ['/', '/c/perfumaria', '/c/maquiagem', '/c/corpo-e-banho'] as const;
+const GENERIC_BRAND_PATHS: Record<
+  Exclude<CatalogBrandSlug, 'avon' | 'mary-kay' | 'tupperware' | 'eudora' | 'boticario' | 'oui' | 'natura'>,
+  string[]
+> = {
+  demillus: ['/', '/produtos', '/catalogo'],
+  farmasi: ['/', '/collections/all', '/produtos'],
+  hinode: ['/', '/produtos', '/perfumaria'],
+  jequiti: ['/', '/perfumes', '/maquiagem'],
+  'loccitane-au-bresil': ['/', '/perfume', '/cuidado-corporal'],
+  mahogany: ['/', '/perfumes', '/corpo-e-banho'],
+  'moments-paris': ['/', '/produtos'],
+  odorata: ['/', '/produtos'],
+  'quem-disse-berenice': ['/', '/maquiagem'],
+  racco: ['/', '/produtos'],
+  skelt: ['/', '/autobronzeadores'],
+  extase: ['/', '/produtos', '/perfumes-femininos', '/cuidados-corporais'],
+  diamante: ['/', '/produtos']
+};
 
-const BYPASS_UPSTREAM_FETCH =
+const shouldBypassUpstreamFetch = () =>
   process.env.NODE_ENV === 'test' && process.env.CATALOG_ENABLE_UPSTREAM !== '1';
 
 const normalizeBrandToken = (value: string) =>
@@ -112,6 +182,15 @@ const normalizeBrandToken = (value: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '')
     .trim();
+
+const BRAND_UPSTREAM_PRODUCT_FILTERS: Partial<
+  Record<CatalogBrandSlug, (product: BrandCatalogProduct) => boolean>
+> = {
+  extase: (product) => {
+    const token = normalizeBrandToken(`${product.name} ${product.url || ''}`);
+    return token.includes('extase') || token.includes('xtase');
+  }
+};
 
 const BRAND_BY_ALIAS = Object.entries(CATALOG_BRAND_ALIASES).reduce<
   Record<string, CatalogBrandSlug>
@@ -167,6 +246,15 @@ const toPrice = (value: unknown) => {
   return null;
 };
 
+const normalizeBarcode = (value: unknown) => {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const digits = text.replace(/\D+/g, '');
+  if (digits.length >= 8 && digits.length <= 18) return digits;
+  return null;
+};
+
 const slugifyCategory = (value: string) => {
   const normalized = normalizeBrandToken(value);
   return normalized || 'catalogo';
@@ -174,6 +262,74 @@ const slugifyCategory = (value: string) => {
 
 const hashId = (value: string) =>
   createHash('sha1').update(value, 'utf8').digest('hex').slice(0, 16).toUpperCase();
+
+const escapeSvgText = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const buildCatalogFallbackImage = (brand: CatalogBrandSlug) => {
+  const label = CATALOG_BRAND_LABELS[brand];
+  const token = normalizeBrandToken(label).toUpperCase();
+  const initials = (token.slice(0, 2) || 'PD').replace(/[^A-Z0-9]/g, '');
+  const safeLabel = escapeSvgText(label.toUpperCase().slice(0, 20));
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#efe4ff"/><stop offset="100%" stop-color="#d5c4ff"/></linearGradient></defs><rect width="320" height="320" fill="url(#g)"/><circle cx="160" cy="120" r="54" fill="#ffffff" fill-opacity="0.92"/><text x="160" y="134" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" font-weight="700" fill="#5f3fa2">${escapeSvgText(initials || 'PD')}</text><text x="160" y="238" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" font-weight="600" fill="#5f3fa2">${safeLabel}</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+};
+
+const FALLBACK_IMAGE_BY_BRAND: Record<CatalogBrandSlug, string> = CATALOG_BRANDS.reduce(
+  (acc, brand) => {
+    acc[brand] = buildCatalogFallbackImage(brand);
+    return acc;
+  },
+  {} as Record<CatalogBrandSlug, string>
+);
+
+const looksLikePlaceholderImageUrl = (value: string) => {
+  const token = normalizeBrandToken(value);
+  if (!token) return true;
+
+  return (
+    token.includes('placeholder') ||
+    token.includes('noimage') ||
+    token.includes('noimg') ||
+    token.includes('semimagem') ||
+    token.includes('notavailable') ||
+    token.includes('imageindisponivel') ||
+    token.includes('defaultimage') ||
+    token.includes('missingimage') ||
+    token.includes('productdefault') ||
+    token.includes('imagemindisponivel')
+  );
+};
+
+export const resolveCatalogProductImageUrl = (
+  brand: CatalogBrandSlug,
+  imageUrl?: string | null
+) => {
+  const normalized = typeof imageUrl === 'string' ? imageUrl.trim() : '';
+  if (
+    normalized &&
+    !looksLikePlaceholderImageUrl(normalized) &&
+    (normalized.startsWith('http://') ||
+      normalized.startsWith('https://') ||
+      normalized.startsWith('data:image/') ||
+      normalized.startsWith('/'))
+  ) {
+    return normalized;
+  }
+  return FALLBACK_IMAGE_BY_BRAND[brand];
+};
+
+const ensureCatalogProductImages = (products: BrandCatalogProduct[]) =>
+  products.map((product) => ({
+    ...product,
+    imageUrl: resolveCatalogProductImageUrl(product.sourceBrand, product.imageUrl)
+  }));
 
 const buildSampleProducts = (
   brand: CatalogBrandSlug,
@@ -196,9 +352,11 @@ const buildSampleProducts = (
 
 const SAMPLE_BRAND_PRODUCTS: Record<CatalogBrandSlug, BrandCatalogProduct[]> = {
   avon: buildSampleProducts('avon', [
+    { sku: '155708', name: '300 Km/h Deo Colonia Boost', category: 'perfumaria', price: 49.9 },
+    { sku: '174929', name: 'Footworks Creme Hidratante para os Pes Noturno', category: 'corpo-e-banho', price: 28.9 },
+    { sku: '198700', name: 'Kiss Matte Batom Rosa Rustico', category: 'maquiagem', price: 19.9 },
     { sku: 'AV-FA-BEYOND-050', name: 'Far Away Beyond Deo Parfum 50ml', category: 'perfumaria', price: 119.9 },
-    { sku: 'AV-PS-BASE-030', name: 'Power Stay Base Liquida 30ml', category: 'maquiagem', price: 69.9 },
-    { sku: 'AV-RW-CR-DIA', name: 'Renew Creme Dia Antissinais', category: 'rosto', price: 89.9 }
+    { sku: 'AV-PS-BASE-030', name: 'Power Stay Base Liquida 30ml', category: 'maquiagem', price: 69.9 }
   ]),
   'mary-kay': buildSampleProducts('mary-kay', [
     { sku: 'MK-TW3D-CR-DIA', name: 'TimeWise 3D Creme Dia FPS 30', category: 'rosto', price: 139.9 },
@@ -230,6 +388,61 @@ const SAMPLE_BRAND_PRODUCTS: Record<CatalogBrandSlug, BrandCatalogProduct[]> = {
     { sku: 'NAT-KAIAK-OCE-100', name: 'Kaiak Oceano Masculino 100ml', category: 'perfumaria', price: 134.9 },
     { sku: 'NAT-CHR-SERUM-30', name: 'Chronos Derma Serum Intensivo 30ml', category: 'rosto', price: 132.9 }
   ]),
+  demillus: buildSampleProducts('demillus', [
+    { sku: 'DM-53100', name: 'Sutia DeMillus Classico Rendado', category: 'moda-intima', price: 79.9 },
+    { sku: 'DM-70210', name: 'Calcinha DeMillus Confort Plus', category: 'moda-intima', price: 34.9 },
+    { sku: 'DM-88030', name: 'Body DeMillus Modelador', category: 'moda-intima', price: 119.9 }
+  ]),
+  farmasi: buildSampleProducts('farmasi', [
+    { sku: 'FA-VFX-001', name: 'Farmasi VFX Pro Camera Ready Foundation', category: 'maquiagem', price: 74.9 },
+    { sku: 'FA-DRM-002', name: 'Farmasi Dr. C. Tuna Tea Tree Gel', category: 'rosto', price: 39.9 },
+    { sku: 'FA-ZEN-003', name: 'Farmasi Zen Mascara Alongadora', category: 'maquiagem', price: 42.9 }
+  ]),
+  hinode: buildSampleProducts('hinode', [
+    { sku: 'HI-FEEL-100', name: 'Feelin For Him Desodorante Colonia', category: 'perfumaria', price: 129.9 },
+    { sku: 'HI-SPOT-120', name: 'Spot for Her Desodorante Colonia', category: 'perfumaria', price: 119.9 },
+    { sku: 'HI-GRM-060', name: 'Grace Midnight Body Splash', category: 'corpo-e-banho', price: 59.9 }
+  ]),
+  jequiti: buildSampleProducts('jequiti', [
+    { sku: 'JQ-EU-100', name: 'Eu Desodorante Colonia Feminina', category: 'perfumaria', price: 79.9 },
+    { sku: 'JQ-ELL-001', name: 'Ellas Creme Hidratante Corporal', category: 'corpo-e-banho', price: 35.9 },
+    { sku: 'JQ-BAT-014', name: 'Batom Aviva Matte Vermelho', category: 'maquiagem', price: 22.9 }
+  ]),
+  'loccitane-au-bresil': buildSampleProducts('loccitane-au-bresil', [
+    { sku: 'LC-ENX-100', name: 'Desodorante Colonia Enxuto 100ml', category: 'perfumaria', price: 119.9 },
+    { sku: 'LC-JEN-250', name: 'Bruma Perfumada Jardim Encantado', category: 'perfumaria', price: 89.9 },
+    { sku: 'LC-CAJ-200', name: 'Locao Corporal Caju', category: 'corpo-e-banho', price: 69.9 }
+  ]),
+  mahogany: buildSampleProducts('mahogany', [
+    { sku: 'MH-WLD-100', name: 'Wild Eau de Toilette 100ml', category: 'perfumaria', price: 139.9 },
+    { sku: 'MH-LOV-250', name: 'Body Lotion Love Secrets', category: 'corpo-e-banho', price: 74.9 },
+    { sku: 'MH-MSK-080', name: 'Mascara Capilar Nutritiva', category: 'cabelos', price: 54.9 }
+  ]),
+  'moments-paris': buildSampleProducts('moments-paris', [
+    { sku: 'MP-LUM-100', name: 'Lumiere Eau de Parfum 100ml', category: 'perfumaria', price: 149.9 },
+    { sku: 'MP-ROS-250', name: 'Body Splash Rose Classic', category: 'perfumaria', price: 79.9 },
+    { sku: 'MP-CRP-180', name: 'Creme Corporal Parisienne', category: 'corpo-e-banho', price: 52.9 }
+  ]),
+  odorata: buildSampleProducts('odorata', [
+    { sku: 'OD-SEG-100', name: 'Segredo Feminino Desodorante Colonia', category: 'perfumaria', price: 69.9 },
+    { sku: 'OD-BLU-100', name: 'Blue Men Desodorante Colonia', category: 'perfumaria', price: 72.9 },
+    { sku: 'OD-SAB-200', name: 'Sabonete Liquido Perfumado', category: 'corpo-e-banho', price: 29.9 }
+  ]),
+  'quem-disse-berenice': buildSampleProducts('quem-disse-berenice', [
+    { sku: 'QDB-BAT-01', name: 'Batom Mate Marromli', category: 'maquiagem', price: 39.9 },
+    { sku: 'QDB-BASE-02', name: 'Base Supermate Alta Cobertura', category: 'maquiagem', price: 69.9 },
+    { sku: 'QDB-MASC-03', name: 'Mascara de Cilios Super Curvatura', category: 'maquiagem', price: 49.9 }
+  ]),
+  racco: buildSampleProducts('racco', [
+    { sku: 'RA-VOL-100', name: 'Volata Desodorante Colonia Masculina', category: 'perfumaria', price: 109.9 },
+    { sku: 'RA-SKN-050', name: 'Serum Facial Skin Care Racco', category: 'rosto', price: 84.9 },
+    { sku: 'RA-BDY-250', name: 'Hidratante Corporal Frutas Vermelhas', category: 'corpo-e-banho', price: 42.9 }
+  ]),
+  skelt: buildSampleProducts('skelt', [
+    { sku: 'SK-BRON-150', name: 'Mousse Autobronzeadora Dark', category: 'corpo-e-banho', price: 109.9 },
+    { sku: 'SK-SUN-110', name: 'Protetor Solar Corporal FPS 50', category: 'corpo-e-banho', price: 69.9 },
+    { sku: 'SK-GLOW-120', name: 'Iluminador Corporal Glow', category: 'corpo-e-banho', price: 64.9 }
+  ]),
   extase: buildSampleProducts('extase', [
     { sku: 'EX-EAU-GOLD-100', name: 'Extase Gold Eau de Parfum 100ml', category: 'perfumaria', price: 169.9 },
     { sku: 'EX-HY-BODY-200', name: 'Extase Hydration Body Lotion 200ml', category: 'corpo-e-banho', price: 64.9 },
@@ -248,6 +461,7 @@ const cloneProducts = (products: BrandCatalogProduct[]) =>
 const mapNaturaProduct = (product: NaturaCatalogProduct): BrandCatalogProduct => ({
   id: product.id,
   sku: product.sku,
+  barcode: product.barcode || null,
   name: product.name,
   brand: product.brand || CATALOG_BRAND_LABELS.natura,
   price: product.price ?? null,
@@ -397,6 +611,23 @@ const extractJsonLdProducts = ({
     const offerValue = Array.isArray(offers) ? offers[0] : offers;
     const offer = offerValue && typeof offerValue === 'object' ? (offerValue as Record<string, unknown>) : null;
     const price = toPrice(offer?.price ?? offer?.lowPrice ?? offer?.highPrice ?? raw.price);
+    const barcode =
+      normalizeBarcode(raw.gtin13) ||
+      normalizeBarcode(raw.gtin14) ||
+      normalizeBarcode(raw.gtin12) ||
+      normalizeBarcode(raw.gtin8) ||
+      normalizeBarcode(raw.gtin) ||
+      normalizeBarcode(raw.barcode) ||
+      normalizeBarcode(raw.ean) ||
+      normalizeBarcode(raw.upc) ||
+      normalizeBarcode(offer?.gtin13) ||
+      normalizeBarcode(offer?.gtin14) ||
+      normalizeBarcode(offer?.gtin12) ||
+      normalizeBarcode(offer?.gtin8) ||
+      normalizeBarcode(offer?.gtin) ||
+      normalizeBarcode(offer?.barcode) ||
+      normalizeBarcode(offer?.ean) ||
+      normalizeBarcode(offer?.upc);
 
     const availability = normalizeText(
       typeof offer?.availability === 'string' ? offer.availability : ''
@@ -421,6 +652,7 @@ const extractJsonLdProducts = ({
     results.push({
       id,
       sku: sku || id,
+      barcode,
       name,
       brand: resolvedBrand || brand,
       price,
@@ -568,6 +800,11 @@ const mapVtexProduct = ({
   const fallbackSku = normalizeText(
     firstItem && typeof firstItem.itemId === 'string' ? firstItem.itemId : ''
   );
+  const barcode =
+    normalizeBarcode(firstItem?.ean) ||
+    normalizeBarcode(firstItem?.ean13) ||
+    normalizeBarcode(firstItem?.referenceId) ||
+    normalizeBarcode(fallbackSku);
 
   const id = productId || fallbackSku || `VTEX-${sourceBrand.toUpperCase()}-${hashId(url)}`;
   const sku = productId || fallbackSku || id;
@@ -575,6 +812,7 @@ const mapVtexProduct = ({
   return {
     id,
     sku,
+    barcode,
     name,
     brand: brand || CATALOG_BRAND_LABELS[sourceBrand],
     price: toPrice(offer?.Price ?? offer?.PriceWithoutDiscount ?? null),
@@ -773,16 +1011,165 @@ const fetchAvonCatalogProducts = async ({
   };
 };
 
+const parseXmlLocTags = (xml: string) =>
+  Array.from(xml.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi))
+    .map((match) => normalizeText(match[1]))
+    .filter(Boolean);
+
+const looksLikeXmlSitemap = (body: string) => {
+  const normalized = normalizeText(body).toLowerCase();
+  return normalized.includes('<urlset') || normalized.includes('<sitemapindex');
+};
+
+const toPathname = (value: string) => {
+  try {
+    return new URL(value).pathname || '/';
+  } catch {
+    return '/';
+  }
+};
+
+const isLikelyCatalogPageUrl = (value: string) => {
+  const pathname = toPathname(value).toLowerCase();
+  if (!pathname || pathname === '/') return false;
+  if (pathname.endsWith('.xml')) return false;
+  if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg') || pathname.endsWith('.png')) return false;
+  if (pathname.includes('/wp-json/')) return false;
+  if (pathname.includes('/tag/') || pathname.includes('/categoria/') || pathname.includes('/category/')) return false;
+  if (pathname.includes('/blog/') || pathname.includes('/institucional/') || pathname.includes('/contato')) {
+    return false;
+  }
+  return true;
+};
+
+const fetchSitemapCatalogUrls = async ({
+  baseUrl,
+  signal
+}: {
+  baseUrl: string;
+  signal?: AbortSignal;
+}) => {
+  const normalizedBase = baseUrl.replace(/\/+$/, '');
+  const queue: string[] = [`${normalizedBase}/sitemap.xml`, `${normalizedBase}/sitemap_index.xml`];
+  const visited = new Set<string>();
+  const collected = new Set<string>();
+  const failedSources: string[] = [];
+
+  while (queue.length > 0 && visited.size < MAX_SITEMAP_FILES && collected.size < MAX_SITEMAP_PRODUCT_URLS) {
+    const sitemapUrl = queue.shift();
+    if (!sitemapUrl || visited.has(sitemapUrl)) continue;
+    visited.add(sitemapUrl);
+
+    try {
+      const xml = await fetchTextWithTimeout({
+        url: sitemapUrl,
+        signal
+      });
+      if (!looksLikeXmlSitemap(xml)) {
+        continue;
+      }
+
+      const locs = parseXmlLocTags(xml)
+        .map((item) => toAbsoluteUrl(normalizedBase, item))
+        .filter((item): item is string => Boolean(item));
+
+      if (xml.toLowerCase().includes('<sitemapindex')) {
+        locs.forEach((loc) => {
+          if (!visited.has(loc) && queue.length < MAX_SITEMAP_FILES * 2) {
+            queue.push(loc);
+          }
+        });
+        continue;
+      }
+
+      locs
+        .filter((loc) => isLikelyCatalogPageUrl(loc))
+        .slice(0, MAX_SITEMAP_PRODUCT_URLS)
+        .forEach((loc) => {
+          if (collected.size < MAX_SITEMAP_PRODUCT_URLS) {
+            collected.add(loc);
+          }
+        });
+    } catch {
+      failedSources.push(sitemapUrl);
+    }
+  }
+
+  return {
+    urls: Array.from(collected),
+    failedSources: Array.from(new Set(failedSources))
+  };
+};
+
+const fetchCatalogProductsFromPageUrls = async ({
+  brand,
+  baseUrl,
+  urls,
+  signal,
+  filterFn
+}: {
+  brand: CatalogBrandSlug;
+  baseUrl: string;
+  urls: string[];
+  signal?: AbortSignal;
+  filterFn?: (product: BrandCatalogProduct) => boolean;
+}): Promise<UpstreamFetchResult> => {
+  const deduped = new Map<string, BrandCatalogProduct>();
+  const failedSources: string[] = [];
+  const uniqueUrls = Array.from(new Set(urls)).slice(0, MAX_SITEMAP_PRODUCT_URLS);
+  const concurrency = Math.min(MAX_SITEMAP_FETCH_CONCURRENCY, Math.max(1, uniqueUrls.length));
+
+  let pointer = 0;
+  const workers = Array.from({ length: concurrency }).map(async () => {
+    while (pointer < uniqueUrls.length) {
+      const current = uniqueUrls[pointer];
+      pointer += 1;
+      if (!current) continue;
+
+      try {
+        const html = await fetchTextWithTimeout({
+          url: current,
+          signal
+        });
+        const parsed = extractJsonLdProducts({
+          html,
+          brand: CATALOG_BRAND_LABELS[brand],
+          sourceBrand: brand,
+          sourcePath: toPathname(current),
+          baseUrl
+        });
+
+        parsed.forEach((product) => {
+          if (!filterFn || filterFn(product)) {
+            deduped.set(product.id, product);
+          }
+        });
+      } catch {
+        failedSources.push(current);
+      }
+    }
+  });
+
+  await Promise.all(workers);
+
+  return {
+    products: Array.from(deduped.values()),
+    failedSources: Array.from(new Set(failedSources))
+  };
+};
+
 const fetchGenericBrandCatalogProducts = async ({
   brand,
   baseUrl,
   paths,
-  signal
+  signal,
+  filterFn
 }: {
   brand: CatalogBrandSlug;
   baseUrl: string;
   paths: string[];
   signal?: AbortSignal;
+  filterFn?: (product: BrandCatalogProduct) => boolean;
 }): Promise<UpstreamFetchResult> => {
   const deduped = new Map<string, BrandCatalogProduct>();
   const failedSources: string[] = [];
@@ -799,16 +1186,53 @@ const fetchGenericBrandCatalogProducts = async ({
         baseUrl
       });
       parsed.forEach((product) => {
-        deduped.set(product.id, product);
+        if (!filterFn || filterFn(product)) {
+          deduped.set(product.id, product);
+        }
       });
     } catch {
       failedSources.push(url);
     }
   }
 
+  const sitemap = await fetchSitemapCatalogUrls({
+    baseUrl,
+    signal
+  });
+  failedSources.push(...sitemap.failedSources);
+
+  if (sitemap.urls.length > 0) {
+    const crawled = await fetchCatalogProductsFromPageUrls({
+      brand,
+      baseUrl,
+      urls: sitemap.urls,
+      signal,
+      filterFn
+    });
+    failedSources.push(...crawled.failedSources);
+    crawled.products.forEach((product) => {
+      deduped.set(product.id, product);
+    });
+  }
+
   return {
     products: Array.from(deduped.values()),
     failedSources: Array.from(new Set(failedSources))
+  };
+};
+
+const mergeUpstreamResults = (
+  primary: UpstreamFetchResult,
+  secondary: UpstreamFetchResult
+): UpstreamFetchResult => {
+  const deduped = new Map<string, BrandCatalogProduct>();
+  [...primary.products, ...secondary.products].forEach((product) => {
+    deduped.set(product.id, product);
+  });
+
+  return {
+    products: Array.from(deduped.values()),
+    failedSources: Array.from(new Set([...primary.failedSources, ...secondary.failedSources]))
   };
 };
 
@@ -820,52 +1244,110 @@ const fetchUpstreamBrandProducts = async ({
   signal?: AbortSignal;
 }): Promise<UpstreamFetchResult> => {
   switch (brand) {
-    case 'avon':
-      return fetchAvonCatalogProducts({ signal });
+    case 'avon': {
+      const upstream = await fetchAvonCatalogProducts({ signal });
+      if (upstream.products.length > 0) {
+        return upstream;
+      }
+      const fallback = await fetchGenericBrandCatalogProducts({
+        brand: 'avon',
+        baseUrl: BRAND_BASE_URL.avon,
+        paths: [...AVON_PATHS],
+        signal
+      });
+      return mergeUpstreamResults(upstream, fallback);
+    }
     case 'mary-kay':
       return fetchMaryKayCatalogProducts({ signal });
     case 'tupperware':
       return fetchTupperwareCatalogProducts({ signal });
-    case 'eudora':
-      return fetchVtexCatalogProducts({
+    case 'eudora': {
+      const upstream = await fetchVtexCatalogProducts({
         brand: 'eudora',
         baseUrl: BRAND_BASE_URL.eudora,
         filterFn: (product) => normalizeBrandToken(product.brand).includes('eudora'),
         signal
       });
-    case 'boticario':
-      return fetchVtexCatalogProducts({
+      if (upstream.products.length > 0) {
+        return upstream;
+      }
+      const fallback = await fetchGenericBrandCatalogProducts({
+        brand: 'eudora',
+        baseUrl: BRAND_BASE_URL.eudora,
+        paths: ['/'],
+        signal,
+        filterFn: (product) => normalizeBrandToken(product.brand).includes('eudora')
+      });
+      return mergeUpstreamResults(upstream, fallback);
+    }
+    case 'boticario': {
+      const upstream = await fetchVtexCatalogProducts({
         brand: 'boticario',
         baseUrl: BRAND_BASE_URL.boticario,
         filterFn: (product) => normalizeBrandToken(product.brand).includes('boticario'),
         signal
       });
-    case 'oui':
-      return fetchVtexCatalogProducts({
+      if (upstream.products.length > 0) {
+        return upstream;
+      }
+      const fallback = await fetchGenericBrandCatalogProducts({
+        brand: 'boticario',
+        baseUrl: BRAND_BASE_URL.boticario,
+        paths: ['/'],
+        signal,
+        filterFn: (product) => normalizeBrandToken(product.brand).includes('boticario')
+      });
+      return mergeUpstreamResults(upstream, fallback);
+    }
+    case 'oui': {
+      const upstream = await fetchVtexCatalogProducts({
         brand: 'oui',
         baseUrl: BRAND_BASE_URL.boticario,
         filterFn: (product) => normalizeBrandToken(product.brand).includes('oui'),
         signal
       });
-    case 'extase':
-      return fetchGenericBrandCatalogProducts({
-        brand: 'extase',
-        baseUrl: BRAND_BASE_URL.extase,
-        paths: ['/', '/shop'],
-        signal
-      });
-    case 'diamante':
-      return fetchGenericBrandCatalogProducts({
-        brand: 'diamante',
-        baseUrl: BRAND_BASE_URL.diamante,
+      if (upstream.products.length > 0) {
+        return upstream;
+      }
+      const fallback = await fetchGenericBrandCatalogProducts({
+        brand: 'oui',
+        baseUrl: BRAND_BASE_URL.oui,
         paths: ['/'],
-        signal
+        signal,
+        filterFn: (product) => normalizeBrandToken(product.brand).includes('oui')
       });
+      return mergeUpstreamResults(upstream, fallback);
+    }
     case 'natura':
       return {
         products: [],
         failedSources: []
       };
+    case 'quem-disse-berenice':
+      return fetchVtexCatalogProducts({
+        brand: 'quem-disse-berenice',
+        baseUrl: BRAND_BASE_URL['quem-disse-berenice'],
+        signal
+      });
+    case 'demillus':
+    case 'farmasi':
+    case 'hinode':
+    case 'jequiti':
+    case 'loccitane-au-bresil':
+    case 'mahogany':
+    case 'moments-paris':
+    case 'odorata':
+    case 'racco':
+    case 'skelt':
+    case 'extase':
+    case 'diamante':
+      return fetchGenericBrandCatalogProducts({
+        brand,
+        baseUrl: BRAND_BASE_URL[brand],
+        paths: GENERIC_BRAND_PATHS[brand],
+        signal,
+        filterFn: BRAND_UPSTREAM_PRODUCT_FILTERS[brand]
+      });
   }
 };
 
@@ -876,46 +1358,89 @@ export const resolveCatalogBrandSlug = (value: string): CatalogBrandSlug | null 
 };
 
 export const getSampleBrandCatalogProducts = (brand: CatalogBrandSlug): BrandCatalogProduct[] =>
-  cloneProducts(SAMPLE_BRAND_PRODUCTS[brand]);
+  ensureCatalogProductImages(cloneProducts(SAMPLE_BRAND_PRODUCTS[brand]));
 
 export const fetchBrandCatalogProducts = async ({
   brand,
-  signal
+  signal,
+  useSampleFallback = true
 }: {
   brand: CatalogBrandSlug;
   signal?: AbortSignal;
+  useSampleFallback?: boolean;
 }): Promise<FetchBrandCatalogResult> => {
-  if (BYPASS_UPSTREAM_FETCH) {
+  if (shouldBypassUpstreamFetch()) {
+    if (!useSampleFallback) {
+      return {
+        products: [],
+        source: 'upstream',
+        failedSources: [],
+        failedDetails: []
+      };
+    }
     return {
       products: getSampleBrandCatalogProducts(brand),
       source: 'sample',
-      failedSources: []
+      failedSources: [],
+      failedDetails: []
     };
   }
 
   if (brand === 'natura') {
     try {
-      const { products, failedSources } = await fetchNaturaCatalogProducts({ signal });
+      const { products, failedSources, failedDetails } = await fetchNaturaCatalogProducts({ signal });
       const mapped = products.map(mapNaturaProduct);
 
       if (mapped.length > 0) {
         return {
-          products: mapped,
+          products: ensureCatalogProductImages(mapped),
           source: 'upstream',
-          failedSources
+          failedSources,
+          failedDetails
+        };
+      }
+
+      if (!useSampleFallback) {
+        return {
+          products: [],
+          source: 'upstream',
+          failedSources: failedSources.length ? failedSources : ['natura.com.br'],
+          failedDetails
         };
       }
 
       return {
         products: getSampleBrandCatalogProducts('natura'),
         source: 'sample',
-        failedSources: failedSources.length ? failedSources : ['natura.com.br']
+        failedSources: failedSources.length ? failedSources : ['natura.com.br'],
+        failedDetails
       };
     } catch {
+      if (!useSampleFallback) {
+        return {
+          products: [],
+          source: 'upstream',
+          failedSources: ['natura.com.br'],
+          failedDetails: [
+            {
+              source: 'natura.com.br',
+              error: 'natura_fetch_failed',
+              attempts: []
+            }
+          ]
+        };
+      }
       return {
         products: getSampleBrandCatalogProducts('natura'),
         source: 'sample',
-        failedSources: ['natura.com.br']
+        failedSources: ['natura.com.br'],
+        failedDetails: [
+          {
+            source: 'natura.com.br',
+            error: 'natura_fetch_failed',
+            attempts: []
+          }
+        ]
       };
     }
   }
@@ -930,15 +1455,26 @@ export const fetchBrandCatalogProducts = async ({
 
   if (upstream.products.length > 0) {
     return {
-      products: upstream.products,
+      products: ensureCatalogProductImages(upstream.products),
       source: 'upstream',
-      failedSources: upstream.failedSources
+      failedSources: upstream.failedSources,
+      failedDetails: []
+    };
+  }
+
+  if (!useSampleFallback) {
+    return {
+      products: [],
+      source: 'upstream',
+      failedSources: upstream.failedSources.length ? upstream.failedSources : [BRAND_BASE_URL[brand]],
+      failedDetails: []
     };
   }
 
   return {
     products: getSampleBrandCatalogProducts(brand),
     source: 'sample',
-    failedSources: upstream.failedSources.length ? upstream.failedSources : [BRAND_BASE_URL[brand]]
+    failedSources: upstream.failedSources.length ? upstream.failedSources : [BRAND_BASE_URL[brand]],
+    failedDetails: []
   };
 };

@@ -15,14 +15,9 @@ type ResellerBrand = {
   created_at?: string;
 };
 
-type Product = {
-  id: string;
-  brand?: string | null;
-};
-
-type CatalogItem = {
-  id: string;
-  brand?: string | null;
+type CatalogBrandOption = {
+  slug: string;
+  label: string;
 };
 
 type AccountSettings = {
@@ -59,38 +54,6 @@ type AccessMember = {
   created_at?: string;
 };
 
-const DEFAULT_BEAUTY_BRANDS = [
-  'Avon',
-  'Natura',
-  'O Boticario',
-  'Eudora',
-  'Jequiti',
-  'Mary Kay',
-  'Hinode',
-  'Quem Disse, Berenice?',
-  'Vult',
-  'Ruby Rose',
-  'Dailus',
-  'Boca Rosa',
-  'Bruna Tavares',
-  'Payot',
-  'Simple Organic',
-  'Lola Cosmetics',
-  'Salon Line',
-  'Skala',
-  'Nivea',
-  'L Oreal Paris'
-];
-
-const uniqueBrands = (values: Array<string | null | undefined>) =>
-  Array.from(
-    new Set(
-      values
-        .map((value) => value?.trim())
-        .filter((value): value is string => Boolean(value))
-    )
-  ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-
 export default async function ConfiguracoesPage({
   searchParams
 }: {
@@ -101,8 +64,7 @@ export default async function ConfiguracoesPage({
 
   const [
     brandsResponse,
-    productsResponse,
-    catalogResponse,
+    catalogBrandsResponse,
     accountResponse,
     subscriptionResponse,
     pixResponse,
@@ -110,8 +72,7 @@ export default async function ConfiguracoesPage({
     accessResponse
   ] = await Promise.all([
     fetchList<ResellerBrand>('/settings/brands'),
-    fetchList<Product>('/inventory/products'),
-    fetchList<CatalogItem>('/storefront/catalog'),
+    fetchList<CatalogBrandOption>('/catalog/brands'),
     fetchItem<AccountSettings>('/settings/account'),
     fetchItem<SubscriptionSettings>('/settings/subscription'),
     fetchItem<PixSettings>('/settings/pix'),
@@ -120,21 +81,15 @@ export default async function ConfiguracoesPage({
   ]);
 
   const configuredBrands = brandsResponse?.data ?? [];
-  const inventoryBrands = uniqueBrands((productsResponse?.data ?? []).map((item) => item.brand));
-  const catalogBrands = uniqueBrands((catalogResponse?.data ?? []).map((item) => item.brand));
-  const catalogBrandOptions = uniqueBrands([...catalogBrands, ...inventoryBrands]);
-  const existingBrandOptions = uniqueBrands([
-    ...DEFAULT_BEAUTY_BRANDS,
-    ...catalogBrands,
-    ...inventoryBrands
-  ]);
-
+  const catalogBrandOptions = (catalogBrandsResponse?.data ?? []).map((item) => ({
+    slug: item.slug,
+    label: item.label
+  }));
   return (
     <main className="page-content settings-page">
       <SettingsPanel
         initialSection={initialSection}
         initialBrands={configuredBrands}
-        existingBrandOptions={existingBrandOptions}
         catalogBrandOptions={catalogBrandOptions}
         initialAccount={accountResponse?.data ?? {}}
         initialSubscription={subscriptionResponse?.data ?? {}}

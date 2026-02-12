@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   IconCalendar,
+  IconClipboard,
   IconDiamond,
   IconDollar,
   IconEdit,
@@ -16,6 +17,7 @@ import {
 import { API_BASE, toNumber } from '../lib';
 
 type BrandSource = 'existing' | 'catalog' | 'manual';
+type BrandCreateMode = 'catalog' | 'manual';
 type SubscriptionStatus = 'active' | 'trial' | 'overdue' | 'canceled';
 type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
 
@@ -63,11 +65,15 @@ type AccessMember = {
   created_at?: string;
 };
 
+type CatalogBrandOption = {
+  slug: string;
+  label: string;
+};
+
 type SettingsPanelProps = {
   initialSection: string;
   initialBrands: ResellerBrand[];
-  existingBrandOptions: string[];
-  catalogBrandOptions: string[];
+  catalogBrandOptions: CatalogBrandOption[];
   initialAccount: AccountSettings;
   initialSubscription: SubscriptionSettings;
   initialPix: PixSettings;
@@ -170,12 +176,7 @@ const isSubscriptionStatus = (value?: string): value is SubscriptionStatus =>
 const isPixKeyType = (value?: string): value is PixKeyType =>
   value === 'cpf' || value === 'cnpj' || value === 'email' || value === 'phone' || value === 'random';
 
-const parseProfitability = (value: string) => {
-  const normalized = value.replace('%', '').replace(',', '.').trim();
-  const parsed = Number(normalized);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.max(0, Math.min(100, parsed));
-};
+const DEFAULT_BRAND_PROFITABILITY = 30;
 
 const formatProfitability = (value?: number | string) => {
   const parsed = toNumber(value);
@@ -247,6 +248,14 @@ const uniqueBrands = (values: Array<string | null | undefined>) =>
     )
   ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
+const normalizeBrandToken = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+
 const toAccountForm = (value: AccountSettings): AccountForm => ({
   ownerName: value.ownerName || '',
   ownerEmail: value.ownerEmail || '',
@@ -282,7 +291,6 @@ const defaultAccessForm: AccessForm = {
 export default function SettingsPanel({
   initialSection,
   initialBrands,
-  existingBrandOptions,
   catalogBrandOptions,
   initialAccount,
   initialSubscription,
@@ -294,26 +302,31 @@ export default function SettingsPanel({
     isSection(initialSection) ? initialSection : 'marcas'
   );
   const [brands, setBrands] = useState<ResellerBrand[]>(initialBrands);
-  const existingCreateOptions = useMemo(
-    () => uniqueBrands([...existingBrandOptions, ...brands.map((brand) => brand.name)]),
-    [existingBrandOptions, brands]
-  );
   const catalogCreateOptions = useMemo(
-    () => uniqueBrands([...catalogBrandOptions, ...brands.map((brand) => brand.name)]),
-    [catalogBrandOptions, brands]
+    () =>
+      [...catalogBrandOptions].sort((a, b) => a.label.localeCompare(b.label, 'pt-BR')),
+    [catalogBrandOptions]
+  );
+  const catalogOptionBySlug = useMemo(
+    () =>
+      new Map(
+        catalogCreateOptions.map((option) => [option.slug, option] as const)
+      ),
+    [catalogCreateOptions]
+  );
+  const configuredBrandTokenSet = useMemo(
+    () => new Set(brands.map((brand) => normalizeBrandToken(brand.name)).filter(Boolean)),
+    [brands]
   );
   const [toast, setToast] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [createMode, setCreateMode] = useState<BrandSource>(
-    existingCreateOptions.length > 0 ? 'existing' : catalogCreateOptions.length > 0 ? 'catalog' : 'manual'
-  );
+  const [createMode, setCreateMode] = useState<BrandCreateMode | null>(null);
   const [createSaving, setCreateSaving] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [selectedExistingBrand, setSelectedExistingBrand] = useState(existingCreateOptions[0] || '');
-  const [selectedCatalogBrand, setSelectedCatalogBrand] = useState(catalogCreateOptions[0] || '');
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [selectedCatalogBrand, setSelectedCatalogBrand] = useState(catalogCreateOptions[0]?.slug || '');
   const [manualName, setManualName] = useState('');
-  const [manualProfitability, setManualProfitability] = useState('');
   const [manualLogoUrl, setManualLogoUrl] = useState('');
 
   const [accountForm, setAccountForm] = useState<AccountForm>(toAccountForm(initialAccount));
@@ -378,34 +391,44 @@ export default function SettingsPanel({
   }, [toast]);
 
   useEffect(() => {
-    if (createMode !== 'existing' || selectedExistingBrand) return;
-    setSelectedExistingBrand(existingCreateOptions[0] || '');
-  }, [createMode, selectedExistingBrand, existingCreateOptions]);
-
-  useEffect(() => {
-    if (createMode !== 'catalog' || selectedCatalogBrand) return;
-    setSelectedCatalogBrand(catalogCreateOptions[0] || '');
-  }, [createMode, selectedCatalogBrand, catalogCreateOptions]);
+    if (createMode !== 'catalog') return;
+    if (selectedCatalogBrand && catalogOptionBySlug.has(selectedCatalogBrand)) return;
+    setSelectedCatalogBrand(catalogCreateOptions[0]?.slug || '');
+  }, [catalogCreateOptions, catalogOptionBySlug, createMode, selectedCatalogBrand]);
 
   const nextBrandName = useMemo(() => {
-    if (createMode === 'existing') return selectedExistingBrand.trim();
-    if (createMode === 'catalog') return selectedCatalogBrand.trim();
+    if (createMode === 'catalog') {
+      return catalogOptionBySlug.get(selectedCatalogBrand)?.label.trim() || '';
+    }
     return manualName.trim();
-  }, [createMode, selectedExistingBrand, selectedCatalogBrand, manualName]);
+  }, [catalogOptionBySlug, createMode, manualName, selectedCatalogBrand]);
+
+  const filteredCatalogOptions = useMemo(() => {
+    const normalizedSearch = normalizeBrandToken(catalogSearch);
+    const withStatus = catalogCreateOptions.map((option) => ({
+      ...option,
+      alreadyAdded: configuredBrandTokenSet.has(normalizeBrandToken(option.label))
+    }));
+
+    if (!normalizedSearch) return withStatus;
+
+    return withStatus.filter((option) => {
+      const labelToken = normalizeBrandToken(option.label);
+      const slugToken = normalizeBrandToken(option.slug);
+      return labelToken.includes(normalizedSearch) || slugToken.includes(normalizedSearch);
+    });
+  }, [catalogCreateOptions, catalogSearch, configuredBrandTokenSet]);
 
   const resetCreateForm = () => {
     if (manualLogoUrl.startsWith('blob:')) {
       URL.revokeObjectURL(manualLogoUrl);
     }
-    setCreateMode(
-      existingCreateOptions.length > 0 ? 'existing' : catalogCreateOptions.length > 0 ? 'catalog' : 'manual'
-    );
+    setCreateMode(null);
     setCreateError(null);
     setCreateSaving(false);
-    setSelectedExistingBrand(existingCreateOptions[0] || '');
-    setSelectedCatalogBrand(catalogCreateOptions[0] || '');
+    setCatalogSearch('');
+    setSelectedCatalogBrand(catalogCreateOptions[0]?.slug || '');
     setManualName('');
-    setManualProfitability('');
     setManualLogoUrl('');
   };
 
@@ -419,14 +442,21 @@ export default function SettingsPanel({
     setCreateError(null);
   };
 
-  const handleCreateBrand = async () => {
-    const name = nextBrandName;
+  const handleCreateBrand = async (catalogSlugOverride?: string) => {
+    if (!createMode) {
+      setCreateError('Selecione como deseja incluir a marca.');
+      return;
+    }
+    const mode = createMode;
+    const catalogSlug = (catalogSlugOverride || selectedCatalogBrand || '').trim();
+    const catalogOption = catalogOptionBySlug.get(catalogSlug);
+    const name = mode === 'catalog' ? catalogOption?.label.trim() || '' : nextBrandName;
     if (!name) {
       setCreateError('Selecione ou informe o nome da marca.');
       return;
     }
 
-    const profitability = parseProfitability(manualProfitability);
+    const profitability = DEFAULT_BRAND_PROFITABILITY;
 
     setCreateSaving(true);
     setCreateError(null);
@@ -436,15 +466,10 @@ export default function SettingsPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          source: createMode,
-          sourceBrand:
-            createMode === 'existing'
-              ? selectedExistingBrand || undefined
-              : createMode === 'catalog'
-                ? selectedCatalogBrand || undefined
-                : undefined,
+          source: mode,
+          sourceBrand: mode === 'catalog' ? catalogSlug || undefined : undefined,
           profitability,
-          logoUrl: createMode === 'manual' ? manualLogoUrl || undefined : undefined
+          logoUrl: mode === 'manual' ? manualLogoUrl || undefined : undefined
         })
       });
 
@@ -458,7 +483,11 @@ export default function SettingsPanel({
       const brand = payload.data;
       setBrands((prev) => [brand, ...prev.filter((item) => item.id !== brand.id)]);
       closeCreateModal();
-      setToast('Marca adicionada');
+      setToast(
+        mode === 'catalog' && catalogSlug
+          ? "Marca adicionada. Use 'Sincronizar catalogo agora' no cadastro de produtos."
+          : 'Marca adicionada.'
+      );
     } catch {
       setCreateError('Erro ao adicionar marca.');
     } finally {
@@ -1143,37 +1172,32 @@ export default function SettingsPanel({
         <div className="modal-backdrop" onClick={closeCreateModal}>
           <div className="modal modal-brand-create" onClick={(event) => event.stopPropagation()}>
             <div className="brand-modal-header">
-              <h3>{createMode === 'manual' ? 'Nova marca' : 'Adicionar marca'}</h3>
+              <h3>Nova marca</h3>
               <button className="brand-modal-close" type="button" onClick={closeCreateModal}>
                 ✕
               </button>
             </div>
 
-            <div className="brand-mode-grid">
-              <button
-                type="button"
-                className={`brand-mode-option${createMode === 'existing' ? ' active' : ''}`}
-                onClick={() => setCreateMode('existing')}
-              >
-                Incluir marca existente
-              </button>
-              <button
-                type="button"
-                className={`brand-mode-option${createMode === 'catalog' ? ' active' : ''}`}
-                onClick={() => setCreateMode('catalog')}
-              >
-                Marca do catalogo
-              </button>
-              <button
-                type="button"
-                className={`brand-mode-option${createMode === 'manual' ? ' active' : ''}`}
-                onClick={() => setCreateMode('manual')}
-              >
-                Manual
-              </button>
-            </div>
-
-            {createMode === 'manual' ? (
+            {createMode === null ? (
+              <div className="brand-mode-grid">
+                <button
+                  type="button"
+                  className="brand-mode-option active"
+                  onClick={() => setCreateMode('catalog')}
+                >
+                  <IconClipboard />
+                  <span>Incluir marca do catalogo</span>
+                </button>
+                <button
+                  type="button"
+                  className="brand-mode-option"
+                  onClick={() => setCreateMode('manual')}
+                >
+                  <IconEdit />
+                  <span>Incluir marca manualmente</span>
+                </button>
+              </div>
+            ) : createMode === 'manual' ? (
               <div className="brand-manual-form">
                 <label className="brand-field">
                   <span>Logo</span>
@@ -1210,65 +1234,86 @@ export default function SettingsPanel({
                     placeholder="Informe o nome da marca"
                   />
                 </label>
-
-                <label className="brand-field">
-                  <span>Lucratividade</span>
-                  <div className="brand-profit-input">
-                    <input
-                      value={manualProfitability}
-                      inputMode="decimal"
-                      placeholder="0"
-                      onChange={(event) => setManualProfitability(event.target.value.replace(/[^\d,.]/g, ''))}
-                    />
-                    <strong>%</strong>
-                  </div>
-                </label>
+                <span className="meta">Lucratividade padrao aplicada: 30%</span>
               </div>
             ) : (
               <div className="brand-selector-form">
-                <label className="brand-field">
-                  <span>{createMode === 'existing' ? 'Marca existente' : 'Marca do catalogo'}</span>
-                  <select
-                    value={createMode === 'existing' ? selectedExistingBrand : selectedCatalogBrand}
-                    onChange={(event) =>
-                      createMode === 'existing'
-                        ? setSelectedExistingBrand(event.target.value)
-                        : setSelectedCatalogBrand(event.target.value)
-                    }
-                  >
-                    <option value="">Selecione uma marca</option>
-                    {(createMode === 'existing' ? existingCreateOptions : catalogCreateOptions).map((brand) => (
-                      <option key={brand} value={brand}>
-                        {brand}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="brand-field">
-                  <span>Lucratividade</span>
-                  <div className="brand-profit-input">
+                <label className="brand-search-field">
+                  <div className="brand-search-input">
+                    <span>⌕</span>
                     <input
-                      value={manualProfitability}
-                      inputMode="decimal"
-                      placeholder="0"
-                      onChange={(event) => setManualProfitability(event.target.value.replace(/[^\d,.]/g, ''))}
+                      value={catalogSearch}
+                      onChange={(event) => setCatalogSearch(event.target.value)}
+                      placeholder="Buscar marca"
                     />
-                    <strong>%</strong>
                   </div>
                 </label>
+                <span className="meta">Lucratividade padrao aplicada: 30%</span>
+
+                <div className="catalog-brand-picker-list">
+                  {filteredCatalogOptions.length === 0 ? (
+                    <div className="meta">Nenhuma marca encontrada.</div>
+                  ) : (
+                    filteredCatalogOptions.map((option) => {
+                      const alreadyAdded = option.alreadyAdded;
+
+                      return (
+                        <article key={option.slug} className="catalog-brand-picker-item">
+                          <div className="catalog-brand-picker-info">
+                            <span className="catalog-brand-logo">{option.label.slice(0, 1).toUpperCase()}</span>
+                            <div className="catalog-brand-picker-text">
+                              <strong>{option.label}</strong>
+                              <span className="meta">{option.slug}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className={`button primary small${alreadyAdded ? ' ghost' : ''}`}
+                            onClick={() => {
+                              setSelectedCatalogBrand(option.slug);
+                              void handleCreateBrand(option.slug);
+                            }}
+                            disabled={createSaving || alreadyAdded}
+                          >
+                            {alreadyAdded ? 'Adicionada' : 'Adicionar'}
+                          </button>
+                        </article>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             )}
 
             {createError ? <div className="field-error">{createError}</div> : null}
 
             <div className="brand-modal-footer">
+              {createMode !== null ? (
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => {
+                    setCreateMode(null);
+                    setCreateError(null);
+                  }}
+                  disabled={createSaving}
+                >
+                  Voltar
+                </button>
+              ) : null}
               <button className="button ghost" type="button" onClick={closeCreateModal}>
                 Cancelar
               </button>
-              <button className="button primary" type="button" onClick={handleCreateBrand} disabled={createSaving}>
-                {createSaving ? 'Salvando...' : 'Adicionar marca'}
-              </button>
+              {createMode === 'manual' ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => void handleCreateBrand()}
+                  disabled={createSaving}
+                >
+                  {createSaving ? 'Salvando...' : 'Adicionar marca'}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

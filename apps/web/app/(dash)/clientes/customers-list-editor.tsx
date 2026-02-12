@@ -445,7 +445,7 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
                   <input
                     type="email"
                     value={form.email}
-                    placeholder="cliente@exemplo.com"
+                    placeholder="Email do cliente"
                     onChange={(event) => updateForm('email', event.target.value)}
                   />
                 </label>

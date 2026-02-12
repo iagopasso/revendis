@@ -21,11 +21,6 @@ type Category = {
   color?: string | null;
 };
 
-type ResellerBrand = {
-  id: string;
-  name: string;
-};
-
 type SearchParams = {
   q?: string | string[];
   stock?: string | string[];
@@ -66,14 +61,12 @@ export default async function EstoquePage({
   searchParams?: Promise<SearchParams>;
 }) {
   const resolvedParams = (await searchParams) ?? {};
-  const [productsResponse, categoriesResponse, resellerBrandsResponse] = await Promise.all([
+  const [productsResponse, categoriesResponse] = await Promise.all([
     fetchList<Product>('/inventory/products'),
-    fetchList<Category>('/inventory/categories'),
-    fetchList<ResellerBrand>('/settings/brands')
+    fetchList<Category>('/inventory/categories')
   ]);
   const products = productsResponse?.data ?? [];
   const categories = categoriesResponse?.data ?? [];
-  const resellerBrands = resellerBrandsResponse?.data ?? [];
   const query = getStringParam(resolvedParams.q).trim();
   const stockFilter = getStringParam(resolvedParams.stock) || 'all';
   const categoryFilter = getStringParam(resolvedParams.category) || 'all';
@@ -105,10 +98,7 @@ export default async function EstoquePage({
     return matchesQuery && matchesStock && matchesCategory && matchesBrand;
   });
 
-  const brands = uniqueBrands([
-    ...products.map((product) => product.brand),
-    ...resellerBrands.map((brand) => brand.name)
-  ]);
+  const brands = uniqueBrands(products.map((product) => product.brand));
 
   const productCount = filteredProducts.length;
   const totalUnits = filteredProducts.reduce((sum, product) => sum + toNumber(product.quantity ?? 0), 0);
