@@ -45,3 +45,28 @@ test('creates and lists products', async () => {
   expect(listRes.status).toBe(200);
   expect(Array.isArray(listRes.body.data)).toBe(true);
 });
+
+test('returns explicit conflict message when trying to create duplicated product sku', async () => {
+  if (!dbReady) {
+    return;
+  }
+
+  const sku = `DUP-${Date.now()}`;
+
+  const firstCreate = await request(app).post('/api/inventory/products').send({
+    name: 'Produto Duplicado',
+    sku,
+    price: 10
+  });
+  expect(firstCreate.status).toBe(201);
+
+  const secondCreate = await request(app).post('/api/inventory/products').send({
+    name: 'Produto Duplicado 2',
+    sku,
+    price: 12
+  });
+
+  expect(secondCreate.status).toBe(409);
+  expect(secondCreate.body.code).toBe('product_already_exists');
+  expect(secondCreate.body.message).toContain('Produto ja cadastrado');
+});

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { IconBox, IconDots, IconEdit, IconPlus, IconTrash } from '../icons';
 import { API_BASE, formatCurrency, toNumber } from '../lib';
@@ -68,6 +68,18 @@ type DraftSnapshot = {
 };
 
 type CreateStep = 'basic' | 'products' | 'details';
+
+type PersistedDraftEntry = {
+  purchase: Purchase;
+  snapshot: DraftSnapshot;
+};
+
+type PersistedDraftPayload = {
+  version: 1;
+  drafts: PersistedDraftEntry[];
+};
+
+const PURCHASE_DRAFTS_STORAGE_KEY = 'revendis:purchases:drafts:v1';
 
 const statusLabel = (status: PurchaseStatus) => {
   if (status === 'draft') return 'Rascunho';
@@ -215,6 +227,204 @@ const createDraftPurchase = ({
   created_at: createdAt || new Date().toISOString()
 });
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const sortPurchases = (purchases: Purchase[]) => {
+  return [...purchases].sort((a, b) => {
+    const purchaseDateA = a.purchase_date || '';
+    const purchaseDateB = b.purchase_date || '';
+    if (purchaseDateA !== purchaseDateB) {
+      return purchaseDateA < purchaseDateB ? 1 : -1;
+    }
+
+    const createdAtA = a.created_at || '';
+    const createdAtB = b.created_at || '';
+    if (createdAtA === createdAtB) return 0;
+    return createdAtA < createdAtB ? 1 : -1;
+  });
+};
+
+const mergePurchasesKeepingDrafts = (basePurchases: Purchase[], draftPurchases: Purchase[]) => {
+  const draftById = new Map(draftPurchases.map((purchase) => [purchase.id, purchase]));
+  const merged = [
+    ...basePurchases.filter((purchase) => !draftById.has(purchase.id)),
+    ...draftPurchases
+  ];
+  return sortPurchases(merged);
+};
+
+const snapshotFromPurchase = (purchase: Purchase): DraftSnapshot => ({
+  form: {
+    orderNumber: purchase.order_number?.trim() || '',
+    supplier: purchase.supplier?.trim() || 'Fornecedor nao informado',
+    brand: purchase.brand?.trim() || '',
+    items: toNumber(purchase.items) > 0 ? String(toNumber(purchase.items)) : '',
+    total: toNumber(purchase.total) > 0 ? formatCurrency(toNumber(purchase.total)) : '',
+    purchaseDate: purchase.purchase_date || toInputDate(new Date())
+  },
+  items: []
+});
+
+const parseDraftSnapshot = (value: unknown): DraftSnapshot | null => {
+  if (!isRecord(value)) return null;
+  if (!isRecord(value.form) || !Array.isArray(value.items)) return null;
+
+  const form = value.form;
+  if (
+    typeof form.orderNumber !== 'string' ||
+    typeof form.supplier !== 'string' ||
+    typeof form.brand !== 'string' ||
+    typeof form.items !== 'string' ||
+    typeof form.total !== 'string' ||
+    typeof form.purchaseDate !== 'string'
+  ) {
+    return null;
+  }
+
+  const items: PurchaseDraftItem[] = [];
+  for (const item of value.items) {
+    if (
+      !isRecord(item) ||
+      typeof item.id !== 'string' ||
+      typeof item.productId !== 'string' ||
+      typeof item.price !== 'string' ||
+      typeof item.expiryDate !== 'string' ||
+      typeof item.quantity !== 'string'
+    ) {
+      return null;
+    }
+
+    items.push({
+      id: item.id,
+      productId: item.productId,
+      price: item.price,
+      expiryDate: item.expiryDate,
+      quantity: item.quantity
+    });
+  }
+
+  return {
+    form: {
+      orderNumber: form.orderNumber,
+      supplier: form.supplier,
+      brand: form.brand,
+      items: form.items,
+      total: form.total,
+      purchaseDate: form.purchaseDate
+    },
+    items
+  };
+};
+
+const parseDraftPurchase = (value: unknown): Purchase | null => {
+  if (!isRecord(value)) return null;
+  if (value.status !== 'draft') return null;
+  if (typeof value.id !== 'string' || !value.id.trim()) return null;
+
+  const supplier =
+    typeof value.supplier === 'string' && value.supplier.trim()
+      ? value.supplier
+      : 'Fornecedor nao informado';
+
+  const total = typeof value.total === 'number' || typeof value.total === 'string' ? value.total : 0;
+  const items = typeof value.items === 'number' || typeof value.items === 'string' ? value.items : 0;
+  const brand = typeof value.brand === 'string' ? value.brand : null;
+  const orderNumber = typeof value.order_number === 'string' ? value.order_number : null;
+  const purchaseDate =
+    typeof value.purchase_date === 'string' && value.purchase_date.trim()
+      ? value.purchase_date
+      : toInputDate(new Date());
+  const createdAt =
+    typeof value.created_at === 'string' && value.created_at.trim()
+      ? value.created_at
+      : new Date().toISOString();
+
+  return {
+    id: value.id,
+    supplier,
+    status: 'draft',
+    total,
+    items,
+    brand,
+    order_number: orderNumber,
+    purchase_date: purchaseDate,
+    created_at: createdAt
+  };
+};
+
+const readPersistedDrafts = () => {
+  if (typeof window === 'undefined') {
+    return {
+      draftPurchases: [] as Purchase[],
+      snapshots: {} as Record<string, DraftSnapshot>
+    };
+  }
+
+  const raw = window.localStorage.getItem(PURCHASE_DRAFTS_STORAGE_KEY);
+  if (!raw) {
+    return {
+      draftPurchases: [] as Purchase[],
+      snapshots: {} as Record<string, DraftSnapshot>
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.drafts)) {
+      window.localStorage.removeItem(PURCHASE_DRAFTS_STORAGE_KEY);
+      return {
+        draftPurchases: [] as Purchase[],
+        snapshots: {} as Record<string, DraftSnapshot>
+      };
+    }
+
+    const draftPurchases: Purchase[] = [];
+    const snapshots: Record<string, DraftSnapshot> = {};
+
+    for (const entry of parsed.drafts) {
+      if (!isRecord(entry)) continue;
+
+      const purchase = parseDraftPurchase(entry.purchase);
+      if (!purchase) continue;
+
+      const snapshot = parseDraftSnapshot(entry.snapshot) || snapshotFromPurchase(purchase);
+      draftPurchases.push(purchase);
+      snapshots[purchase.id] = snapshot;
+    }
+
+    return { draftPurchases, snapshots };
+  } catch {
+    window.localStorage.removeItem(PURCHASE_DRAFTS_STORAGE_KEY);
+    return {
+      draftPurchases: [] as Purchase[],
+      snapshots: {} as Record<string, DraftSnapshot>
+    };
+  }
+};
+
+const persistDrafts = (purchases: Purchase[], draftSnapshots: Record<string, DraftSnapshot>) => {
+  if (typeof window === 'undefined') return;
+
+  const draftEntries: PersistedDraftEntry[] = purchases
+    .filter((purchase) => purchase.status === 'draft')
+    .map((purchase) => ({
+      purchase,
+      snapshot: draftSnapshots[purchase.id] || snapshotFromPurchase(purchase)
+    }));
+
+  if (!draftEntries.length) {
+    window.localStorage.removeItem(PURCHASE_DRAFTS_STORAGE_KEY);
+    return;
+  }
+
+  const payload: PersistedDraftPayload = {
+    version: 1,
+    drafts: draftEntries
+  };
+  window.localStorage.setItem(PURCHASE_DRAFTS_STORAGE_KEY, JSON.stringify(payload));
+};
+
 export default function PurchasesPanel({
   initialPurchases,
   availableBrands,
@@ -231,6 +441,13 @@ export default function PurchasesPanel({
   const [createOpen, setCreateOpen] = useState(initialCreateOpen);
   const [createStep, setCreateStep] = useState<CreateStep>('basic');
   const [form, setForm] = useState<PurchaseForm>(createDefaultForm());
+  const [freight, setFreight] = useState('');
+  const [addition, setAddition] = useState('');
+  const [discount, setDiscount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('Cartao de Credito');
+  const [installments, setInstallments] = useState<
+    { id: string; dueDate: string; amount: string }[]
+  >([{ id: `${Date.now()}`, dueDate: toInputDate(new Date()), amount: '' }]);
   const [basicErrors, setBasicErrors] = useState<{
     brand?: string;
     orderNumber?: string;
@@ -247,10 +464,30 @@ export default function PurchasesPanel({
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [draftSnapshots, setDraftSnapshots] = useState<Record<string, DraftSnapshot>>({});
   const productSearchRef = useRef<HTMLDivElement>(null);
+  const [viewPurchase, setViewPurchase] = useState<Purchase | null>(null);
 
   useEffect(() => {
-    setPurchases(initialPurchases);
+    setPurchases((prev) => {
+      const localDrafts = prev.filter((purchase) => purchase.status === 'draft');
+      return mergePurchasesKeepingDrafts(initialPurchases, localDrafts);
+    });
   }, [initialPurchases]);
+
+  useEffect(() => {
+    const { draftPurchases, snapshots } = readPersistedDrafts();
+    if (!draftPurchases.length) return;
+
+    setDraftSnapshots((prev) => ({
+      ...snapshots,
+      ...prev
+    }));
+
+    setPurchases((prev) => mergePurchasesKeepingDrafts(prev, draftPurchases));
+  }, []);
+
+  useEffect(() => {
+    persistDrafts(purchases, draftSnapshots);
+  }, [purchases, draftSnapshots]);
 
   useEffect(() => {
     if (!initialCreateOpen) return;
@@ -293,6 +530,56 @@ export default function PurchasesPanel({
 
     return Array.from(new Set([...availableBrands, ...dynamic])).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [availableBrands, purchases]);
+
+  const subtotalProducts = useMemo(() => {
+    return purchaseDraftItems.reduce((sum, item) => {
+      const price = parseCurrencyInput(item.price);
+      const qty = Number.parseInt(item.quantity, 10);
+      if (!Number.isFinite(price) || !Number.isFinite(qty) || qty <= 0) return sum;
+      return sum + price * qty;
+    }, 0);
+  }, [purchaseDraftItems]);
+
+  const totalItemsCount = useMemo(
+    () =>
+      purchaseDraftItems.reduce((sum, item) => {
+        const qty = Number.parseInt(item.quantity, 10);
+        return sum + (Number.isFinite(qty) && qty > 0 ? qty : 0);
+      }, 0),
+    [purchaseDraftItems]
+  );
+
+  const freightValue = Number.isFinite(parseCurrencyInput(freight)) ? parseCurrencyInput(freight) : 0;
+  const additionValue = Number.isFinite(parseCurrencyInput(addition)) ? parseCurrencyInput(addition) : 0;
+  const discountValue = Number.isFinite(parseCurrencyInput(discount)) ? parseCurrencyInput(discount) : 0;
+  const purchaseTotal = Math.max(0, subtotalProducts + freightValue + additionValue - discountValue);
+
+  const distributeInstallments = (count: number, total: number, baseDate: string) => {
+    if (count <= 0) return [];
+    const totalCents = Math.round(total * 100);
+    const base = Math.floor(totalCents / count);
+    let remainder = totalCents - base * count;
+    return Array.from({ length: count }).map((_, index) => {
+      const cents = base + (remainder > 0 ? 1 : 0);
+      if (remainder > 0) remainder -= 1;
+      return {
+        id: `${Date.now()}-${index}`,
+        dueDate: baseDate,
+        amount: formatCurrency(cents / 100)
+      };
+    });
+  };
+
+  useEffect(() => {
+    const baseDate = form.purchaseDate || toInputDate(new Date());
+    const count = Math.max(1, installments.length);
+    setInstallments(distributeInstallments(count, purchaseTotal, baseDate));
+    setForm((prev) => ({
+      ...prev,
+      items: totalItemsCount > 0 ? String(totalItemsCount) : '',
+      total: purchaseTotal > 0 ? formatCurrency(purchaseTotal) : ''
+    }));
+  }, [purchaseTotal, totalItemsCount, form.purchaseDate]);
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -340,7 +627,7 @@ export default function PurchasesPanel({
   const purchaseProductResults = useMemo(() => {
     const normalizedQuery = purchaseProductQuery.trim().toLowerCase();
     const base = brandScopedProducts.filter((product) => !selectedProductIds.has(product.id));
-    if (!normalizedQuery) return base.slice(0, 12);
+    if (!normalizedQuery) return base;
 
     return base
       .filter((product) => {
@@ -350,8 +637,7 @@ export default function PurchasesPanel({
           (product.brand || '').toLowerCase().includes(normalizedQuery) ||
           (product.barcode || '').toLowerCase().includes(normalizedQuery)
         );
-      })
-      .slice(0, 12);
+      });
   }, [brandScopedProducts, purchaseProductQuery, selectedProductIds]);
 
   const purchaseItemsCount = useMemo(
@@ -597,8 +883,8 @@ export default function PurchasesPanel({
 
   const handleCreatePurchase = async () => {
     const supplier = form.supplier.trim() || 'Fornecedor nao informado';
-    const items = Number(form.items);
-    const total = parseCurrencyInput(form.total);
+    const items = totalItemsCount;
+    const total = purchaseTotal;
     const purchaseItems: PurchasePayloadItem[] = [];
 
     if (purchaseDraftItems.length <= 0) {
@@ -682,6 +968,17 @@ export default function PurchasesPanel({
         return;
       }
 
+      const createdPurchase = payload.data;
+      if (createdPurchase && purchaseDraftItems.length > 0) {
+        setDraftSnapshots((prev) => ({
+          ...prev,
+          [createdPurchase.id]: {
+            form: cloneForm(form),
+            items: cloneItems(purchaseDraftItems)
+          }
+        }));
+      }
+
       if (activeDraftId) {
         setPurchases((prev) => [payload.data as Purchase, ...prev.filter((purchase) => purchase.id !== activeDraftId)]);
         setDraftSnapshots((prev) => {
@@ -699,6 +996,37 @@ export default function PurchasesPanel({
       setFormError('Erro ao criar compra.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCreateModalKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter') return;
+    if (event.defaultPrevented) return;
+    if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (saving) return;
+
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.tagName.toLowerCase() === 'textarea') return;
+
+    event.preventDefault();
+
+    if (createStep === 'basic') {
+      handleCreateNextStep();
+      return;
+    }
+
+    if (createStep === 'products') {
+      if (target.closest('.purchase-create-search-field') && purchaseProductResults.length > 0) {
+        handleProductSearchSelect(purchaseProductResults[0]);
+        return;
+      }
+      handleProductsNextStep();
+      return;
+    }
+
+    if (createStep === 'details') {
+      void handleCreatePurchase();
     }
   };
 
@@ -755,7 +1083,8 @@ export default function PurchasesPanel({
   };
 
   return (
-    <section className="panel filters-panel-static purchases-filters-panel">
+    <>
+      <section className="panel filters-panel-static purchases-filters-panel">
       <div className="toolbar">
         <div className="search">
           <span>🔍</span>
@@ -822,13 +1151,30 @@ export default function PurchasesPanel({
               purchase.order_number?.trim() || purchase.id.slice(0, 4).toUpperCase();
             return (
               <div key={purchase.id} className="data-row purchase-data-row">
-                <div>
-                  <strong>N.° {purchaseNumber}</strong>
+                <div className="purchase-cell purchase-cell-main">
+                  <span className="purchase-cell-label">Numero</span>
+                  <strong className="purchase-cell-value">N.° {purchaseNumber}</strong>
                 </div>
-                <div>{purchase.brand || '--'}</div>
-                <div className="data-cell mono">{formatDateLabel(purchase.purchase_date || purchase.created_at)}</div>
-                <div className="data-cell mono">{formatCurrency(toNumber(purchase.total))}</div>
-                <span className={`badge ${statusBadge(purchase.status)}`}>{statusLabel(purchase.status)}</span>
+                <div className="purchase-cell">
+                  <span className="purchase-cell-label">Marca</span>
+                  <span className="purchase-cell-value">{purchase.brand || '--'}</span>
+                </div>
+                <div className="purchase-cell">
+                  <span className="purchase-cell-label">Data</span>
+                  <span className="purchase-cell-value data-cell mono">
+                    {formatDateLabel(purchase.purchase_date || purchase.created_at)}
+                  </span>
+                </div>
+                <div className="purchase-cell">
+                  <span className="purchase-cell-label">Total</span>
+                  <span className="purchase-cell-value data-cell mono">
+                    {formatCurrency(toNumber(purchase.total))}
+                  </span>
+                </div>
+                <div className="purchase-cell purchase-cell-status">
+                  <span className="purchase-cell-label">Status</span>
+                  <span className={`badge ${statusBadge(purchase.status)}`}>{statusLabel(purchase.status)}</span>
+                </div>
                 <div className="purchase-actions-cell">
                   <div className="purchase-actions">
                     <button
@@ -858,17 +1204,11 @@ export default function PurchasesPanel({
                           </>
                         ) : (
                           <>
-                            <button type="button" onClick={() => updateStatus(purchase, 'pending')}>
-                              Marcar pendente
-                            </button>
-                            <button type="button" onClick={() => updateStatus(purchase, 'received')}>
-                              Marcar recebido
-                            </button>
-                            <button type="button" onClick={() => updateStatus(purchase, 'cancelled')}>
-                              Marcar cancelado
+                            <button type="button" onClick={() => setViewPurchase(purchase)}>
+                              Visualizar compra
                             </button>
                             <button type="button" className="danger" onClick={() => removePurchase(purchase)}>
-                              <IconTrash /> Excluir
+                              <IconTrash /> Excluir pedido
                             </button>
                           </>
                         )}
@@ -886,7 +1226,11 @@ export default function PurchasesPanel({
 
       {createOpen ? (
         <div className="modal-backdrop" onClick={() => closeCreate()}>
-          <div className="modal modal-purchase-create" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="modal modal-purchase-create"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={handleCreateModalKeyDown}
+          >
             <div className="modal-header">
               <h3>Nova compra</h3>
               <button className="modal-close" type="button" onClick={() => closeCreate()}>
@@ -1117,28 +1461,134 @@ export default function PurchasesPanel({
             ) : null}
 
             {createStep === 'details' ? (
-              <div className="purchase-create-step">
-                <div className="purchase-create-summary">
-                  <strong>Pedido {form.orderNumber}</strong>
-                  <span>{form.brand}</span>
-                </div>
-                <label className="modal-field">
-                  <span>Itens</span>
-                  <input
-                    value={form.items}
-                    onChange={(event) => setForm((prev) => ({ ...prev, items: event.target.value }))}
-                    placeholder="Quantidade"
-                  />
-                </label>
+              <div className="purchase-create-step purchase-create-details">
+                <div className="purchase-details-grid">
+                  <div className="purchase-details-left">
+                    <label className="modal-field">
+                      <span>Valor de frete</span>
+                      <input
+                        value={freight}
+                        inputMode="decimal"
+                        placeholder="R$ 0,00"
+                        onChange={(event) => setFreight(formatCurrencyInput(event.target.value))}
+                      />
+                    </label>
+                    <label className="modal-field">
+                      <span>(+) Acrescimos</span>
+                      <input
+                        value={addition}
+                        inputMode="decimal"
+                        placeholder="R$ 0,00"
+                        onChange={(event) => setAddition(formatCurrencyInput(event.target.value))}
+                      />
+                    </label>
+                    <label className="modal-field">
+                      <span>(-) Descontos</span>
+                      <input
+                        value={discount}
+                        inputMode="decimal"
+                        placeholder="R$ 0,00"
+                        onChange={(event) => setDiscount(formatCurrencyInput(event.target.value))}
+                      />
+                    </label>
+                    <div className="purchase-financial-summary">
+                      <div className="purchase-summary-row">
+                        <span>Total em produtos:</span>
+                        <strong>{formatCurrency(subtotalProducts)}</strong>
+                      </div>
+                      <div className="purchase-summary-row total">
+                        <span>Valor final:</span>
+                        <strong>{formatCurrency(purchaseTotal)}</strong>
+                      </div>
+                    </div>
+                  </div>
 
-                <label className="modal-field">
-                  <span>Total da compra</span>
-                  <input
-                    value={form.total}
-                    onChange={(event) => setForm((prev) => ({ ...prev, total: event.target.value }))}
-                    placeholder="0,00"
-                  />
-                </label>
+                  <div className="purchase-details-right">
+                    <label className="modal-field">
+                      <span>Forma do pagamento</span>
+                      <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                        <option value="Cartao de Credito">Cartao de Credito</option>
+                        <option value="Cartao de Debito">Cartao de Debito</option>
+                        <option value="Pix">Pix</option>
+                        <option value="Boleto">Boleto</option>
+                        <option value="Dinheiro">Dinheiro</option>
+                        <option value="TED/DOC">TED/DOC</option>
+                      </select>
+                    </label>
+
+                    <div className="purchase-installments">
+                      <div className="purchase-installments-header">
+                        <strong>Parcelas</strong>
+                        <div className="purchase-installments-actions">
+                          <button
+                            type="button"
+                            aria-label="Diminuir parcelas"
+                            onClick={() =>
+                              setInstallments((prev) => {
+                                const next = Math.max(1, prev.length - 1);
+                                return distributeInstallments(next, purchaseTotal, form.purchaseDate || toInputDate(new Date()));
+                              })
+                            }
+                          >
+                            −
+                          </button>
+                          <span>{installments.length}</span>
+                          <button
+                            type="button"
+                            aria-label="Aumentar parcelas"
+                            onClick={() =>
+                              setInstallments((prev) => {
+                                const next = Math.min(12, prev.length + 1);
+                                return distributeInstallments(next, purchaseTotal, form.purchaseDate || toInputDate(new Date()));
+                              })
+                            }
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="purchase-installments-list">
+                        {installments.map((item, index) => (
+                          <div key={item.id} className="purchase-installment-row">
+                            <div className="purchase-installment-index">{index + 1}</div>
+                            <label>
+                              <span>Vencimento</span>
+                              <input
+                                type="date"
+                                value={item.dueDate}
+                                onChange={(event) =>
+                                  setInstallments((prev) =>
+                                    prev.map((inst) =>
+                                      inst.id === item.id ? { ...inst, dueDate: event.target.value } : inst
+                                    )
+                                  )
+                                }
+                              />
+                            </label>
+                            <label>
+                              <span>Valor</span>
+                              <input
+                                value={item.amount}
+                                inputMode="decimal"
+                                placeholder="R$ 0,00"
+                                onChange={(event) =>
+                                  setInstallments((prev) =>
+                                    prev.map((inst) =>
+                                      inst.id === item.id
+                                        ? { ...inst, amount: formatCurrencyInput(event.target.value) }
+                                        : inst
+                                    )
+                                  )
+                                }
+                              />
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : null}
 
@@ -1181,6 +1631,131 @@ export default function PurchasesPanel({
           </div>
         </div>
       ) : null}
-    </section>
+      </section>
+
+      {viewPurchase ? (
+        <div className="modal-backdrop" onClick={() => setViewPurchase(null)}>
+          <div className="modal modal-purchase-view" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header purchase-view-header">
+              <h3>Compra N.º {viewPurchase.order_number || viewPurchase.id.slice(0, 6)}</h3>
+              <button className="modal-close" type="button" onClick={() => setViewPurchase(null)}>
+                ✕
+              </button>
+            </div>
+
+            <div className="purchase-view-grid">
+              <section className="purchase-view-section">
+                <h4>Informacoes gerais</h4>
+                <div className="divider" />
+                <div className="purchase-view-field">
+                  <span>Marcas</span>
+                  <strong>{viewPurchase.brand || '—'}</strong>
+                </div>
+                <div className="purchase-view-field">
+                  <span>N.º do pedido</span>
+                  <strong>{viewPurchase.order_number || viewPurchase.id.slice(0, 6)}</strong>
+                </div>
+                <div className="purchase-view-field">
+                  <span>Data</span>
+                  <strong>{formatDateLabel(viewPurchase.purchase_date || viewPurchase.created_at)}</strong>
+                </div>
+
+                <h4>Produtos</h4>
+                <div className="divider" />
+                <div className="purchase-view-products">
+                  {draftSnapshots[viewPurchase.id]?.items.length ? (
+                    draftSnapshots[viewPurchase.id].items.map((item) => {
+                      const product = productById.get(item.productId) || null;
+                      return (
+                        <div key={item.id} className="purchase-view-product">
+                          <div className="purchase-view-product-thumb">
+                            {getProductImage(product) ? (
+                              <img className="product-thumb-image" src={getProductImage(product)} alt={product?.name || 'Produto'} />
+                            ) : (
+                              <span className="product-thumb-placeholder" aria-hidden="true">
+                                <IconBox />
+                              </span>
+                            )}
+                          </div>
+                          <div className="purchase-view-product-info">
+                            <strong>{getProductHeadline(product)}</strong>
+                            <span className="muted">
+                              {item.quantity || '1'} un. - {item.price || 'R$ 0,00'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <span className="muted">Produtos não disponiveis.</span>
+                  )}
+                </div>
+              </section>
+
+              <section className="purchase-view-section purchase-view-summary">
+                <h4>Resumo Financeiro</h4>
+                <div className="divider" />
+                <div className="purchase-view-field">
+                  <span>Subtotal dos produtos</span>
+                  <strong>{formatCurrency(toNumber(viewPurchase.total))}</strong>
+                </div>
+                <div className="purchase-view-field">
+                  <span>Frete</span>
+                  <strong>R$ 0,00</strong>
+                </div>
+                <div className="purchase-view-field">
+                  <span>Desconto</span>
+                  <strong>R$ 0,00</strong>
+                </div>
+                <div className="purchase-view-field">
+                  <span>Adicional</span>
+                  <strong>R$ 0,00</strong>
+                </div>
+                <div className="divider" />
+                <div className="purchase-view-field total">
+                  <span>Total</span>
+                  <strong className="accent">{formatCurrency(toNumber(viewPurchase.total))}</strong>
+                </div>
+
+                <h4>Pagamento</h4>
+                <div className="divider" />
+                <div className="purchase-payment-card">
+                  <div>
+                    <strong>Cartao de Credito</strong>
+                    <span className="muted">Parcela 1 de 1</span>
+                    <div className="purchase-payment-date">
+                      {formatDateLabel(viewPurchase.purchase_date || viewPurchase.created_at)}
+                    </div>
+                  </div>
+                  <div className="purchase-payment-right">
+                    <strong>{formatCurrency(toNumber(viewPurchase.total))}</strong>
+                    <span className={`badge ${viewPurchase.status === 'pending' ? 'pending' : 'success'}`}>
+                      {viewPurchase.status === 'pending' ? 'PENDENTE' : 'RECEBIDO'}
+                    </span>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div className="modal-footer purchase-view-actions">
+              <button className="button ghost" type="button" onClick={() => setViewPurchase(null)}>
+                Fechar
+              </button>
+              <button
+                className="button danger"
+                type="button"
+                onClick={() => {
+                  setViewPurchase(null);
+                  removePurchase(viewPurchase);
+                }}
+                disabled={processingId === viewPurchase.id}
+              >
+                {processingId === viewPurchase.id ? 'Excluindo...' : 'Excluir pedido'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }

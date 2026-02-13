@@ -82,6 +82,7 @@ type SaleDraftItem = {
   productId: string;
   quantity: string;
   price: string;
+  origin: 'stock' | 'order';
 };
 
 type SalesPanelProps = {
@@ -202,6 +203,29 @@ const fileToDataUrl = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const shrinkImageToDataUrl = (file: File, maxSize = 520, quality = 0.7) =>
+  new Promise<string>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+      const width = Math.max(1, Math.round(img.width * scale));
+      const height = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('invalid_canvas'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      resolve(dataUrl);
+    };
+    img.onerror = () => reject(new Error('invalid_image'));
+    img.src = URL.createObjectURL(file);
+  });
+
 const formatPhoneInput = (value: string) => {
   const digits = value.replace(/\D/g, '').slice(0, 11);
   if (digits.length <= 2) return digits;
@@ -232,6 +256,13 @@ const formatCepInput = (value: string) => {
   if (digits.length <= 5) return digits;
   return `${digits.slice(0, 5)}-${digits.slice(5)}`;
 };
+
+const normalizeSearchText = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 
 const formatCurrencyInput = (value: string) => {
   const digits = value.replace(/\D/g, '');
@@ -322,12 +353,16 @@ const rebalanceInstallments = (
   });
 };
 
-const createSaleDraftItem = (product?: Product): SaleDraftItem => ({
-  id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-  productId: product?.id || '',
-  quantity: '1',
-  price: product ? formatCurrency(toNumber(product.price)) : ''
-});
+const createSaleDraftItem = (product?: Product): SaleDraftItem => {
+  const available = Math.max(0, toNumber(product?.quantity ?? 0));
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    productId: product?.id || '',
+    quantity: '1',
+    price: product ? formatCurrency(toNumber(product.price)) : '',
+    origin: available > 0 ? 'stock' : 'order'
+  };
+};
 
 const getStockState = (quantity: number) => {
   if (quantity <= 0) return 'out';
@@ -375,7 +410,15 @@ export default function SalesPanel({
   const [saleDownPayment, setSaleDownPayment] = useState('');
   const [saleRegisterMethod, setSaleRegisterMethod] = useState('');
   const [saleInstallments, setSaleInstallments] = useState<InstallmentInput[]>([]);
+  const [saleDiscount, setSaleDiscount] = useState('');
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+
+  const [productSearch, setProductSearch] = useState('');
+  const [productModalProduct, setProductModalProduct] = useState<Product | null>(null);
+  const [productModalPrice, setProductModalPrice] = useState('');
+  const [productModalOrigin, setProductModalOrigin] = useState<'stock' | 'order'>('stock');
+  const [productModalError, setProductModalError] = useState<string | null>(null);
 
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [customerDraft, setCustomerDraft] = useState<CustomerDraft>(emptyCustomerDraft);
@@ -393,10 +436,7 @@ export default function SalesPanel({
     [localProducts]
   );
 
-  const availableProducts = useMemo(
-    () => saleProducts.filter((product) => toNumber(product.quantity ?? 0) > 0),
-    [saleProducts]
-  );
+  const availableProducts = useMemo(() => saleProducts, [saleProducts]);
 
   const saleItemsDetailed = useMemo(
     () =>
@@ -404,10 +444,14 @@ export default function SalesPanel({
         const product = saleProducts.find((candidate) => candidate.id === item.productId) || null;
         const quantityRaw = Number.parseInt(item.quantity || '0', 10);
         const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? quantityRaw : 0;
+        const origin = item.origin || 'stock';
         const unitPrice = parseMoney(item.price);
+        const available = Math.max(0, toNumber(product?.quantity ?? 0));
         return {
           ...item,
+          origin,
           product,
+          available,
           quantity,
           unitPrice,
           subtotal: quantity * unitPrice
@@ -415,6 +459,17 @@ export default function SalesPanel({
       }),
     [saleProducts, saleItems]
   );
+
+  const filteredProducts = useMemo(() => {
+    const normalized = normalizeSearchText(productSearch);
+    if (!normalized) return saleProducts;
+    return saleProducts.filter((product) => {
+      const haystack = normalizeSearchText(
+        `${product.name || ''} ${product.brand || ''} ${product.sku || ''} ${product.barcode || ''}`
+      );
+      return haystack.includes(normalized);
+    });
+  }, [saleProducts, productSearch]);
 
   const normalizedCustomerQuery = saleCustomerQuery.trim().toLowerCase();
   const selectedCustomerMatchesQuery =
@@ -442,7 +497,9 @@ export default function SalesPanel({
     [customerDraft.tags, customerDraft.tagsInput]
   );
 
-  const saleTotalValue = saleItemsDetailed.reduce((sum, item) => sum + item.subtotal, 0);
+  const saleSubtotal = saleItemsDetailed.reduce((sum, item) => sum + item.subtotal, 0);
+  const saleDiscountTotal = Math.min(parseMoney(saleDiscount), Math.max(0, saleSubtotal));
+  const saleTotalValue = Math.max(0, saleSubtotal - saleDiscountTotal);
   const saleRegisterTotal = parseMoney(saleRegisterAmount);
   const saleDownPaymentTotal = parseMoney(saleDownPayment);
   const saleIsCreditCardPayment = isCreditCardMethod(saleRegisterMethod);
@@ -483,6 +540,8 @@ export default function SalesPanel({
     setCustomerFormError(null);
     setCustomerAdditionalOpen(false);
     setCustomerTagsOpen(false);
+    setCustomerPickerOpen(false);
+    setCustomerSearchOpen(false);
   };
 
   const selectSaleCustomer = (customer: Customer) => {
@@ -490,6 +549,7 @@ export default function SalesPanel({
     setSaleCustomerQuery(customer.name);
     setSaleCustomerId(customer.id);
     setCustomerSearchOpen(false);
+    setCustomerPickerOpen(false);
   };
 
   const updateCustomerPhoto = (nextUrl: string) => {
@@ -558,26 +618,121 @@ export default function SalesPanel({
   };
 
   const handleRemoveSaleItem = (itemId: string) => {
+    setSaleItems((prev) => prev.filter((item) => item.id !== itemId));
+    if (createSaleError) setCreateSaleError(null);
+  };
+
+  const openAddProductModal = (product: Product) => {
+    const existing = saleItems.find((item) => item.productId === product.id);
+    const available = Math.max(0, toNumber(product.quantity ?? 0));
+    setProductModalProduct(product);
+    setProductModalPrice(
+      existing ? existing.price : product.price ? formatCurrency(toNumber(product.price)) : ''
+    );
+    setProductModalOrigin(existing ? existing.origin : available > 0 ? 'stock' : 'order');
+    setProductModalError(null);
+  };
+
+  const closeAddProductModal = () => {
+    setProductModalProduct(null);
+    setProductModalPrice('');
+    setProductModalOrigin('stock');
+    setProductModalError(null);
+  };
+
+  const confirmAddProduct = () => {
+    if (!productModalProduct) return;
+    const unitPrice = parseMoney(productModalPrice);
+    const available = Math.max(0, toNumber(productModalProduct.quantity ?? 0));
+
+    if (unitPrice <= 0) {
+      setProductModalError('Informe um preco de venda');
+      return;
+    }
+
+    if (productModalOrigin === 'stock' && available <= 0) {
+      setProductModalError('Produto sem estoque. Use \"Vou encomendar\".');
+      return;
+    }
+
     setSaleItems((prev) => {
-      if (prev.length <= 1) return prev;
-      return prev.filter((item) => item.id !== itemId);
+      const existing = prev.find((item) => item.productId === productModalProduct.id);
+      if (existing) {
+        const currentQuantity = Number.parseInt(existing.quantity || '1', 10) || 1;
+        const nextQuantity =
+          productModalOrigin === 'stock'
+            ? Math.min(Math.max(currentQuantity, 1), Math.max(1, available))
+            : Math.max(currentQuantity, 1);
+        return prev.map((item) =>
+          item.productId === productModalProduct.id
+            ? {
+                ...item,
+                price: formatCurrency(unitPrice),
+                origin: productModalOrigin,
+                quantity: String(nextQuantity)
+              }
+            : item
+        );
+      }
+
+      const initialQuantity =
+        productModalOrigin === 'stock' ? Math.min(1, Math.max(available, 1)) : 1;
+
+      return [
+        ...prev,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          productId: productModalProduct.id,
+          quantity: String(initialQuantity),
+          price: formatCurrency(unitPrice),
+          origin: productModalOrigin
+        }
+      ];
     });
+
+    setCreateSaleError(null);
+    closeAddProductModal();
+  };
+
+  const stepSaleItemQuantity = (itemId: string, delta: number) => {
+    setSaleItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== itemId) return item;
+        const product = saleProducts.find((candidate) => candidate.id === item.productId);
+        const available = Math.max(0, toNumber(product?.quantity ?? 0));
+        const current = Number.parseInt(item.quantity || '0', 10) || 0;
+        let next = Math.max(1, current + delta);
+        if (item.origin === 'stock') {
+          if (available <= 0) {
+            return { ...item, origin: 'order', quantity: String(Math.max(1, next)) };
+          }
+          next = Math.min(next, available);
+        }
+        return { ...item, quantity: String(next) };
+      })
+    );
     if (createSaleError) setCreateSaleError(null);
   };
 
   const resetCreateSaleForm = () => {
-    const fallbackProduct = availableProducts[0];
     setSaleCustomerName('');
     setSaleCustomerQuery('');
     setSaleCustomerId('');
     setCustomerSearchOpen(false);
-    setSaleItems([createSaleDraftItem(fallbackProduct)]);
+    setCustomerPickerOpen(false);
+    setSaleItems([]);
     setSaleDate(toIsoDate(new Date()));
-    setSalePaid(false);
+    setSalePaid(true);
     setSaleRegisterAmount('');
     setSaleDownPayment('');
-    setSaleRegisterMethod('');
+    setSaleRegisterMethod('Dinheiro');
     setSaleInstallments([]);
+    setSaleDiscount('');
+    setProductSearch('');
+    setProductModalProduct(null);
+    setProductModalPrice('');
+    setProductModalOrigin('stock');
+    setProductModalError(null);
     setCreateSaleError(null);
     setCreateCustomerOpen(false);
     resetCustomerDraft();
@@ -586,6 +741,7 @@ export default function SalesPanel({
   const openCreateSaleModal = () => {
     setCreateSaleOpen(true);
     resetCreateSaleForm();
+    setCustomerPickerOpen(true);
   };
 
   const closeCreateSaleModal = () => {
@@ -614,7 +770,12 @@ export default function SalesPanel({
   }, [toast]);
 
   useEffect(() => {
-    if ((!createSaleOpen || !customerSearchOpen) && (!createCustomerOpen || !customerTagsOpen)) return;
+    if (
+      (!createSaleOpen || !customerSearchOpen) &&
+      !customerPickerOpen &&
+      (!createCustomerOpen || !customerTagsOpen)
+    )
+      return;
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
@@ -631,6 +792,7 @@ export default function SalesPanel({
       if (event.key !== 'Escape') return;
       setCustomerSearchOpen(false);
       setCustomerTagsOpen(false);
+      setCustomerPickerOpen(false);
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
@@ -653,6 +815,7 @@ export default function SalesPanel({
     resetCreateSaleForm();
     if (shouldOpenSale) {
       setCreateSaleOpen(true);
+      setCustomerPickerOpen(true);
     }
     if (shouldOpenCustomer) {
       setCreateCustomerOpen(true);
@@ -796,6 +959,14 @@ export default function SalesPanel({
     setCustomerSaving(true);
     setCustomerFormError(null);
     try {
+      const safePhotoUrl =
+        customerDraft.photoUrl && customerDraft.photoUrl.length <= 3900 ? customerDraft.photoUrl : undefined;
+      if (customerDraft.photoUrl && !safePhotoUrl) {
+        setCustomerFormError('A foto é muito grande para enviar. Tente uma imagem menor.');
+        setCustomerSaving(false);
+        return;
+      }
+
       const res = await fetch(`${API_BASE}/customers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -804,7 +975,7 @@ export default function SalesPanel({
           phone,
           birthDate: customerDraft.birthDate || undefined,
           description: customerDraft.description.trim() || undefined,
-          photoUrl: customerDraft.photoUrl || undefined,
+          photoUrl: safePhotoUrl,
           cpfCnpj: customerDraft.cpfCnpj.trim() || undefined,
           cep: customerDraft.cep.trim() || undefined,
           street: customerDraft.street.trim() || undefined,
@@ -855,10 +1026,12 @@ export default function SalesPanel({
       const product = saleProducts.find((candidate) => candidate.id === item.productId) || null;
       const quantityRaw = Number.parseInt(item.quantity || '0', 10);
       const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? quantityRaw : 0;
+      const origin = item.origin || 'stock';
       const unitPrice = parseMoney(item.price);
       return {
         index,
         productId: item.productId,
+        origin,
         product,
         quantity,
         unitPrice
@@ -887,12 +1060,12 @@ export default function SalesPanel({
 
     const requestedByProduct = new Map<string, number>();
     for (const item of normalizedItems) {
-      if (!item.product) continue;
+      if (!item.product || item.origin === 'order') continue;
       requestedByProduct.set(item.product.id, (requestedByProduct.get(item.product.id) || 0) + item.quantity);
     }
 
     for (const item of normalizedItems) {
-      if (!item.product) continue;
+      if (!item.product || item.origin === 'order') continue;
       const requested = requestedByProduct.get(item.product.id) || 0;
       const available = Math.max(0, toNumber(item.product.quantity ?? 0));
       if (requested > available) {
@@ -907,7 +1080,9 @@ export default function SalesPanel({
       return;
     }
 
-    const totalAmount = normalizedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const rawTotalAmount = normalizedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const discountValue = Math.min(rawTotalAmount, saleDiscountTotal);
+    const totalAmount = Math.max(0, rawTotalAmount - discountValue);
     const saleDateValue = saleDate || toIsoDate(new Date());
     const downPaymentAmount = Math.max(0, saleIsCreditCardPayment ? saleRegisterTotal : saleDownPaymentTotal);
     const remainingAmount = Math.max(0, saleRegisterTotal - downPaymentAmount);
@@ -957,6 +1132,17 @@ export default function SalesPanel({
     setCreateSaleSaving(true);
     setCreateSaleError(null);
     try {
+      // Distribui desconto nos itens para refletir no backend
+      let remainingDiscountCents = Math.round(discountValue * 100);
+      const adjustedItems = normalizedItems.map((item) => {
+        if (remainingDiscountCents <= 0 || item.quantity <= 0) return item;
+        const itemTotalCents = Math.round(item.unitPrice * 100 * item.quantity);
+        const discountedItemTotalCents = Math.max(0, itemTotalCents - remainingDiscountCents);
+        remainingDiscountCents = Math.max(0, remainingDiscountCents - itemTotalCents);
+        const adjustedUnit = item.quantity > 0 ? discountedItemTotalCents / (100 * item.quantity) : item.unitPrice;
+        return { ...item, unitPrice: adjustedUnit };
+      });
+
       const saleRes = await fetch(`${API_BASE}/sales/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -964,7 +1150,7 @@ export default function SalesPanel({
           customerId: saleCustomerId || undefined,
           customerName: saleCustomerId ? undefined : customerNameValue,
           createdAt: `${saleDateValue}T00:00:00`,
-          items: normalizedItems.flatMap((item) =>
+          items: adjustedItems.flatMap((item) =>
             item.product
               ? [
                   {
@@ -1026,7 +1212,7 @@ export default function SalesPanel({
 
       const soldByProduct = new Map<string, number>();
       for (const item of normalizedItems) {
-        if (!item.product) continue;
+        if (!item.product || item.origin === 'order') continue;
         soldByProduct.set(item.product.id, (soldByProduct.get(item.product.id) || 0) + item.quantity);
       }
 
@@ -1202,348 +1388,347 @@ export default function SalesPanel({
       </section>
 
       {createSaleOpen ? (
-        <div className="modal-backdrop" onClick={closeCreateSaleModal}>
-          <div className="modal modal-sale-entry" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Nova venda</h3>
-              <button className="modal-close" type="button" onClick={closeCreateSaleModal}>
-                ✕
-              </button>
+        <div className="modal-backdrop sale-overlay" onClick={closeCreateSaleModal}>
+          <div className="sale-overlay-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="sale-overlay-header">
+              <h3>Escolher produtos</h3>
+              <div className="sale-overlay-actions">
+                <button
+                  className="sale-link-button"
+                  type="button"
+                  onClick={() => router.push('/categorias')}
+                >
+                  + Cadastrar produto
+                </button>
+                <button className="sale-icon-button" type="button" onClick={closeCreateSaleModal}>
+                  ✕
+                </button>
+              </div>
             </div>
 
-            <section className="sale-items-panel">
-              <div className="sale-items-header">
-                <h4>Produtos da venda</h4>
-                <button
-                  className="button ghost"
-                  type="button"
-                  onClick={handleAddSaleItem}
-                  disabled={
-                    availableProducts.length === 0 ||
-                    saleItems.length >= availableProducts.length
-                  }
-                >
-                  + Adicionar produto
-                </button>
-              </div>
-
-              <div className="sale-items-list">
-                {saleItems.map((item, index) => {
-                  const quantityRaw = Number.parseInt(item.quantity || '0', 10);
-                  const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? quantityRaw : 0;
-                  const itemTotal = quantity * parseMoney(item.price);
-                  const options = saleProducts.filter((product) => {
-                    if (product.id === item.productId) return true;
-                    return !saleItems.some((candidate) => candidate.id !== item.id && candidate.productId === product.id);
-                  });
-                  const selectedProduct = saleProducts.find((product) => product.id === item.productId) || null;
-                  const selectedStock = Math.max(0, toNumber(selectedProduct?.quantity ?? 0));
-                  const selectedStockState = getStockState(selectedStock);
-
-                  return (
-                    <article key={item.id} className="sale-item-card">
-                      <div className="sale-item-card-head">
-                        <strong>Item {index + 1}</strong>
-                        {saleItems.length > 1 ? (
-                          <button
-                            className="button ghost sale-item-remove"
-                            type="button"
-                            onClick={() => handleRemoveSaleItem(item.id)}
-                          >
-                            Remover
-                          </button>
-                        ) : null}
-                      </div>
-
-                      <div className="sale-item-grid">
-                        <label className="modal-field">
-                          <span>Produto</span>
-                          <select
-                            value={item.productId}
-                            onChange={(event) => handleSaleItemProductChange(item.id, event.target.value)}
-                          >
-                            <option value="">Selecione um produto</option>
-                            {options.map((product) => (
-                              <option
-                                key={product.id}
-                                value={product.id}
-                                disabled={toNumber(product.quantity ?? 0) <= 0 && product.id !== item.productId}
-                              >
-                                {product.sku} - {product.name} ({getStockStatusLabel(Math.max(0, toNumber(product.quantity ?? 0)))})
-                              </option>
-                            ))}
-                          </select>
-                          {selectedProduct ? (
-                            <small className={`sale-item-stock ${selectedStockState}`}>
-                              {getStockStatusLabel(selectedStock)}
-                            </small>
-                          ) : null}
-                        </label>
-                        <div className="sale-item-inline-fields">
-                          <label className="modal-field sale-item-quantity-field">
-                            <span>Quantidade</span>
-                            <input
-                              type="number"
-                              min="1"
-                              value={item.quantity}
-                              onChange={(event) => updateSaleItem(item.id, 'quantity', event.target.value)}
-                            />
-                          </label>
-                          <label className="modal-field sale-item-price-field">
-                            <span>Preco unitario</span>
-                            <input
-                              value={item.price}
-                              inputMode="decimal"
-                              placeholder="R$ 0,00"
-                              onChange={(event) =>
-                                updateSaleItem(item.id, 'price', formatCurrencyInput(event.target.value))
-                              }
-                            />
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="sale-item-total">Subtotal: {formatCurrency(itemTotal)}</div>
-                    </article>
-                  );
-                })}
-              </div>
-
-              {availableProducts.length === 0 ? (
-                <span className="meta">Nenhum produto com estoque disponivel.</span>
-              ) : null}
-            </section>
-
-            <section className="sale-customer-picker">
-              <div className="sale-customer-header">
-                <h4>Selecione o cliente</h4>
-                <button className="customer-add-trigger" type="button" onClick={openCreateCustomerModal}>
-                  + Cadastrar cliente
-                </button>
-              </div>
-              <div ref={customerSearchRef} className="customer-search-area">
-                <label className="customer-search-field">
+            <div className="sale-overlay-body">
+              <section className="sale-products-column">
+                <label className="sale-product-search">
                   <input
-                    placeholder="Buscar cliente"
-                    value={saleCustomerQuery}
-                    onFocus={() => setCustomerSearchOpen(true)}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setSaleCustomerQuery(value);
-                      setCustomerSearchOpen(value.trim().length > 0);
-                      const match = localCustomers.find(
-                        (customer) => customer.name.trim().toLowerCase() === value.trim().toLowerCase()
-                      );
-                      if (match) {
-                        setSaleCustomerId(match.id);
-                        setSaleCustomerName(match.name);
-                      } else {
-                        setSaleCustomerId('');
-                        setSaleCustomerName('');
-                      }
-                    }}
+                    placeholder="Busque usando o nome, codigo da marca ou codigo de barras"
+                    value={productSearch}
+                    onChange={(event) => setProductSearch(event.target.value)}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setCustomerSearchOpen(true)}
-                    aria-label="Pesquisar clientes"
-                  >
-                    ⌕
-                  </button>
+                  <span>⌕</span>
                 </label>
 
-                {saleCustomerName ? (
-                  <div className="sale-selected-customer">
-                    <strong>{saleCustomerName}</strong>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSaleCustomerName('');
-                        setSaleCustomerId('');
-                        setSaleCustomerQuery('');
-                        setCustomerSearchOpen(false);
-                      }}
-                    >
-                      Limpar
-                    </button>
-                  </div>
-                ) : null}
-
-                {shouldShowCustomerResults ? (
-                  <div className="customer-search-results">
-                    {customerSearchResults.length === 0 ? (
-                      <span className="meta">Nenhum cliente encontrado.</span>
-                    ) : (
-                      customerSearchResults.map((customer) => (
+                <div className="sale-product-grid">
+                  {filteredProducts.length === 0 ? (
+                    <div className="sale-grid-empty">Nenhum produto encontrado.</div>
+                  ) : (
+                    filteredProducts.map((product) => {
+                      const stock = Math.max(0, toNumber(product.quantity ?? 0));
+                      const priceLabel = product.price ? formatCurrency(toNumber(product.price)) : 'Sem preco';
+                      const inCart = saleItems.some((item) => item.productId === product.id);
+                      return (
                         <button
-                          key={customer.id}
+                          key={product.id}
                           type="button"
-                          className={`customer-result-item${saleCustomerId === customer.id ? ' active' : ''}`}
-                          onClick={() => selectSaleCustomer(customer)}
+                          className={`sale-product-card${inCart ? ' selected' : ''}${stock <= 0 ? ' out' : ''}`}
+                          onClick={() => openAddProductModal(product)}
                         >
-                          <strong>{customer.name}</strong>
-                          <span>{customer.phone || 'Sem telefone'}</span>
+                          <div className="sale-product-thumb">
+                            {product.image_url ? (
+                              <img src={product.image_url} alt={product.name} />
+                            ) : (
+                              <span className="sale-product-placeholder">📦</span>
+                            )}
+                            <span className={`sale-product-badge ${stock > 0 ? 'stock' : 'nostock'}`}>
+                              {stock > 0 ? `${stock} un.` : 'Sem estoque'}
+                            </span>
+                          </div>
+                          <div className="sale-product-meta">
+                            <strong>{product.sku ? `${product.sku} - ${product.name}` : product.name}</strong>
+                            <span>{product.brand || 'Sem marca'}</span>
+                          </div>
+                          <div className="sale-product-price">{priceLabel}</div>
                         </button>
-                      ))
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+
+              <aside className="sale-cart-column">
+                <div className="sale-cart-header">
+                  <div className="sale-cart-customer">
+                    <span className="sale-cart-label">Vendendo para</span>
+                    {saleCustomerName ? (
+                      <button
+                        type="button"
+                        className="sale-customer-chip"
+                        onClick={() => {
+                          setCustomerPickerOpen(true);
+                          setCustomerSearchOpen(true);
+                        }}
+                      >
+                        <span className="sale-customer-avatar">
+                          {saleCustomerName ? getInitials(saleCustomerName) : '👤'}
+                        </span>
+                        <span className="sale-customer-name">{saleCustomerName}</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="sale-customer-ghost"
+                        onClick={() => {
+                          setCustomerPickerOpen(true);
+                          setCustomerSearchOpen(true);
+                        }}
+                      >
+                        Selecionar cliente
+                      </button>
                     )}
                   </div>
-                ) : null}
-              </div>
-            </section>
+                </div>
 
-            <div className="form-row">
-              <label className="modal-field">
-                <span>Data da venda</span>
-                <input type="date" value={saleDate} onChange={(event) => setSaleDate(event.target.value)} />
-              </label>
-              <label className="modal-field">
-                <span>Total</span>
-                <input value={formatCurrency(saleTotalValue)} readOnly />
-              </label>
-            </div>
+                <div className="sale-cart-list">
+                  {saleItemsDetailed.length === 0 ? (
+                    <div className="sale-cart-empty">Nenhum produto adicionado</div>
+                  ) : (
+                    saleItemsDetailed.map((item) => {
+                      const product = item.product;
+                      const quantity = item.quantity;
+                      const available = item.available;
+                      return (
+                        <div key={item.id} className="sale-cart-item">
+                          <div className="sale-cart-info">
+                            <div className="sale-cart-thumb">
+                              {product?.image_url ? (
+                                <img src={product.image_url} alt={product.name} />
+                              ) : (
+                                getInitials(product?.name || 'Produto')
+                              )}
+                            </div>
+                            <div className="sale-cart-text">
+                              <div className="sale-cart-title">{product?.name || 'Produto'}</div>
+                              <div className="sale-cart-meta">
+                                {product?.brand || 'Sem marca'}
+                                {product?.sku ? ` • ${product.sku}` : ''}
+                                <span className={`sale-origin ${item.origin === 'stock' ? 'stock' : 'order'}`}>
+                                  {item.origin === 'stock' ? 'Estoque' : 'Encomendar'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="sale-cart-actions">
+                            <label className="sale-cart-price">
+                              <span>Preco</span>
+                              <input
+                                value={item.price}
+                                inputMode="decimal"
+                                placeholder="R$ 0,00"
+                                onChange={(event) =>
+                                  updateSaleItem(item.id, 'price', formatCurrencyInput(event.target.value))
+                                }
+                              />
+                            </label>
+                            <div className="sale-qty-stepper">
+                              <button
+                                type="button"
+                                onClick={() => stepSaleItemQuantity(item.id, -1)}
+                                disabled={quantity <= 1}
+                              >
+                                −
+                              </button>
+                              <span>{quantity}</span>
+                              <button
+                                type="button"
+                                onClick={() => stepSaleItemQuantity(item.id, 1)}
+                                disabled={item.origin === 'stock' && available > 0 && quantity >= available}
+                                title={
+                                  item.origin === 'stock' && available > 0 && quantity >= available
+                                    ? 'Maximo em estoque atingido'
+                                    : undefined
+                                }
+                              >
+                                +
+                              </button>
+                            </div>
+                            <button
+                              className="sale-icon-button ghost"
+                              type="button"
+                              aria-label="Remover"
+                              onClick={() => handleRemoveSaleItem(item.id)}
+                            >
+                              🗑
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
 
-            <div className="toggle-row">
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={salePaid}
-                  onChange={(event) => {
-                    setSalePaid(event.target.checked);
-                    if (createSaleError) setCreateSaleError(null);
-                  }}
-                />
-                <span className="slider" />
-              </label>
-              <span>A venda ja foi paga</span>
-            </div>
-
-            {!salePaid ? (
-              <>
-                <label className="modal-field">
-                  <span>{saleIsCreditCardPayment ? 'Valor pago total' : 'Valor do pagamento'}</span>
-                  <input
-                    value={saleRegisterAmount}
-                    inputMode="decimal"
-                    placeholder="R$ 0,00"
-                    onChange={(event) => {
-                      setSaleRegisterAmount(formatCurrencyInput(event.target.value));
-                      if (createSaleError) setCreateSaleError(null);
-                    }}
-                  />
-                  {saleIsCreditCardPayment ? (
-                    <small className="meta">Pagamento no credito registra o valor total da venda.</small>
-                  ) : null}
-                </label>
-
-                {!saleIsCreditCardPayment ? (
-                  <label className="modal-field">
-                    <span>Entrada inicial</span>
+                <div className="sale-cart-summary">
+                  <div className="summary-row">
+                    <span>Subtotal</span>
+                    <strong>{formatCurrency(saleSubtotal)}</strong>
+                  </div>
+                  <label className="modal-field sale-discount-field">
+                    <span>Desconto</span>
                     <input
-                      value={saleDownPayment}
+                      value={saleDiscount}
                       inputMode="decimal"
                       placeholder="R$ 0,00"
                       onChange={(event) => {
-                        setSaleDownPayment(formatCurrencyInput(event.target.value));
+                        setSaleDiscount(formatCurrencyInput(event.target.value));
                         if (createSaleError) setCreateSaleError(null);
                       }}
                     />
-                    <small className="meta">Restante para parcelar: {formatCurrency(salePendingTotal)}</small>
                   </label>
-                ) : null}
-
-                <label className="modal-field">
-                  <span>Forma do pagamento</span>
-                  <div className="select-field">
-                    <select
-                      value={saleRegisterMethod}
-                      onChange={(event) => {
-                        setSaleRegisterMethod(event.target.value);
-                        if (createSaleError) setCreateSaleError(null);
-                      }}
-                    >
-                      <option value="">Selecione</option>
-                      {paymentMethods.map((method) => (
-                        <option key={method} value={method}>
-                          {method}
-                        </option>
-                      ))}
-                    </select>
-                    {saleRegisterMethod ? (
-                      <button type="button" className="select-clear" onClick={() => setSaleRegisterMethod('')}>
-                        ✕
-                      </button>
-                    ) : null}
-                    <span className="select-arrow">▾</span>
+                  <div className="summary-row total">
+                    <span>Total</span>
+                    <strong>{formatCurrency(saleTotalValue)}</strong>
                   </div>
-                </label>
+                  <label className="modal-field sale-date-field">
+                    <span>Data da venda</span>
+                    <input type="date" value={saleDate} onChange={(event) => setSaleDate(event.target.value)} />
+                  </label>
+                  {createSaleError ? <div className="field-error">{createSaleError}</div> : null}
+                  <button
+                    className="button primary sale-submit"
+                    type="button"
+                    onClick={handleCreateSale}
+                    disabled={createSaleSaving || saleItemsDetailed.length === 0 || !saleCustomerName}
+                  >
+                    {createSaleSaving ? 'Salvando...' : 'Concluir venda'}
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
-                {!saleIsCreditCardPayment ? (
-                  <div className="installments">
-                    <div className="installments-header">
-                      <strong>Parcelas</strong>
-                      <div className="installments-controls">
-                        <button className="button icon small" type="button" onClick={handleDecreaseSaleInstallments}>
-                          −
-                        </button>
-                        <span>{saleInstallments.length || 0}</span>
-                        <button className="button icon small" type="button" onClick={handleIncreaseSaleInstallments}>
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {salePendingTotal > 0 ? (
-                      <div className="installments-list">
-                        {saleInstallments.map((installment, index) => (
-                          <div key={installment.id} className="installment-row">
-                            <div className="installment-index">{index + 1}</div>
-                            <div className="installment-fields">
-                              <label>
-                                <span>Vencimento</span>
-                                <input
-                                  type="date"
-                                  value={installment.dueDate}
-                                  onChange={(event) =>
-                                    updateSaleInstallment(installment.id, 'dueDate', event.target.value)
-                                  }
-                                />
-                              </label>
-                              <label>
-                                <span>Valor</span>
-                                <input
-                                  value={installment.amount}
-                                  inputMode="decimal"
-                                  placeholder="R$ 0,00"
-                                  onChange={(event) =>
-                                    updateSaleInstallment(
-                                      installment.id,
-                                      'amount',
-                                      formatCurrencyInput(event.target.value)
-                                    )
-                                  }
-                                />
-                              </label>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="installments-empty">Sem parcelas pendentes.</div>
-                    )}
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-
-            {createSaleError ? <div className="field-error">{createSaleError}</div> : null}
-
+      {productModalProduct ? (
+        <div className="modal-backdrop" onClick={closeAddProductModal}>
+          <div className="modal modal-add-product" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Adicionar produto</h3>
+              <button className="modal-close" type="button" onClick={closeAddProductModal}>
+                ✕
+              </button>
+            </div>
+            <div className="add-product-summary">
+              <div className="add-product-thumb">
+                {productModalProduct.image_url ? (
+                  <img src={productModalProduct.image_url} alt={productModalProduct.name} />
+                ) : (
+                  <span>📦</span>
+                )}
+              </div>
+              <div className="add-product-meta">
+                <span>{productModalProduct.brand || 'Sem marca'} · {productModalProduct.sku || 'Sem codigo'}</span>
+                <strong>{productModalProduct.name}</strong>
+              </div>
+            </div>
+            <label className="modal-field">
+              <span>Preco de venda</span>
+              <input
+                value={productModalPrice}
+                inputMode="decimal"
+                placeholder="R$ 0,00"
+                onChange={(event) => {
+                  setProductModalPrice(formatCurrencyInput(event.target.value));
+                  setProductModalError(null);
+                }}
+              />
+            </label>
+            <div className="add-product-origin">
+              <span>Origem do produto</span>
+              <div className="origin-toggle">
+                <button
+                  type="button"
+                  className={productModalOrigin === 'stock' ? 'active' : ''}
+                  onClick={() => setProductModalOrigin('stock')}
+                  disabled={Math.max(0, toNumber(productModalProduct.quantity ?? 0)) <= 0}
+                >
+                  Tenho no estoque
+                </button>
+                <button
+                  type="button"
+                  className={productModalOrigin === 'order' ? 'active' : ''}
+                  onClick={() => setProductModalOrigin('order')}
+                >
+                  Vou encomendar
+                </button>
+              </div>
+              {productModalOrigin === 'stock' ? (
+                <small className="meta">
+                  {Math.max(0, toNumber(productModalProduct.quantity ?? 0))} unidade(s) disponivel(is)
+                </small>
+              ) : (
+                <small className="meta">Sem limite de unidades para encomenda.</small>
+              )}
+            </div>
+            {productModalError ? <div className="field-error">{productModalError}</div> : null}
             <div className="modal-footer">
-              <button className="button ghost" type="button" onClick={closeCreateSaleModal}>
+              <button className="button ghost" type="button" onClick={closeAddProductModal}>
                 Cancelar
               </button>
-              <button className="button primary" type="button" onClick={handleCreateSale} disabled={createSaleSaving}>
-                {createSaleSaving ? 'Salvando...' : 'Adicionar'}
+              <button className="button primary" type="button" onClick={confirmAddProduct}>
+                Adicionar
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {customerPickerOpen ? (
+        <div className="modal-backdrop" onClick={() => setCustomerPickerOpen(false)}>
+          <div className="modal modal-customer-picker" onClick={(event) => event.stopPropagation()}>
+            <div className="customer-picker-header">
+              <h3>Selecione o cliente</h3>
+              <button className="sale-link-button" type="button" onClick={openCreateCustomerModal}>
+                + Cadastrar cliente
+              </button>
+            </div>
+            <label className="customer-picker-search">
+              <input
+                placeholder="Buscar cliente"
+                value={saleCustomerQuery}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setSaleCustomerQuery(value);
+                  setCustomerSearchOpen(true);
+                  const match = localCustomers.find(
+                    (customer) => customer.name.trim().toLowerCase() === value.trim().toLowerCase()
+                  );
+                  if (match) {
+                    setSaleCustomerId(match.id);
+                    setSaleCustomerName(match.name);
+                  }
+                }}
+                autoFocus
+              />
+              <span>⌕</span>
+            </label>
+
+            <div className="customer-picker-results">
+              {customerSearchResults.length === 0 ? (
+                <span className="meta">Nenhum cliente encontrado.</span>
+              ) : (
+                customerSearchResults.map((customer) => (
+                  <button
+                    key={customer.id}
+                    type="button"
+                    className={`customer-picker-item${saleCustomerId === customer.id ? ' active' : ''}`}
+                    onClick={() => selectSaleCustomer(customer)}
+                  >
+                    <span className="customer-picker-avatar">{getInitials(customer.name)}</span>
+                    <div className="customer-picker-text">
+                      <strong>{customer.name}</strong>
+                      <span>{customer.phone || 'Sem telefone'}</span>
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -1578,8 +1763,21 @@ export default function SalesPanel({
                         const file = event.target.files?.[0];
                         if (!file) return;
                         try {
-                          const nextUrl = await fileToDataUrl(file);
-                          updateCustomerPhoto(nextUrl);
+                          const base = await fileToDataUrl(file);
+                          const fitSize = 3800;
+                          if (base.length > fitSize) {
+                            const shrunk = await shrinkImageToDataUrl(file, 520, 0.72);
+                            if (shrunk.length > fitSize) {
+                              setCustomerFormError('A foto é muito grande. Use uma imagem menor (até ~3KB).');
+                              updateCustomerPhoto('');
+                            } else {
+                              updateCustomerPhoto(shrunk);
+                              setCustomerFormError(null);
+                            }
+                          } else {
+                            updateCustomerPhoto(base);
+                            setCustomerFormError(null);
+                          }
                         } catch {
                           setCustomerFormError('Nao foi possivel carregar a imagem do cliente');
                         }

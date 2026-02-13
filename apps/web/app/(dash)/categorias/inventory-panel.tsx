@@ -236,6 +236,8 @@ const normalizeSearchText = (value: string) =>
     .toLowerCase()
     .trim();
 
+const toDigits = (value: string) => value.replace(/\D/g, '');
+
 const escapeSvgText = (value: string) =>
   value
     .replace(/&/g, '&amp;')
@@ -547,19 +549,49 @@ const buildInstallments = (count: number, total: number, startDate: string): Ins
   });
 };
 
+const extractLeadingProductCode = (name: string) => {
+  const normalizedName = name.trim();
+  const match = normalizedName.match(/^(\d{3,})\s*[-–]\s*(.+)$/);
+  if (!match) return null;
+  return {
+    code: match[1],
+    name: match[2].trim()
+  };
+};
+
 const getProductCode = (product?: Product | null) => {
   if (!product) return '';
-  return product.barcode || product.sku || '';
+  const leadingCode = extractLeadingProductCode(product.name || '')?.code;
+  if (leadingCode) return leadingCode;
+
+  const skuDigits = toDigits(product.sku || '');
+  if (skuDigits) return skuDigits;
+
+  return toDigits(product.barcode || '');
 };
 
 const getProductHeadline = (product?: Product | null) => {
   if (!product) return '';
-  return `${getProductCode(product)} - ${product.name}`;
+  const code = getProductCode(product);
+  const leading = extractLeadingProductCode(product.name || '');
+  const normalizedName = (product.name || '').trim();
+
+  if (leading) return `${code || leading.code} - ${leading.name}`;
+  if (!code) return normalizedName;
+  return `${code} - ${normalizedName}`;
+};
+
+const getProductNameOnly = (product?: Product | null) => {
+  if (!product) return '';
+  const leading = extractLeadingProductCode(product.name || '');
+  return leading?.name || (product.name || '');
 };
 
 const getProductMetaLine = (product?: Product | null) => {
   if (!product) return '';
-  return `${product.brand || 'Sem marca'} • ${getProductCode(product)}`;
+  const brand = product.brand || 'Sem marca';
+  const code = getProductCode(product);
+  return code ? `${brand} • ${code}` : brand;
 };
 
 const getProductImage = (product?: Product | null) => {
@@ -1137,9 +1169,9 @@ export default function InventoryPanel({
     setSelectedProduct(null);
     openForm(
       {
-        name: product.name,
+        name: getProductNameOnly(product),
         brand: product.brand || '',
-        brandCode: product.sku || '',
+        brandCode: getProductCode(product),
         category: product.category_id || '',
         price: product.price ? formatCurrency(toNumber(product.price)) : '',
         barcode: product.barcode || '',
@@ -1733,14 +1765,8 @@ export default function InventoryPanel({
       .replace(/[^a-z0-9]+/g, '')
       .slice(0, 18)
       .toUpperCase();
-    const productCodeToken = normalizeSearchText(formDraft.brandCode)
-      .replace(/[^a-z0-9]+/g, '')
-      .slice(0, 40)
-      .toUpperCase();
-    const barcodeToken = normalizeSearchText(formDraft.barcode)
-      .replace(/[^a-z0-9]+/g, '')
-      .slice(0, 40)
-      .toUpperCase();
+    const productCodeToken = toDigits(formDraft.brandCode).slice(0, 40);
+    const barcodeToken = toDigits(formDraft.barcode).slice(0, 40);
 
     if (productCodeToken) return `CAT-${brandToken || 'GEN'}-${productCodeToken}`;
     if (barcodeToken) return `CAT-${brandToken || 'GEN'}-${barcodeToken}`;
@@ -2189,11 +2215,13 @@ export default function InventoryPanel({
                         </span>
                       )}
                     </button>
-                    <div className="inventory-meta">
-                      <strong>{getProductHeadline(product)}</strong>
-                      <span>{getProductMetaLine(product)}</span>
+                    <div className="inventory-info">
+                      <div className="inventory-meta">
+                        <strong>{getProductHeadline(product)}</strong>
+                        <span>{getProductMetaLine(product)}</span>
+                      </div>
+                      <div className="inventory-price">{priceLabel}</div>
                     </div>
-                    <div className="inventory-price">{priceLabel}</div>
                     <button
                       className="inventory-menu"
                       type="button"
@@ -2280,15 +2308,15 @@ export default function InventoryPanel({
                           </span>
                         )}
                       </span>
-                      <div>
-                        <strong>{getProductHeadline(product)}</strong>
-                        <div className="meta">
-                          {getProductMetaLine(product)}
-                        </div>
+                      <div className="inventory-row-product">
+                        <strong className="inventory-row-title">{getProductHeadline(product)}</strong>
+                        <span className="inventory-row-meta">{getProductMetaLine(product)}</span>
                       </div>
                     </button>
-                    <div className="data-cell mono">{priceLabel}</div>
-                    <span className={`badge ${getStockTone(quantity, product.active)}`}>{stockLabel}</span>
+                    <div className="data-cell mono inventory-row-price">{priceLabel}</div>
+                    <div className="inventory-row-stock">
+                      <span className={`badge ${getStockTone(quantity, product.active)}`}>{stockLabel}</span>
+                    </div>
                     <div className="inventory-row-actions">
                       <button
                         className={`button icon small${menuOpenId === product.id ? ' active' : ''}`}
@@ -2408,7 +2436,7 @@ export default function InventoryPanel({
                                   ...emptyDraft,
                                   name: item.name,
                                   brand: item.brand || '',
-                                  brandCode: item.code || item.sku || item.id,
+                                  brandCode: toDigits(item.code || item.sku || item.id),
                                   barcode: item.barcode || item.code || item.sku || '',
                                   category: categoryId,
                                   price:
@@ -2501,8 +2529,13 @@ export default function InventoryPanel({
                         <span>Codigo da marca</span>
                         <input
                           value={formDraft.brandCode}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           onChange={(event) =>
-                            setFormDraft((prev) => ({ ...prev, brandCode: event.target.value }))
+                            setFormDraft((prev) => ({
+                              ...prev,
+                              brandCode: toDigits(event.target.value)
+                            }))
                           }
                         />
                       </label>

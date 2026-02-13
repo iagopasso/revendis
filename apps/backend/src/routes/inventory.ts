@@ -27,6 +27,14 @@ import { writeAudit } from '../utils/audit';
 
 const router = Router();
 
+const isUniqueConstraintError = (error: unknown): error is { code: string } =>
+  Boolean(
+    error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: string }).code === '23505'
+  );
+
 router.get(
   '/inventory/products',
   asyncHandler(async (req, res) => {
@@ -56,63 +64,73 @@ router.post(
     const storeId =
       req.header('x-store-id') || (typeof product.stock === 'number' ? DEFAULT_STORE_ID : undefined);
 
-    const created = await withTransaction(async (client) => {
-      const userId = req.header('x-user-id') || null;
-      const inserted = await client.query(
-        `INSERT INTO products (organization_id, sku, name, brand, barcode, image_url, price, cost, active, expires_at, category_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         RETURNING id, sku, name, brand, barcode, image_url, price, cost, active, created_at, expires_at, category_id`,
-        [
-          orgId,
-          product.sku,
-          product.name,
-          product.brand || null,
-          product.barcode || null,
-          product.imageUrl || null,
-          product.price,
-          product.cost || 0,
-          typeof product.active === 'boolean' ? product.active : true,
-          product.expiresAt || null,
-          product.categoryId || null
-        ]
-      );
-
-      if (typeof product.stock === 'number' && storeId) {
-        await client.query(
-          `INSERT INTO inventory_movements (store_id, product_id, movement_type, quantity, reason)
-           VALUES ($1, $2, 'adjustment_in', $3, $4)`,
-          [storeId, inserted.rows[0].id, product.stock, 'initial_stock']
-        );
-        await client.query(
-          `INSERT INTO inventory_units (store_id, product_id, cost, expires_at)
-           SELECT $1, $2, $3, $4
-           FROM generate_series(1, $5)`,
+    try {
+      const created = await withTransaction(async (client) => {
+        const userId = req.header('x-user-id') || null;
+        const inserted = await client.query(
+          `INSERT INTO products (organization_id, sku, name, brand, barcode, image_url, price, cost, active, expires_at, category_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           RETURNING id, sku, name, brand, barcode, image_url, price, cost, active, created_at, expires_at, category_id`,
           [
-            storeId,
-            inserted.rows[0].id,
+            orgId,
+            product.sku,
+            product.name,
+            product.brand || null,
+            product.barcode || null,
+            product.imageUrl || null,
+            product.price,
             product.cost || 0,
+            typeof product.active === 'boolean' ? product.active : true,
             product.expiresAt || null,
-            product.stock
+            product.categoryId || null
           ]
         );
-      }
 
-      await writeAudit(client, {
-        organizationId: orgId,
-        storeId,
-        userId,
-        entityType: 'product',
-        entityId: inserted.rows[0].id,
-        action: 'created',
-        payload: { sku: product.sku, name: product.name }
+        if (typeof product.stock === 'number' && storeId) {
+          await client.query(
+            `INSERT INTO inventory_movements (store_id, product_id, movement_type, quantity, reason)
+             VALUES ($1, $2, 'adjustment_in', $3, $4)`,
+            [storeId, inserted.rows[0].id, product.stock, 'initial_stock']
+          );
+          await client.query(
+            `INSERT INTO inventory_units (store_id, product_id, cost, expires_at)
+             SELECT $1, $2, $3, $4
+             FROM generate_series(1, $5)`,
+            [
+              storeId,
+              inserted.rows[0].id,
+              product.cost || 0,
+              product.expiresAt || null,
+              product.stock
+            ]
+          );
+        }
+
+        await writeAudit(client, {
+          organizationId: orgId,
+          storeId,
+          userId,
+          entityType: 'product',
+          entityId: inserted.rows[0].id,
+          action: 'created',
+          payload: { sku: product.sku, name: product.name }
+        });
+
+        return inserted.rows[0];
       });
 
-      return inserted.rows[0];
-    });
-
-    res.status(201).json({
-      data: created
-    });
+      return res.status(201).json({
+        data: created
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        return res.status(409).json({
+          code: 'product_already_exists',
+          message: 'Produto ja cadastrado para este codigo.'
+        });
+      }
+      throw error;
+    }
   })
 );
 
@@ -178,38 +196,48 @@ router.patch(
 
     values.push(productId, orgId);
 
-    const result = await withTransaction(async (client) => {
-      const updated = await client.query(
-        `UPDATE products
-         SET ${fields.join(', ')}
-         WHERE id = $${index++} AND organization_id = $${index}
-         RETURNING id, sku, name, brand, barcode, image_url, price, cost, active, created_at, expires_at, category_id`,
-        values
-      );
+    try {
+      const result = await withTransaction(async (client) => {
+        const updated = await client.query(
+          `UPDATE products
+           SET ${fields.join(', ')}
+           WHERE id = $${index++} AND organization_id = $${index}
+           RETURNING id, sku, name, brand, barcode, image_url, price, cost, active, created_at, expires_at, category_id`,
+          values
+        );
 
-      if (!updated.rows.length) return null;
+        if (!updated.rows.length) return null;
 
-      await writeAudit(client, {
-        organizationId: orgId,
-        storeId: req.header('x-store-id') || DEFAULT_STORE_ID,
-        userId: req.header('x-user-id') || null,
-        entityType: 'product',
-        entityId: productId,
-        action: 'updated',
-        payload: updates
+        await writeAudit(client, {
+          organizationId: orgId,
+          storeId: req.header('x-store-id') || DEFAULT_STORE_ID,
+          userId: req.header('x-user-id') || null,
+          entityType: 'product',
+          entityId: productId,
+          action: 'updated',
+          payload: updates
+        });
+
+        return updated.rows[0];
       });
 
-      return updated.rows[0];
-    });
+      if (!result) {
+        return res.status(404).json({
+          code: 'not_found',
+          message: 'Produto nao encontrado.'
+        });
+      }
 
-    if (!result) {
-      return res.status(404).json({
-        code: 'not_found',
-        message: 'Produto nao encontrado.'
-      });
+      return res.json({ data: result });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        return res.status(409).json({
+          code: 'product_already_exists',
+          message: 'Ja existe um produto com este codigo.'
+        });
+      }
+      throw error;
     }
-
-    return res.json({ data: result });
   })
 );
 

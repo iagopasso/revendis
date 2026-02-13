@@ -977,7 +977,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
         </div>
 
         <div className="sale-grid">
-          <section className="sale-section">
+          <section className="sale-section sale-items-section">
             <div className="sale-section-title">
               <span className="section-icon">📦</span>
               <h4>Itens da Venda ({saleItems.length})</h4>
@@ -994,7 +994,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                 const itemImage = getItemImage(item);
                 return (
                   <div key={item.id} className="sale-item">
-                    <div className="sale-thumb">
+                    <div className="sale-thumb large">
                       {itemImage ? (
                         <img className="product-thumb-image" src={itemImage} alt={itemTitle || 'Produto'} />
                       ) : (
@@ -1005,9 +1005,11 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                     </div>
                     <div className="sale-item-info">
                       <strong>{itemTitle}</strong>
-                      {itemMetaLine ? <span>{itemMetaLine}</span> : null}
-                      <span>{qty} {qty === 1 ? 'unidade' : 'unidades'}</span>
-                      <span>Total: {formatCurrency(totalItem)}</span>
+                      {itemMetaLine ? <span className="muted">{itemMetaLine}</span> : null}
+                      <div className="sale-item-meta">
+                        <span>{qty} {qty === 1 ? 'unidade' : 'unidades'}</span>
+                        <span className="muted">Total: {formatCurrency(totalItem)}</span>
+                      </div>
                     </div>
                     <span className="sale-price">{formatCurrency(totalItem)}</span>
                   </div>
