@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { IconBox, IconDots, IconEdit, IconPlus, IconTrash } from '../icons';
 import { API_BASE, formatCurrency, toNumber } from '../lib';
+import { resolveBrandLogo } from '../brand-logos';
 import DateRangePicker from '../date-range';
 
 type PurchaseStatus = 'draft' | 'pending' | 'received' | 'cancelled';
@@ -465,6 +466,7 @@ export default function PurchasesPanel({
   const [draftSnapshots, setDraftSnapshots] = useState<Record<string, DraftSnapshot>>({});
   const productSearchRef = useRef<HTMLDivElement>(null);
   const [viewPurchase, setViewPurchase] = useState<Purchase | null>(null);
+  const viewBrandLogo = resolveBrandLogo(viewPurchase?.brand || null);
 
   useEffect(() => {
     setPurchases((prev) => {
@@ -1149,6 +1151,7 @@ export default function PurchasesPanel({
           {filtered.map((purchase) => {
             const purchaseNumber =
               purchase.order_number?.trim() || purchase.id.slice(0, 4).toUpperCase();
+            const brandLogo = resolveBrandLogo(purchase.brand || null);
             return (
               <div key={purchase.id} className="data-row purchase-data-row">
                 <div className="purchase-cell purchase-cell-main">
@@ -1157,7 +1160,18 @@ export default function PurchasesPanel({
                 </div>
                 <div className="purchase-cell">
                   <span className="purchase-cell-label">Marca</span>
-                  <span className="purchase-cell-value">{purchase.brand || '--'}</span>
+                  <span className="purchase-cell-value">
+                    <span className="purchase-brand">
+                      {brandLogo ? (
+                        <img className="purchase-brand-logo" src={brandLogo} alt={purchase.brand || 'Marca'} />
+                      ) : (
+                        <span className="purchase-brand-initials">
+                          {(purchase.brand || '–').slice(0, 2).toUpperCase()}
+                        </span>
+                      )}
+                      <span className="purchase-brand-name">{purchase.brand || '--'}</span>
+                    </span>
+                  </span>
                 </div>
                 <div className="purchase-cell">
                   <span className="purchase-cell-label">Data</span>
@@ -1649,7 +1663,16 @@ export default function PurchasesPanel({
                 <div className="divider" />
                 <div className="purchase-view-field">
                   <span>Marcas</span>
-                  <strong>{viewPurchase.brand || '—'}</strong>
+                  <div className="brand-chip">
+                    {viewBrandLogo ? (
+                      <img className="brand-logo-img" src={viewBrandLogo} alt={viewPurchase.brand || 'Marca'} />
+                    ) : (
+                      <span className="brand-initials">
+                        {(viewPurchase.brand || '–').slice(0, 2).toUpperCase()}
+                      </span>
+                    )}
+                    <strong>{viewPurchase.brand || '—'}</strong>
+                  </div>
                 </div>
                 <div className="purchase-view-field">
                   <span>N.º do pedido</span>

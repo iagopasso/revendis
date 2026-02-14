@@ -1192,111 +1192,144 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
               </button>
             </div>
 
-            <div className="receipt-tabs">
-              <button
-                className={receiptTab === 'digital' ? 'active' : ''}
-                type="button"
-                onClick={() => setReceiptTab('digital')}
-              >
-                Digital
-              </button>
-              <button
-                className={receiptTab === 'termico' ? 'active' : ''}
-                type="button"
-                onClick={() => setReceiptTab('termico')}
-              >
-                Termico
-              </button>
-            </div>
-
-            {receiptTab === 'digital' ? (
-              <div className="receipt-body" id="print-root" ref={digitalReceiptRef}>
-                <div className="receipt-card">
-                  <div className="receipt-header">
-                    <strong>Resumo da venda</strong>
-                    <div className="receipt-logo">R</div>
-                  </div>
-                  <div className="receipt-meta">
-                    Emitido em {formatDate(sale.date)} às {formatTime(sale.date)} no Revendi Web
-                  </div>
-                  <div className="receipt-grid">
-                    <div>
-                      <span>Cliente</span>
-                      <strong>{sale.customer}</strong>
-                    </div>
-                    <div>
-                      <span>Data da venda</span>
-                      <strong>{formatDate(sale.date)}</strong>
-                    </div>
-                    <div>
-                      <span>Valor total</span>
-                      <strong>{formatCurrency(summary.total)}</strong>
-                    </div>
-                    <div>
-                      <span>Situação da entrega</span>
-                      <strong className={`receipt-status-pill ${statusClass(deliveryStatus)}`}>
-                        <span className="receipt-status-dot" />
-                        {statusLabel(deliveryStatus)}
-                      </strong>
-                    </div>
-                  </div>
+            <div className="receipt-panel">
+              <div className="receipt-tabs">
+                <button
+                  className={receiptTab === 'digital' ? 'active' : ''}
+                  type="button"
+                  onClick={() => setReceiptTab('digital')}
+                >
+                  Digital
+                </button>
+                <button
+                  className={receiptTab === 'termico' ? 'active' : ''}
+                  type="button"
+                  onClick={() => setReceiptTab('termico')}
+                >
+                  Termico
+                </button>
               </div>
 
-                <div className="receipt-card">
-                  <div className="receipt-header">
-                    <strong>Pagamento</strong>
-                    <span className={`receipt-pill ${receiptPaymentStatusClass}`}>
-                      {receiptPaymentStatus}
-                    </span>
-                  </div>
-                  <div className="receipt-payment-status">
-                    {isOverdue && summary.remaining > 0 ? <span className="receipt-badge">{receiptStatus}</span> : null}
-                    {receiptInstallments.length === 0 ? (
-                      <span>Nenhum pagamento registrado</span>
-                    ) : (
-                      <div className="receipt-installments">
-                        {receiptInstallments.map((entry) => (
-                          <div key={entry.id} className="receipt-installment">
-                            <div className="receipt-installment-top">
-                              <strong>{entry.installmentLabel}</strong>
-                              <span className={`receipt-pill ${entry.status === 'paid' ? 'paid' : 'pending'}`}>
-                                {entry.statusLabel}
-                              </span>
-                            </div>
-                            <div className="receipt-installment-meta">
-                              <span>{entry.method}</span>
-                              <span>{entry.date ? formatDate(entry.date) : '-'}</span>
-                            </div>
-                            <strong className="receipt-installment-amount">
-                              {formatCurrency(entry.amount)}
-                            </strong>
-                          </div>
-                        ))}
+              {receiptTab === 'digital' ? (
+                <div className="receipt-body" id="print-root" ref={digitalReceiptRef}>
+                  <div className="receipt-card receipt-card-group">
+                    <div className="receipt-hero">
+                      <div className="receipt-header">
+                        <strong>Resumo da venda</strong>
+                        <div className="receipt-logo">R</div>
                       </div>
-                    )}
+                      <div className="receipt-meta">
+                        Emitido em {formatDate(sale.date)} às {formatTime(sale.date)} no Revendi Web
+                      </div>
+                    </div>
+
+                    <div className="receipt-section-divider" />
+
+                    <div className="receipt-grid">
+                      <div>
+                        <span>Cliente</span>
+                        <strong>{sale.customer}</strong>
+                      </div>
+                      <div>
+                        <span>Data da venda</span>
+                        <strong>{formatDate(sale.date)}</strong>
+                      </div>
+                      <div>
+                        <span>Valor total</span>
+                        <strong>{formatCurrency(summary.total)}</strong>
+                      </div>
+                      <div>
+                        <span>Situação da entrega</span>
+                        <strong className={`receipt-status-pill ${statusClass(deliveryStatus)}`}>
+                          <span className="receipt-status-dot" />
+                          {statusLabel(deliveryStatus)}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="receipt-section-divider" />
+
+                    <div className="receipt-products receipt-section">
+                      <h3>Produtos</h3>
+                      {saleItems.length === 0 ? (
+                        <span className="muted">Nenhum produto na venda.</span>
+                      ) : (
+                        saleItems.map((item) => {
+                          const qty = toNumber(item.quantity);
+                          const price = toNumber(item.price);
+                          const totalItem = qty * price;
+                          const title = getItemTitle(item);
+                          return (
+                            <div key={item.id} className="receipt-product-row">
+                              <div className="sale-thumb small">
+                                {getItemImage(item) ? (
+                                  <img className="product-thumb-image" src={getItemImage(item)} alt={title || 'Produto'} />
+                                ) : (
+                                  <span className="product-thumb-placeholder" aria-hidden="true">
+                                    <IconBox />
+                                  </span>
+                                )}
+                              </div>
+                              <div className="receipt-payment-meta">
+                                <strong>{title}</strong>
+                                <span>{qty} {qty === 1 ? 'unidade' : 'unidades'}</span>
+                              </div>
+                              <strong className="receipt-installment-amount">
+                                {formatCurrency(totalItem)}
+                              </strong>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="receipt-section-divider" />
+
+                    <div className="receipt-summary receipt-summary-table">
+                      <div>
+                        <span>Valor original</span>
+                        <strong>{formatCurrency(summary.total)}</strong>
+                      </div>
+                      <div>
+                        <span>Desconto</span>
+                        <strong>-{formatCurrency(0)}</strong>
+                      </div>
+                      <div>
+                        <span>Valor final</span>
+                        <strong>{formatCurrency(summary.total)}</strong>
+                      </div>
+                      <div>
+                        <span>Valor pago</span>
+                        <strong>{formatCurrency(summary.paid)}</strong>
+                      </div>
+                      <div>
+                        <span>Valor restante</span>
+                        <strong>{formatCurrency(summary.remaining)}</strong>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div
-                className="receipt-body"
-                id="print-root"
-                ref={thermalReceiptRef}
-                style={{ width: `${thermalWidthMm}mm` }}
-              >
-                <div className="receipt-thermal">
-                  <pre>{thermalReceiptText}</pre>
+              ) : (
+                <div
+                  className="receipt-body"
+                  id="print-root"
+                  ref={thermalReceiptRef}
+                  style={{ width: `${thermalWidthMm}mm` }}
+                >
+                  <div className="receipt-thermal">
+                    <pre>{thermalReceiptText}</pre>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="receipt-actions">
-              <button className="button primary" type="button" onClick={handleDownloadReceipt}>
-                ⬇ Baixar
-              </button>
-              <button className="button ghost" type="button" onClick={handlePrintReceipt}>
-                🖨 Imprimir
-              </button>
+              <div className="receipt-actions">
+                <button className="button primary" type="button" onClick={handleDownloadReceipt}>
+                  ⬇ Baixar
+                </button>
+                <button className="button ghost" type="button" onClick={handlePrintReceipt}>
+                  🖨 Imprimir
+                </button>
+              </div>
             </div>
           </div>
         </div>

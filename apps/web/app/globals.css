@@ -369,7 +369,7 @@ main {
 .button.icon.small {
   width: 28px;
   height: 28px;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 0.85rem;
 }
 
@@ -471,7 +471,7 @@ main {
 
 .panel {
   background: var(--panel);
-  border-radius: 18px;
+  border-radius: 10px;
   border: 1px solid var(--stroke);
   padding: 18px;
   box-shadow: var(--shadow);
@@ -618,9 +618,9 @@ main {
 }
 
 .settings-brand-logo {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
   border: 1px solid #d6ddeb;
   background: #edf2fa;
   display: grid;
@@ -633,7 +633,7 @@ main {
 .settings-brand-logo img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .settings-brand-meta {
@@ -2688,6 +2688,8 @@ main {
 
 .purchase-cell {
   min-width: 0;
+  display: flex;
+  align-items: center;
 }
 
 .purchase-cell-label {
@@ -2706,6 +2708,42 @@ main {
 .purchase-cell-status {
   display: flex;
   align-items: center;
+}
+
+.purchase-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.purchase-brand-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  object-fit: contain;
+  padding: 4px;
+}
+
+.purchase-brand-initials {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #4338ca;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  border: 1px solid #e2e8f0;
+}
+
+.purchase-brand-name {
+  display: inline-block;
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .purchase-actions-cell {
@@ -2942,8 +2980,8 @@ main {
 }
 
 .purchase-installment-index {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -3317,17 +3355,19 @@ main {
 }
 
 .modal-purchase-view {
-  width: min(1100px, calc(100vw - 40px));
+  width: min(1200px, calc(100vw - 32px));
   display: grid;
-  gap: 16px;
-  max-height: calc(100vh - 64px);
+  gap: 18px;
+  max-height: calc(100vh - 48px);
   overflow-y: auto;
+  padding: 18px 20px 20px;
 }
 
 .purchase-view-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 14px;
+  align-items: start;
 }
 
 .purchase-view-col {
@@ -3351,13 +3391,42 @@ main {
   font-size: 0.9rem;
 }
 
+.brand-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-initials {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  display: grid;
+  place-items: center;
+  color: #4338ca;
+  font-weight: 700;
+}
+
+.brand-logo-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  padding: 4px;
+  object-fit: contain;
+}
+
 .purchase-view-section {
   background: #fff;
   border-radius: 14px;
   border: 1px solid #e2e8f0;
-  padding: 14px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  padding: 16px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .purchase-view-section h4 {
@@ -3396,6 +3465,8 @@ main {
   grid-template-columns: 50px 1fr;
   gap: 10px;
   align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eef2f6;
 }
 
 .purchase-view-product-thumb {
@@ -4971,22 +5042,26 @@ main {
 .customers-grid-view {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 240px));
+  justify-content: flex-start;
+  gap: 12px;
 }
 
 .customer-grid-card {
   border: 1px solid #d8deea;
   border-radius: 12px;
   background: #f8fbff;
-  padding: 18px 14px;
+  padding: 14px 12px;
   display: grid;
   justify-items: center;
+  align-content: center;
   gap: 6px;
   color: #1f2937;
   text-align: center;
   font: inherit;
   cursor: pointer;
+  min-height: 220px;
+  aspect-ratio: 1 / 1;
 }
 
 .customer-grid-card:hover {
@@ -4995,15 +5070,15 @@ main {
 }
 
 .customer-grid-avatar {
-  width: 96px;
-  height: 96px;
-  border-radius: 999px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
   background: linear-gradient(135deg, #5aa6e6, #6ab7f4);
   color: #102742;
   display: grid;
   place-items: center;
-  font-size: 2rem;
-  margin-bottom: 4px;
+  font-size: 1.6rem;
+  margin-bottom: 6px;
   overflow: hidden;
 }
 
@@ -5015,16 +5090,17 @@ main {
 }
 
 .customer-grid-card strong {
-  font-size: 1.04rem;
+  font-size: 0.95rem;
 }
 
 .customer-grid-contact {
   color: #64748b;
+  font-size: 0.86rem;
 }
 
 .customer-grid-location {
   color: #475569;
-  font-size: 0.85rem;
+  font-size: 0.84rem;
 }
 
 .modal-customer-profile {
@@ -6374,10 +6450,10 @@ main {
 }
 
 .sale-grid {
-  margin-top: 16px;
+  margin-top: 12px;
   display: grid;
-  grid-template-columns: 1.18fr 0.9fr;
-  gap: 10px;
+  grid-template-columns: 1fr 0.92fr;
+  gap: 12px;
 }
 
 .sale-section {
@@ -6391,10 +6467,10 @@ main {
 
 .sale-items-section {
   display: grid;
-  gap: 6px;
-  max-height: 60vh;
+  gap: 8px;
+  max-height: 58vh;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: 6px;
 }
 
 .sale-payment-header {
@@ -6585,23 +6661,23 @@ main {
 
 .sale-item {
   display: grid;
-  grid-template-columns: 52px 1fr auto;
+  grid-template-columns: 44px 1fr auto;
   gap: 8px;
   align-items: center;
   background: #f8fafc;
-  border-radius: 9px;
-  padding: 6px 8px;
+  border-radius: 12px;
+  padding: 8px 10px;
   border: 1px solid #e2e8f0;
 }
 
 .sale-item span {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
 }
 
 .sale-thumb {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
   background: #f1f5f9;
   border: 1px solid #e2e8f0;
@@ -6612,7 +6688,7 @@ main {
 
 .sale-item-info {
   display: grid;
-  gap: 2px;
+  gap: 0;
 }
 
 .sale-price {
@@ -6625,28 +6701,30 @@ main {
 .sale-payment {
   background: var(--panel-3);
   border-radius: 12px;
-  padding: 12px;
+  padding: 14px 16px;
   display: grid;
-  gap: 8px;
+  gap: 12px;
 }
 
 .sale-payment-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
+  padding: 6px 0;
 }
 
 .sale-summary {
   display: grid;
-  gap: 0;
+  gap: 4px;
 }
 
 .sale-summary div {
   display: flex;
   justify-content: space-between;
   color: var(--muted);
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 10px 0 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
 }
 
 .sale-summary div:last-child {
@@ -6716,46 +6794,75 @@ main {
 }
 
 .modal-receipt {
-  width: min(720px, 100%);
+  width: min(540px, calc(100vw - 40px));
+  max-height: calc(100vh - 72px);
+  display: flex;
+  flex-direction: column;
+}
+
+.receipt-panel {
+  background: #e8edf5;
+  border: 1px solid #d5deea;
+  border-radius: 18px;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
 }
 
 .receipt-tabs {
-  margin-top: 12px;
+  margin-top: 4px;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  background: var(--panel-2);
-  border-radius: 12px;
-  border: 1px solid var(--stroke);
-  overflow: hidden;
+  gap: 12px;
 }
 
 .receipt-tabs button {
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  padding: 10px 12px;
+  border: 2px solid #9b51e0;
+  background: #fff;
+  color: #6b21a8;
+  padding: 10px 14px;
   cursor: pointer;
   font-weight: 600;
+  border-radius: 12px;
+  transition: all 0.15s ease;
 }
 
 .receipt-tabs button.active {
-  background: var(--accent);
-  color: #0f0b16;
+  background: linear-gradient(90deg, #c93cff, #7c3aed);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(124, 58, 237, 0.25);
+  border-color: transparent;
 }
 
 .receipt-body {
-  margin-top: 16px;
+  margin-top: 6px;
   display: grid;
-  gap: 16px;
+  gap: 14px;
+  max-height: 460px;
+  overflow-y: auto;
+  padding-right: 6px;
 }
 
 .receipt-card {
   background: #f8fafc;
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 16px;
-  padding: 18px;
+  padding: 14px 16px;
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  box-shadow: 0 8px 26px rgba(15, 23, 42, 0.07);
+}
+
+.receipt-hero {
+  background: #eef3f7;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.receipt-hero .receipt-header {
+  margin: 0;
 }
 
 .receipt-card + .receipt-card {
@@ -6786,8 +6893,9 @@ main {
 
 .receipt-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+  row-gap: 12px;
 }
 
 .receipt-grid span {
@@ -6836,18 +6944,20 @@ main {
 
 .receipt-products {
   display: grid;
-  gap: 6px;
+  gap: 10px;
+  max-height: none;
+  overflow: visible;
 }
 
 .receipt-product-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 44px 1fr auto;
   gap: 10px;
   align-items: center;
   background: #ffffff;
   border-radius: 12px;
   padding: 8px 10px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  border: 1px solid rgba(148, 163, 184, 0.28);
 }
 
 .receipt-pill {
@@ -6881,21 +6991,21 @@ main {
 
 .receipt-payment-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin-top: 6px;
 }
 
 .receipt-installments {
   display: grid;
   gap: 12px;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .receipt-installment {
   background: #ffffff;
   border-radius: 12px;
-  padding: 10px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
   display: grid;
   gap: 6px;
   color: var(--ink);
@@ -6925,12 +7035,19 @@ main {
 .receipt-payment-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
   background: #ffffff;
   border-radius: 12px;
-  padding: 8px 10px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.receipt-section-divider {
+  height: 1px;
+  background: #d8dee8;
+  border-radius: 999px;
+  margin: 12px 0;
 }
 
 .receipt-payment-meta {
@@ -6950,9 +7067,9 @@ main {
 }
 
 .receipt-summary {
-  margin-top: 6px;
+  margin-top: 8px;
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .receipt-summary div {
@@ -6963,6 +7080,22 @@ main {
 
 .receipt-summary strong {
   color: var(--ink);
+}
+
+.receipt-summary-table {
+  background: #eef2f7;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.receipt-summary-table div {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.receipt-summary-table div:last-child {
+  border-bottom: none;
 }
 
 .receipt-thermal {
@@ -6981,7 +7114,7 @@ main {
 }
 
 .receipt-actions {
-  margin-top: 14px;
+  margin-top: 10px;
   display: flex;
   gap: 12px;
   justify-content: space-between;
@@ -6990,6 +7123,20 @@ main {
 .receipt-actions .button {
   flex: 1;
   justify-content: center;
+  height: 48px;
+  border: 2px solid #9b51e0;
+}
+
+.receipt-actions .button.primary {
+  background: linear-gradient(90deg, #c93cff, #7c3aed);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 8px 20px rgba(124, 58, 237, 0.25);
+}
+
+.receipt-actions .button.ghost {
+  background: #fff;
+  color: #6b21a8;
 }
 
 @media print {

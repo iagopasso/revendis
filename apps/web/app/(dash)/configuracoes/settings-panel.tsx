@@ -15,6 +15,7 @@ import {
   IconUser
 } from '../icons';
 import { API_BASE, toNumber } from '../lib';
+import { resolveBrandLogo } from '../brand-logos';
 
 type BrandSource = 'existing' | 'catalog' | 'manual';
 type BrandCreateMode = 'catalog' | 'manual';
@@ -797,34 +798,37 @@ export default function SettingsPanel({
             </button>
           </div>
           <div className="settings-brand-list">
-            {brands.map((brand) => (
-              <article key={brand.id} className="settings-brand-card">
-                <div className="settings-brand-id">
-                  <div className="settings-brand-logo">
-                    {brand.logo_url ? (
-                      <img src={brand.logo_url} alt={brand.name} />
-                    ) : (
-                      <span>{brand.name.slice(0, 1).toUpperCase()}</span>
-                    )}
+            {brands.map((brand) => {
+              const brandLogo = resolveBrandLogo(brand.name, brand.logo_url || null);
+              return (
+                <article key={brand.id} className="settings-brand-card">
+                  <div className="settings-brand-id">
+                    <div className="settings-brand-logo">
+                      {brandLogo ? (
+                        <img src={brandLogo} alt={brand.name} />
+                      ) : (
+                        <span>{brand.name.slice(0, 1).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div>
+                      <strong>{brand.name}</strong>
+                      <div className="meta">Lucratividade: {formatProfitability(brand.profitability)}%</div>
+                    </div>
                   </div>
-                  <div>
-                    <strong>{brand.name}</strong>
-                    <div className="meta">Lucratividade: {formatProfitability(brand.profitability)}%</div>
+                  <div className="settings-brand-meta">
+                    <span className={`settings-source-badge ${brand.source}`}>{sourceLabel[brand.source]}</span>
+                    <button
+                      className="button icon small settings-brand-remove"
+                      type="button"
+                      aria-label={`Remover ${brand.name}`}
+                      onClick={() => handleDeleteBrand(brand.id)}
+                    >
+                      <IconTrash />
+                    </button>
                   </div>
-                </div>
-                <div className="settings-brand-meta">
-                  <span className={`settings-source-badge ${brand.source}`}>{sourceLabel[brand.source]}</span>
-                  <button
-                    className="button icon small settings-brand-remove"
-                    type="button"
-                    aria-label={`Remover ${brand.name}`}
-                    onClick={() => handleDeleteBrand(brand.id)}
-                  >
-                    <IconTrash />
-                  </button>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         </>
       )}
