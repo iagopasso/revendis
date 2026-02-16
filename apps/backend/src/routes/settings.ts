@@ -6,6 +6,7 @@ import type {
   SettingsAccountInput,
   SettingsAlertInput,
   SettingsPixInput,
+  SettingsStorefrontInput,
   SettingsSubscriptionInput
 } from '../dto';
 import { DEFAULT_ORG_ID } from '../config';
@@ -18,6 +19,7 @@ import {
   settingsAccountUpdateSchema,
   settingsAlertUpdateSchema,
   settingsPixUpdateSchema,
+  settingsStorefrontUpdateSchema,
   settingsSubscriptionUpdateSchema
 } from '../schemas/settings';
 import { asyncHandler } from '../utils/async-handler';
@@ -56,6 +58,43 @@ type SettingsRow = {
   alert_days_before_due: number | null;
 };
 
+type StorefrontSettingsRow = {
+  organization_name: string;
+  business_name: string | null;
+  storefront_subdomain: string | null;
+  storefront_color: string | null;
+  storefront_only_stock: boolean | null;
+  storefront_show_out_of_stock: boolean | null;
+  storefront_filter_category: boolean | null;
+  storefront_filter_brand: boolean | null;
+  storefront_filter_price: boolean | null;
+  storefront_whatsapp: string | null;
+  storefront_show_whatsapp_button: boolean | null;
+  storefront_selected_brands: string[] | null;
+  storefront_selected_categories: string[] | null;
+  storefront_price_from: string | null;
+  storefront_price_to: string | null;
+  storefront_logo_url: string | null;
+};
+
+type StorefrontSettingsData = {
+  shopName: string;
+  subdomain: string;
+  shopColor: string;
+  onlyStockProducts: boolean;
+  showOutOfStockProducts: boolean;
+  filterByCategory: boolean;
+  filterByBrand: boolean;
+  filterByPrice: boolean;
+  whatsapp: string;
+  showWhatsappButton: boolean;
+  selectedBrands: string[];
+  selectedCategories: string[];
+  priceFrom: string;
+  priceTo: string;
+  logoUrl: string;
+};
+
 type AccessMemberRow = {
   id: string;
   name: string;
@@ -66,10 +105,41 @@ type AccessMemberRow = {
 };
 
 const router = Router();
+const DEFAULT_STOREFRONT_COLOR = '#7D58D4';
+const DEFAULT_STOREFRONT_SUBDOMAIN = 'revendis-prime';
 
 const normalizeOptional = (value?: string) => {
   const next = value?.trim();
   return next ? next : null;
+};
+
+const normalizeSubdomain = (value?: string | null) => {
+  const raw = (value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+    .slice(0, 48);
+  return raw;
+};
+
+const toUniqueTrimmedArray = (value: unknown) => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const normalized = item.trim();
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+  }
+  return result;
 };
 
 const normalizeRole = (value?: string) => {
@@ -89,7 +159,48 @@ const toAmount = (value: unknown) => {
 const isUniqueConstraintError = (error: unknown): error is { code: string } =>
   Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === '23505');
 
+let ensureStorefrontColumnsPromise: Promise<void> | null = null;
+
+const ensureStorefrontColumns = async () => {
+  if (ensureStorefrontColumnsPromise) {
+    await ensureStorefrontColumnsPromise;
+    return;
+  }
+
+  ensureStorefrontColumnsPromise = (async () => {
+    await query(
+      `ALTER TABLE organization_settings
+         ADD COLUMN IF NOT EXISTS storefront_subdomain text,
+         ADD COLUMN IF NOT EXISTS storefront_color text NOT NULL DEFAULT '#7D58D4',
+         ADD COLUMN IF NOT EXISTS storefront_only_stock boolean NOT NULL DEFAULT false,
+         ADD COLUMN IF NOT EXISTS storefront_show_out_of_stock boolean NOT NULL DEFAULT true,
+         ADD COLUMN IF NOT EXISTS storefront_filter_category boolean NOT NULL DEFAULT true,
+         ADD COLUMN IF NOT EXISTS storefront_filter_brand boolean NOT NULL DEFAULT true,
+         ADD COLUMN IF NOT EXISTS storefront_filter_price boolean NOT NULL DEFAULT true,
+         ADD COLUMN IF NOT EXISTS storefront_whatsapp text,
+         ADD COLUMN IF NOT EXISTS storefront_show_whatsapp_button boolean NOT NULL DEFAULT false,
+         ADD COLUMN IF NOT EXISTS storefront_selected_brands text[] NOT NULL DEFAULT '{}',
+         ADD COLUMN IF NOT EXISTS storefront_selected_categories text[] NOT NULL DEFAULT '{}',
+         ADD COLUMN IF NOT EXISTS storefront_price_from text NOT NULL DEFAULT '',
+         ADD COLUMN IF NOT EXISTS storefront_price_to text NOT NULL DEFAULT '',
+         ADD COLUMN IF NOT EXISTS storefront_logo_url text`
+    );
+
+    await query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_organization_settings_storefront_subdomain
+         ON organization_settings (lower(storefront_subdomain))
+         WHERE storefront_subdomain IS NOT NULL`
+    );
+  })().catch((error) => {
+    ensureStorefrontColumnsPromise = null;
+    throw error;
+  });
+
+  await ensureStorefrontColumnsPromise;
+};
+
 const ensureSettingsRow = async (db: DbExecutor, orgId: string) => {
+  await ensureStorefrontColumns();
   await db.query(
     `INSERT INTO organization_settings (organization_id, business_name)
      SELECT o.id, o.name
@@ -171,11 +282,60 @@ const selectSettings = async (db: DbExecutor, orgId: string) => {
   };
 };
 
+const selectStorefrontSettings = async (db: DbExecutor, orgId: string): Promise<StorefrontSettingsData> => {
+  const result = await db.query<StorefrontSettingsRow>(
+    `SELECT o.name AS organization_name,
+            os.business_name,
+            os.storefront_subdomain,
+            os.storefront_color,
+            os.storefront_only_stock,
+            os.storefront_show_out_of_stock,
+            os.storefront_filter_category,
+            os.storefront_filter_brand,
+            os.storefront_filter_price,
+            os.storefront_whatsapp,
+            os.storefront_show_whatsapp_button,
+            os.storefront_selected_brands,
+            os.storefront_selected_categories,
+            os.storefront_price_from,
+            os.storefront_price_to,
+            os.storefront_logo_url
+     FROM organizations o
+     LEFT JOIN organization_settings os ON os.organization_id = o.id
+     WHERE o.id = $1
+     LIMIT 1`,
+    [orgId]
+  );
+
+  const row = result.rows[0];
+  const shopName = normalizeOptional(row?.business_name || row?.organization_name) || 'Loja';
+  const fallbackSubdomain = normalizeSubdomain(shopName) || DEFAULT_STOREFRONT_SUBDOMAIN;
+  const subdomain = normalizeSubdomain(row?.storefront_subdomain) || fallbackSubdomain;
+
+  return {
+    shopName,
+    subdomain,
+    shopColor: row?.storefront_color || DEFAULT_STOREFRONT_COLOR,
+    onlyStockProducts: row?.storefront_only_stock ?? false,
+    showOutOfStockProducts: row?.storefront_show_out_of_stock ?? true,
+    filterByCategory: row?.storefront_filter_category ?? true,
+    filterByBrand: row?.storefront_filter_brand ?? true,
+    filterByPrice: row?.storefront_filter_price ?? true,
+    whatsapp: row?.storefront_whatsapp || '',
+    showWhatsappButton: row?.storefront_show_whatsapp_button ?? false,
+    selectedBrands: toUniqueTrimmedArray(row?.storefront_selected_brands || []),
+    selectedCategories: toUniqueTrimmedArray(row?.storefront_selected_categories || []),
+    priceFrom: row?.storefront_price_from || '',
+    priceTo: row?.storefront_price_to || '',
+    logoUrl: row?.storefront_logo_url || ''
+  };
+};
+
 const updateSettingsFields = async (
   client: PoolClient,
   orgId: string,
   fields: string[],
-  values: Array<string | number | boolean | null>
+  values: Array<string | number | boolean | string[] | null>
 ) => {
   const nextValues = [...values, orgId];
   const whereIndex = values.length + 1;
@@ -301,6 +461,125 @@ router.patch(
 
     const account = await selectAccount({ query }, orgId);
     res.json({ data: account });
+  })
+);
+
+router.get(
+  '/settings/storefront',
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    await ensureSettingsRow({ query }, orgId);
+    const storefront = await selectStorefrontSettings({ query }, orgId);
+    res.json({ data: storefront });
+  })
+);
+
+router.patch(
+  '/settings/storefront',
+  validateRequest({ body: settingsStorefrontUpdateSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const userId = req.header('x-user-id') || null;
+    const payload = req.body as SettingsStorefrontInput;
+
+    try {
+      await withTransaction(async (client) => {
+        await ensureSettingsRow(client, orgId);
+
+        const fields: string[] = [];
+        const values: Array<string | number | boolean | string[] | null> = [];
+
+        if (payload.shopName !== undefined) {
+          const businessName = payload.shopName.trim();
+          fields.push(`business_name = $${fields.length + 1}`);
+          values.push(businessName);
+          await client.query(
+            `UPDATE organizations
+             SET name = $1
+             WHERE id = $2`,
+            [businessName, orgId]
+          );
+        }
+        if (payload.subdomain !== undefined) {
+          fields.push(`storefront_subdomain = $${fields.length + 1}`);
+          values.push(normalizeSubdomain(payload.subdomain) || null);
+        }
+        if (payload.shopColor !== undefined) {
+          fields.push(`storefront_color = $${fields.length + 1}`);
+          values.push(payload.shopColor.trim().toUpperCase());
+        }
+        if (payload.onlyStockProducts !== undefined) {
+          fields.push(`storefront_only_stock = $${fields.length + 1}`);
+          values.push(payload.onlyStockProducts);
+        }
+        if (payload.showOutOfStockProducts !== undefined) {
+          fields.push(`storefront_show_out_of_stock = $${fields.length + 1}`);
+          values.push(payload.showOutOfStockProducts);
+        }
+        if (payload.filterByCategory !== undefined) {
+          fields.push(`storefront_filter_category = $${fields.length + 1}`);
+          values.push(payload.filterByCategory);
+        }
+        if (payload.filterByBrand !== undefined) {
+          fields.push(`storefront_filter_brand = $${fields.length + 1}`);
+          values.push(payload.filterByBrand);
+        }
+        if (payload.filterByPrice !== undefined) {
+          fields.push(`storefront_filter_price = $${fields.length + 1}`);
+          values.push(payload.filterByPrice);
+        }
+        if (payload.whatsapp !== undefined) {
+          fields.push(`storefront_whatsapp = $${fields.length + 1}`);
+          values.push(normalizeOptional(payload.whatsapp));
+        }
+        if (payload.showWhatsappButton !== undefined) {
+          fields.push(`storefront_show_whatsapp_button = $${fields.length + 1}`);
+          values.push(payload.showWhatsappButton);
+        }
+        if (payload.selectedBrands !== undefined) {
+          fields.push(`storefront_selected_brands = $${fields.length + 1}`);
+          values.push(toUniqueTrimmedArray(payload.selectedBrands));
+        }
+        if (payload.selectedCategories !== undefined) {
+          fields.push(`storefront_selected_categories = $${fields.length + 1}`);
+          values.push(toUniqueTrimmedArray(payload.selectedCategories));
+        }
+        if (payload.priceFrom !== undefined) {
+          fields.push(`storefront_price_from = $${fields.length + 1}`);
+          values.push(payload.priceFrom.trim());
+        }
+        if (payload.priceTo !== undefined) {
+          fields.push(`storefront_price_to = $${fields.length + 1}`);
+          values.push(payload.priceTo.trim());
+        }
+        if (payload.logoUrl !== undefined) {
+          fields.push(`storefront_logo_url = $${fields.length + 1}`);
+          values.push(normalizeOptional(payload.logoUrl));
+        }
+
+        await updateSettingsFields(client, orgId, fields, values);
+
+        await writeAudit(client, {
+          organizationId: orgId,
+          userId,
+          entityType: 'settings_storefront',
+          entityId: orgId,
+          action: 'updated',
+          payload
+        });
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        return res.status(409).json({
+          code: 'subdomain_conflict',
+          message: 'Este link da loja ja esta em uso.'
+        });
+      }
+      throw error;
+    }
+
+    const storefront = await selectStorefrontSettings({ query }, orgId);
+    return res.json({ data: storefront });
   })
 );
 

@@ -1,4 +1,4 @@
-import { fetchList, formatCurrency, isInDateRange, toNumber } from '../../lib';
+import { fetchList, formatCurrency, isInDateRange, toNumber, digitsOnly } from '../../lib';
 import ReportDetailPanel from '../report-detail-panel';
 import { buildReportRangeContext, type ReportSearchParams } from '../range';
 
@@ -32,11 +32,12 @@ export default async function RelatorioProdutosMaisVendidosPage({
 
   const rows = products.map((product, index) => {
     const qty = toNumber(product.sold_qty);
+    const numericCode = digitsOnly(product.sku);
     return {
-      id: `${product.sku || product.product_name}-${index}`,
+      id: `${numericCode || product.product_name}-${index}`,
       values: {
         rank: `${index + 1}º`,
-        code: product.sku || '-',
+        code: numericCode || '-',
         product: product.product_name || '-',
         brand: product.brand || 'Sem marca',
         qty: `${qty} un.`,

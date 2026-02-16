@@ -41,6 +41,11 @@ export const toNumber = (value: unknown) => {
 export const formatCurrency = (value: number) =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+export const digitsOnly = (value?: string | null) => {
+  if (!value) return '';
+  return value.replace(/\D/g, '');
+};
+
 export const getStringParam = (value?: string | string[]) =>
   (Array.isArray(value) ? value[0] : value) || '';
 

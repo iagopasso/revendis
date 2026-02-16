@@ -1673,7 +1673,7 @@ export default function InventoryPanel({
       status: mappedStatus,
       total: toNumber(sale.total),
       paid: 0,
-      itemName: selectedProduct ? getProductHeadline(selectedProduct) : sale.sku,
+      itemName: selectedProduct ? getProductHeadline(selectedProduct) : toDigits(sale.sku) || 'Sem codigo',
       itemQty: toNumber(sale.quantity || 1),
       dueDate: sale.created_at
     });
@@ -1761,16 +1761,11 @@ export default function InventoryPanel({
   };
 
   const buildSku = () => {
-    const brandToken = normalizeSearchText(formDraft.brand || 'catalogo')
-      .replace(/[^a-z0-9]+/g, '')
-      .slice(0, 18)
-      .toUpperCase();
     const productCodeToken = toDigits(formDraft.brandCode).slice(0, 40);
     const barcodeToken = toDigits(formDraft.barcode).slice(0, 40);
-
-    if (productCodeToken) return `CAT-${brandToken || 'GEN'}-${productCodeToken}`;
-    if (barcodeToken) return `CAT-${brandToken || 'GEN'}-${barcodeToken}`;
-    return `CAT-${brandToken || 'GEN'}-${Date.now()}`;
+    if (productCodeToken) return productCodeToken;
+    if (barcodeToken) return barcodeToken;
+    return Date.now().toString();
   };
 
   const handleSaveForm = async () => {

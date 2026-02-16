@@ -181,6 +181,14 @@ export type ResellerBrandInput = {
   logoUrl?: string;
 };
 
+export type ResellerBrandUpdateInput = {
+  name?: string;
+  source?: ResellerBrandSource;
+  sourceBrand?: string;
+  profitability?: number;
+  logoUrl?: string;
+};
+
 export type SettingsAccountInput = {
   ownerName?: string;
   ownerEmail?: string;
@@ -204,6 +212,24 @@ export type SettingsPixInput = {
 export type SettingsAlertInput = {
   enabled?: boolean;
   daysBeforeDue?: number;
+};
+
+export type SettingsStorefrontInput = {
+  shopName?: string;
+  subdomain?: string;
+  shopColor?: string;
+  onlyStockProducts?: boolean;
+  showOutOfStockProducts?: boolean;
+  filterByCategory?: boolean;
+  filterByBrand?: boolean;
+  filterByPrice?: boolean;
+  whatsapp?: string;
+  showWhatsappButton?: boolean;
+  selectedBrands?: string[];
+  selectedCategories?: string[];
+  priceFrom?: string;
+  priceTo?: string;
+  logoUrl?: string;
 };
 
 export type AccessMemberInput = {

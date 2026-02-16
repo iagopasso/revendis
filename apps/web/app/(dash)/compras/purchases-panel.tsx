@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { IconBox, IconDots, IconEdit, IconPlus, IconTrash } from '../icons';
-import { API_BASE, formatCurrency, toNumber } from '../lib';
+import { API_BASE, formatCurrency, toNumber, digitsOnly } from '../lib';
 import { resolveBrandLogo } from '../brand-logos';
 import DateRangePicker from '../date-range';
 
@@ -176,15 +176,22 @@ const getProductImage = (product?: Product | null) => {
   return value || '';
 };
 
+const getProductDigits = (product?: Product | null) => {
+  const skuDigits = digitsOnly(product?.sku);
+  if (skuDigits) return skuDigits;
+  return digitsOnly(product?.barcode);
+};
+
 const getProductHeadline = (product?: Product | null) => {
   if (!product) return 'Produto nao encontrado';
-  if (!product.sku) return product.name;
-  return `${product.sku} - ${product.name}`;
+  const code = getProductDigits(product);
+  if (!code) return product.name;
+  return `${code} - ${product.name}`;
 };
 
 const getProductMeta = (product?: Product | null) => {
   if (!product) return '';
-  const code = product.barcode || product.sku || '';
+  const code = getProductDigits(product);
   return `${product.brand || 'Sem marca'}${code ? ` • ${code}` : ''}`;
 };
 

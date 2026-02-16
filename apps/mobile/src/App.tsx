@@ -233,6 +233,7 @@ const formatDate = (value?: string | null) => {
 };
 
 const normalizeText = (value?: string | null) => (value || '').trim().toLowerCase();
+const digitsOnly = (value?: string | null) => (value || '').replace(/\D/g, '');
 
 const startOfToday = () => {
   const value = new Date();
@@ -334,12 +335,9 @@ const toDateInput = (value = new Date()) => {
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 const buildMobileSku = (name: string) => {
-  const token = normalizeText(name)
-    .replace(/[^a-z0-9]+/g, '')
-    .slice(0, 8)
-    .toUpperCase();
-  const suffix = Date.now().toString().slice(-6);
-  return `MOB-${token || 'ITEM'}-${suffix}`;
+  const token = digitsOnly(name).slice(0, 18);
+  if (token) return token;
+  return Date.now().toString();
 };
 
 const isActionSuccess = (value?: string) =>
@@ -563,12 +561,14 @@ export default function App() {
     return products.filter((product) => {
       const quantity = toNumber(product.quantity);
       const active = product.active !== false;
+      const numericCode = digitsOnly(product.sku) || digitsOnly(product.barcode);
       const matchesQuery =
         !productSearch ||
         normalizeText(product.name).includes(productSearch) ||
         normalizeText(product.brand).includes(productSearch) ||
         normalizeText(product.barcode).includes(productSearch) ||
-        normalizeText(product.sku).includes(productSearch);
+        normalizeText(product.sku).includes(productSearch) ||
+        normalizeText(numericCode).includes(productSearch);
 
       const matchesStock =
         stockFilter === 'all' ||
@@ -699,13 +699,31 @@ export default function App() {
     }
   };
 
+  const findProductByCode = useCallback(
+    (code: string) => {
+      const normalizedCode = code.trim();
+      const normalizedDigits = digitsOnly(normalizedCode);
+      if (!normalizedCode && !normalizedDigits) return null;
+      return (
+        products.find((product) => {
+          const productSku = product.sku || '';
+          if (!productSku) return false;
+          if (normalizeText(productSku) === normalizeText(normalizedCode)) return true;
+          const productDigits = digitsOnly(productSku) || digitsOnly(product.barcode);
+          return Boolean(normalizedDigits) && productDigits === normalizedDigits;
+        }) || null
+      );
+    },
+    [products]
+  );
+
   const createProduct = async () => {
     const name = newProductName.trim();
     if (!name) {
       setActionMessage({ tone: 'error', text: 'Informe o nome do produto.' });
       return;
     }
-    const sku = newProductSku.trim() || buildMobileSku(name);
+    const sku = digitsOnly(newProductSku) || buildMobileSku(name);
     const price = Math.max(0, toNumber(newProductPrice));
     const stock = Math.max(0, Math.trunc(toNumber(newProductStock)));
     const success = await runAction('Produto criado', async () => {
@@ -735,10 +753,12 @@ export default function App() {
   };
 
   const adjustStock = async () => {
-    const sku = stockAdjustSku.trim();
+    const code = stockAdjustSku.trim();
+    const productByCode = findProductByCode(code);
+    const sku = productByCode?.sku?.trim() || code;
     const quantity = Math.trunc(toNumber(stockAdjustQty));
     if (!sku) {
-      setActionMessage({ tone: 'error', text: 'Informe o SKU para ajuste.' });
+      setActionMessage({ tone: 'error', text: 'Informe o codigo para ajuste.' });
       return;
     }
     if (!quantity) {
@@ -761,13 +781,15 @@ export default function App() {
   };
 
   const createSale = async () => {
-    const sku = saleSku.trim();
+    const code = saleSku.trim();
+    const productByCode = findProductByCode(code);
+    const sku = productByCode?.sku?.trim() || code;
     const quantity = Math.max(1, Math.trunc(toNumber(saleQty)));
-    const suggestedProduct = products.find((product) => normalizeText(product.sku) === normalizeText(sku));
+    const suggestedProduct = productByCode;
     const unitPrice =
       salePrice.trim().length > 0 ? Math.max(0, toNumber(salePrice)) : Math.max(0, toNumber(suggestedProduct?.price));
     if (!sku) {
-      setActionMessage({ tone: 'error', text: 'Informe o SKU do item da venda.' });
+      setActionMessage({ tone: 'error', text: 'Informe o codigo do item da venda.' });
       return;
     }
     if (unitPrice < 0) {
@@ -1194,12 +1216,12 @@ export default function App() {
 
           {activeModule === 'inventory' ? (
             <>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Buscar produto por nome, marca, sku ou codigo"
-                value={productQuery}
-                onChangeText={setProductQuery}
-              />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar produto por nome, marca ou codigo"
+                  value={productQuery}
+                  onChangeText={setProductQuery}
+                />
 
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterTabs}>
                 {[
@@ -1251,10 +1273,10 @@ export default function App() {
                 />
                 <TextInput
                   style={styles.actionInput}
-                  placeholder="SKU (vazio para auto)"
+                  placeholder="Codigo (vazio para auto)"
                   value={newProductSku}
-                  onChangeText={setNewProductSku}
-                  autoCapitalize="characters"
+                  onChangeText={(value) => setNewProductSku(digitsOnly(value))}
+                  keyboardType="number-pad"
                 />
                 <TextInput
                   style={styles.actionInput}
@@ -1310,10 +1332,10 @@ export default function App() {
 
                 <TextInput
                   style={styles.actionInput}
-                  placeholder="SKU para ajuste"
+                  placeholder="Codigo para ajuste"
                   value={stockAdjustSku}
-                  onChangeText={setStockAdjustSku}
-                  autoCapitalize="characters"
+                  onChangeText={(value) => setStockAdjustSku(digitsOnly(value))}
+                  keyboardType="number-pad"
                 />
                 <TextInput
                   style={styles.actionInput}
@@ -1343,7 +1365,9 @@ export default function App() {
                       <View style={styles.listMain}>
                         <Text style={styles.listTitle}>{product.name}</Text>
                         <Text style={styles.listMeta}>
-                          {(product.brand || 'Sem marca') + ' | ' + (product.sku || '--')}
+                          {(product.brand || 'Sem marca') +
+                            ' | ' +
+                            (digitsOnly(product.sku) || digitsOnly(product.barcode) || '--')}
                         </Text>
                         <Text style={styles.listMeta}>{stockLabel}</Text>
                       </View>
@@ -1357,7 +1381,9 @@ export default function App() {
                         />
                         <ActionButton
                           label="Usar no ajuste"
-                          onPress={() => setStockAdjustSku(product.sku || '')}
+                          onPress={() =>
+                            setStockAdjustSku(digitsOnly(product.sku) || digitsOnly(product.barcode) || '')
+                          }
                           disabled={actionBusy}
                           variant="link"
                         />
@@ -1408,10 +1434,10 @@ export default function App() {
                 <Text style={styles.panelTitle}>Nova venda (fluxo rapido)</Text>
                 <TextInput
                   style={styles.actionInput}
-                  placeholder="SKU do produto"
+                  placeholder="Codigo do produto"
                   value={saleSku}
-                  onChangeText={setSaleSku}
-                  autoCapitalize="characters"
+                  onChangeText={(value) => setSaleSku(digitsOnly(value))}
+                  keyboardType="number-pad"
                 />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
                   {filteredProductSuggestions.map((product) => (
@@ -1419,7 +1445,7 @@ export default function App() {
                       key={product.id}
                       style={styles.chipButton}
                       onPress={() => {
-                        setSaleSku(product.sku || '');
+                        setSaleSku(digitsOnly(product.sku) || digitsOnly(product.barcode) || '');
                         setSalePrice(toNumber(product.price) > 0 ? String(toNumber(product.price)) : '');
                       }}
                     >
@@ -1704,7 +1730,9 @@ export default function App() {
                 {reportTopProducts.slice(0, 20).map((item, index) => (
                   <View key={`${item.sku || item.product_name || index}`} style={styles.listRow}>
                     <View style={styles.listMain}>
-                      <Text style={styles.listTitle}>{item.product_name || item.sku || 'Produto'}</Text>
+                      <Text style={styles.listTitle}>
+                        {item.product_name || digitsOnly(item.sku) || 'Produto'}
+                      </Text>
                       <Text style={styles.listMeta}>{item.brand || 'Sem marca'}</Text>
                     </View>
                     <View style={styles.listRight}>

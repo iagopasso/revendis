@@ -1,93 +1,60 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   IconBox,
+  IconBell,
   IconCart,
-  IconChart,
   IconDashboard,
   IconDollar,
-  IconLogout,
-  IconSettings,
+  IconGlobe,
+  IconMegaphone,
+  IconMessage,
+  IconPieChart,
   IconTag,
-  IconUser,
+  IconWhatsapp,
   IconUsers
 } from './icons';
 
-const navItems = [
-  { href: '/', label: 'Painel', icon: IconDashboard, section: 'painel' },
-  { href: '/estoque', label: 'Estoque', icon: IconBox, section: 'estoque' },
-  { href: '/vendas', label: 'Vendas', icon: IconTag, section: 'vendas' },
-  { href: '/compras', label: 'Compras', icon: IconCart, section: 'compras' },
-  { href: '/clientes', label: 'Clientes', icon: IconUsers, section: 'clientes' },
-  { href: '/financeiro', label: 'Financeiro', icon: IconDollar, section: 'financeiro' },
-  { href: '/relatorios', label: 'Relatorios', icon: IconChart, section: 'relatorios' }
+const primaryNavItems = [
+  { href: '/vendas', label: 'Painel', icon: IconDashboard },
+  { href: '/estoque', label: 'Estoque', icon: IconBox },
+  { href: '/vendas', label: 'Vendas', icon: IconTag },
+  { href: '/compras', label: 'Compras', icon: IconCart },
+  { href: '/clientes', label: 'Clientes', icon: IconUsers },
+  { href: '/financeiro', label: 'Financeiro', icon: IconDollar },
+  { href: '/', label: 'Loja online', icon: IconGlobe },
+  { href: '/relatorios', label: 'Relatórios', icon: IconPieChart },
+  { href: '/configuracoes', label: 'Configurações', icon: IconMessage }
 ];
 
-const normalizePath = (pathname: string) => pathname.replace(/\/+$/, '') || '/';
-
-const getSectionFromPath = (pathname: string) => {
-  const normalized = normalizePath(pathname);
-  if (normalized === '/') return 'painel';
-
-  const firstSegment = normalized.split('/').filter(Boolean)[0] || '';
-  const aliases: Record<string, string> = {
-    categorias: 'estoque',
-    estoque: 'estoque',
-    vendas: 'vendas',
-    compras: 'compras',
-    clientes: 'clientes',
-    financeiro: 'financeiro',
-    relatorios: 'relatorios'
-  };
-
-  return aliases[firstSegment] || '';
-};
+const utilityNavItems = [
+  { label: 'Avisos', icon: IconMegaphone },
+  { label: 'WhatsApp', icon: IconWhatsapp },
+  { label: 'Notificações', icon: IconBell }
+];
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const activeSection = getSectionFromPath(pathname || '/');
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!profileMenuOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!profileMenuRef.current?.contains(target)) {
-        setProfileMenuOpen(false);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setProfileMenuOpen(false);
-      }
-    };
-    window.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [profileMenuOpen]);
 
   return (
-    <aside className="sidebar">
-      <Link href="/" className="logo" aria-label="Pagina inicial">
+    <aside className="sidebar sidebar-expected">
+      <Link href="/" className="logo sidebar-expected-logo" aria-label="Pagina inicial">
         <img src="/logo.png" alt="Revendis" />
       </Link>
-      <nav className="nav">
-        {navItems.map((item) => {
-          const isActive = activeSection === item.section;
+
+      <div className="sidebar-divider" />
+
+      <nav className="nav sidebar-main-nav" aria-label="Navegação principal">
+        {primaryNavItems.map((item) => {
+          const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
           const Icon = item.icon;
           return (
             <Link
-              key={item.href}
+              key={`${item.href}-${item.label}`}
               href={item.href}
-              className={isActive ? 'active' : ''}
+              className={isActive ? 'sidebar-icon-link active' : 'sidebar-icon-link'}
               aria-current={isActive ? 'page' : undefined}
               aria-label={item.label}
               title={item.label}
@@ -99,49 +66,25 @@ export default function Sidebar() {
           );
         })}
       </nav>
-      <div className="sidebar-footer">
-        <div className="profile-menu-wrapper" ref={profileMenuRef}>
-          {profileMenuOpen ? (
-            <div className="profile-menu">
-              <Link href="/configuracoes?section=conta" onClick={() => setProfileMenuOpen(false)}>
-                <IconUser />
-                <span>Minha conta</span>
-              </Link>
-              <Link href="/configuracoes?section=assinatura" onClick={() => setProfileMenuOpen(false)}>
-                <IconDollar />
-                <span>Assinatura</span>
-              </Link>
-              <Link
-                href="/configuracoes?section=marcas"
-                className={pathname.startsWith('/configuracoes') ? 'active' : ''}
-                onClick={() => setProfileMenuOpen(false)}
-              >
-                <IconSettings />
-                <span>Configuracoes</span>
-              </Link>
-              <div className="profile-menu-divider" />
-              <button
-                type="button"
-                onClick={() => {
-                  setProfileMenuOpen(false);
-                  router.push('/');
-                }}
-              >
-                <IconLogout />
-                <span>Sair</span>
-              </button>
-            </div>
-          ) : null}
-          <button
-            type="button"
-            className="avatar profile-trigger"
-            aria-label="Abrir opcoes da conta"
-            onClick={() => setProfileMenuOpen((prev) => !prev)}
-          >
-            IP
-          </button>
-        </div>
-      </div>
+
+      <div className="sidebar-main-spacer" />
+
+      <nav className="sidebar-utility-nav" aria-label="Utilitários">
+        {utilityNavItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button key={item.label} type="button" className="sidebar-icon-link" aria-label={item.label}>
+              <span className="nav-icon">
+                <Icon />
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <button type="button" className="sidebar-avatar-btn" aria-label="Perfil">
+        <span>IP</span>
+      </button>
     </aside>
   );
 }

@@ -222,3 +222,87 @@ export const IconLock = ({ className }: IconProps) => (
     <path d="M8 11V8a4 4 0 0 1 8 0v3" />
   </IconBase>
 );
+
+export const IconSearch = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M20 20l-3.2-3.2" />
+  </IconBase>
+);
+
+export const IconShare = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <circle cx="18" cy="5" r="2" />
+    <circle cx="6" cy="12" r="2" />
+    <circle cx="18" cy="19" r="2" />
+    <path d="M8 12l8-6" />
+    <path d="M8 12l8 6" />
+  </IconBase>
+);
+
+export const IconCopy = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <rect x="9" y="9" width="10" height="10" rx="2" />
+    <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+  </IconBase>
+);
+
+export const IconTagPercent = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M3 7v6l6 6 9-9-6-6H3z" />
+    <path d="M8 14l4-4" />
+    <circle cx="8" cy="10" r="1" />
+    <circle cx="12" cy="14" r="1" />
+  </IconBase>
+);
+
+export const IconArrowLeft = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M15 5l-7 7 7 7" />
+  </IconBase>
+);
+
+export const IconGlobe = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18" />
+    <path d="M12 3a13 13 0 0 1 0 18" />
+    <path d="M12 3a13 13 0 0 0 0 18" />
+  </IconBase>
+);
+
+export const IconPieChart = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M12 3a9 9 0 1 1-9 9" />
+    <path d="M12 3v9h9" />
+  </IconBase>
+);
+
+export const IconMessage = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M5 6h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9l-4 3v-3H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
+    <path d="M8 11h8" />
+  </IconBase>
+);
+
+export const IconMegaphone = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M4 13V11l9-5v12l-9-5z" />
+    <path d="M13 9h3a3 3 0 0 1 0 6h-3" />
+    <path d="M7 16l-1 3" />
+  </IconBase>
+);
+
+export const IconWhatsapp = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M20 11.7A8.7 8.7 0 0 1 7 19.3L3.8 20l.7-3A8.7 8.7 0 1 1 20 11.7z" />
+    <path d="M9.2 8.8c.2-.4.5-.4.7-.4h.6c.2 0 .4 0 .5.4.2.4.7 1.6.8 1.7.1.2.1.3 0 .4l-.4.5c-.1.1-.2.2-.1.4.1.3.4.8.9 1.3.6.6 1.2.9 1.5 1 .2.1.3.1.4 0l.5-.6c.1-.1.2-.2.4-.1l1.6.8c.2.1.3.2.3.4 0 .2-.2 1-.6 1.3-.3.3-.8.3-1.1.2-.3-.1-2.1-.8-3.5-2.1-1.6-1.4-2.3-3.1-2.4-3.4-.1-.2-.4-.9 0-1.5z" />
+  </IconBase>
+);
+
+export const IconBell = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M18 16V11a6 6 0 0 0-12 0v5l-2 2h16l-2-2z" />
+    <path d="M10 19a2 2 0 0 0 4 0" />
+  </IconBase>
+);

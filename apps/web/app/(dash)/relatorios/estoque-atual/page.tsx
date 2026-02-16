@@ -1,4 +1,4 @@
-import { fetchList, formatCurrency, isInDateRange, toNumber } from '../../lib';
+import { fetchList, formatCurrency, isInDateRange, toNumber, digitsOnly } from '../../lib';
 import ReportDetailPanel from '../report-detail-panel';
 import { buildReportRangeContext, type ReportSearchParams } from '../range';
 
@@ -7,6 +7,7 @@ type Product = {
   sku?: string | null;
   name: string;
   brand?: string | null;
+  barcode?: string | null;
   price?: number | string;
   cost?: number | string;
   expires_at?: string | null;
@@ -51,7 +52,7 @@ export default async function RelatorioEstoqueAtualPage({
       return {
         id: product.id,
         values: {
-          code: product.sku || '-',
+          code: digitsOnly(product.sku || product.barcode) || '-',
           product: product.name || '-',
           brand: product.brand || '-',
           salePrice: formatCurrency(toNumber(product.price)),

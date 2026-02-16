@@ -5,6 +5,7 @@ import {
   IconCalendar,
   IconClipboard,
   IconDiamond,
+  IconDots,
   IconDollar,
   IconEdit,
   IconLock,
@@ -116,6 +117,13 @@ type AccessForm = {
   active: boolean;
 };
 
+type BrandEditForm = {
+  id: string;
+  name: string;
+  profitability: string;
+  logoUrl: string;
+};
+
 const sectionOptions: Array<{
   id: SettingsSection;
   label: string;
@@ -150,6 +158,12 @@ const sectionDescription: Record<SettingsSection, string> = {
 const sourceLabel: Record<BrandSource, string> = {
   existing: 'Marca existente',
   catalog: 'Marca do catalogo',
+  manual: 'Manual'
+};
+
+const sourcePillLabel: Record<BrandSource, string> = {
+  existing: 'Existente',
+  catalog: 'Catalogo',
   manual: 'Manual'
 };
 
@@ -227,6 +241,14 @@ const normalizeApiMessage = (value: unknown, fallback: string) => {
   }
   return fallback;
 };
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Nao foi possivel ler o arquivo.'));
+    reader.readAsDataURL(file);
+  });
 
 const roleLabel = (role: string) => {
   const normalized = role.trim().toLowerCase();
@@ -329,6 +351,11 @@ export default function SettingsPanel({
   const [selectedCatalogBrand, setSelectedCatalogBrand] = useState(catalogCreateOptions[0]?.slug || '');
   const [manualName, setManualName] = useState('');
   const [manualLogoUrl, setManualLogoUrl] = useState('');
+  const [brandMenuOpenId, setBrandMenuOpenId] = useState<string | null>(null);
+  const [brandEditOpen, setBrandEditOpen] = useState(false);
+  const [brandEditForm, setBrandEditForm] = useState<BrandEditForm | null>(null);
+  const [brandEditSaving, setBrandEditSaving] = useState(false);
+  const [brandEditError, setBrandEditError] = useState<string | null>(null);
 
   const [accountForm, setAccountForm] = useState<AccountForm>(toAccountForm(initialAccount));
   const [accountSaving, setAccountSaving] = useState(false);
@@ -397,6 +424,17 @@ export default function SettingsPanel({
     setSelectedCatalogBrand(catalogCreateOptions[0]?.slug || '');
   }, [catalogCreateOptions, catalogOptionBySlug, createMode, selectedCatalogBrand]);
 
+  useEffect(() => {
+    if (!brandMenuOpenId) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('.settings-brand-menu-wrap')) return;
+      setBrandMenuOpenId(null);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [brandMenuOpenId]);
+
   const nextBrandName = useMemo(() => {
     if (createMode === 'catalog') {
       return catalogOptionBySlug.get(selectedCatalogBrand)?.label.trim() || '';
@@ -421,9 +459,6 @@ export default function SettingsPanel({
   }, [catalogCreateOptions, catalogSearch, configuredBrandTokenSet]);
 
   const resetCreateForm = () => {
-    if (manualLogoUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(manualLogoUrl);
-    }
     setCreateMode(null);
     setCreateError(null);
     setCreateSaving(false);
@@ -505,9 +540,94 @@ export default function SettingsPanel({
         return;
       }
       setBrands((prev) => prev.filter((brand) => brand.id !== brandId));
+      setBrandMenuOpenId((prev) => (prev === brandId ? null : prev));
+      if (brandEditForm?.id === brandId) {
+        setBrandEditOpen(false);
+        setBrandEditForm(null);
+      }
       setToast('Marca removida');
     } catch {
       setToast('Erro ao remover marca');
+    }
+  };
+
+  const parseProfitabilityValue = (value: string) => {
+    const parsed = Number(value.replace(',', '.'));
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, Math.min(100, parsed));
+  };
+
+  const openBrandEditModal = (brand: ResellerBrand) => {
+    setBrandEditForm({
+      id: brand.id,
+      name: brand.name,
+      profitability: formatProfitability(brand.profitability ?? DEFAULT_BRAND_PROFITABILITY),
+      logoUrl: brand.logo_url || ''
+    });
+    setBrandEditError(null);
+    setBrandEditSaving(false);
+    setBrandEditOpen(true);
+    setBrandMenuOpenId(null);
+  };
+
+  const closeBrandEditModal = () => {
+    setBrandEditOpen(false);
+    setBrandEditForm(null);
+    setBrandEditError(null);
+    setBrandEditSaving(false);
+  };
+
+  const handleBrandLogoUpload = async (file?: File | null) => {
+    if (!file || !brandEditForm) return;
+    try {
+      const logoUrl = await readFileAsDataUrl(file);
+      setBrandEditForm((prev) => (prev ? { ...prev, logoUrl } : prev));
+      setBrandEditError(null);
+    } catch {
+      setBrandEditError('Nao foi possivel carregar a imagem.');
+    }
+  };
+
+  const handleSaveBrandEdit = async () => {
+    if (!brandEditForm) return;
+    const name = brandEditForm.name.trim();
+    const parsed = parseProfitabilityValue(brandEditForm.profitability.trim());
+    if (!name) {
+      setBrandEditError('Informe o nome da marca.');
+      return;
+    }
+    if (parsed === null) {
+      setBrandEditError('Informe uma porcentagem de 0 a 100.');
+      return;
+    }
+
+    setBrandEditSaving(true);
+    setBrandEditError(null);
+    try {
+      const res = await fetch(`${API_BASE}/settings/brands/${brandEditForm.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          profitability: parsed,
+          logoUrl: brandEditForm.logoUrl || ''
+        })
+      });
+      const payload = (await res.json().catch(() => null)) as { data?: ResellerBrand; message?: string } | null;
+
+      if (!res.ok || !payload?.data) {
+        setBrandEditError(normalizeApiMessage(payload, 'Erro ao atualizar marca.'));
+        return;
+      }
+
+      const updated = payload.data;
+      setBrands((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      closeBrandEditModal();
+      setToast('Marca atualizada');
+    } catch {
+      setBrandEditError('Erro ao atualizar marca.');
+    } finally {
+      setBrandEditSaving(false);
     }
   };
 
@@ -797,34 +917,58 @@ export default function SettingsPanel({
               Adicionar marca
             </button>
           </div>
-          <div className="settings-brand-list">
+          <div className="settings-brand-list" onClick={() => setBrandMenuOpenId(null)}>
             {brands.map((brand) => {
               const brandLogo = resolveBrandLogo(brand.name, brand.logo_url || null);
+              const menuOpen = brandMenuOpenId === brand.id;
+              const sourceClass =
+                brand.source === 'catalog' ? 'catalog' : brand.source === 'existing' ? 'existing' : 'manual';
+
               return (
-                <article key={brand.id} className="settings-brand-card">
-                  <div className="settings-brand-id">
-                    <div className="settings-brand-logo">
-                      {brandLogo ? (
-                        <img src={brandLogo} alt={brand.name} />
-                      ) : (
-                        <span>{brand.name.slice(0, 1).toUpperCase()}</span>
-                      )}
+                <article
+                  key={brand.id}
+                  className="settings-brand-card menu-style"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="settings-brand-card-top">
+                    <div className="settings-brand-id">
+                      <div className="settings-brand-logo">
+                        {brandLogo ? (
+                          <img src={brandLogo} alt={brand.name} />
+                        ) : (
+                          <span>{brand.name.slice(0, 1).toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div className="settings-brand-card-copy">
+                        <strong>{brand.name}</strong>
+                        <div className="meta">Lucratividade: {formatProfitability(brand.profitability)}%</div>
+                        <span className={`settings-brand-pill ${sourceClass}`}>{sourcePillLabel[brand.source]}</span>
+                      </div>
                     </div>
-                    <div>
-                      <strong>{brand.name}</strong>
-                      <div className="meta">Lucratividade: {formatProfitability(brand.profitability)}%</div>
+
+                    <div className="settings-brand-menu-wrap">
+                      <button
+                        className="settings-brand-kebab"
+                        type="button"
+                        aria-label={`Abrir menu da marca ${brand.name}`}
+                        onClick={() => setBrandMenuOpenId((prev) => (prev === brand.id ? null : brand.id))}
+                      >
+                        <IconDots />
+                      </button>
+
+                      {menuOpen ? (
+                        <div className="settings-brand-menu">
+                          <button type="button" onClick={() => openBrandEditModal(brand)}>
+                            <IconEdit />
+                            Editar
+                          </button>
+                          <button type="button" className="danger" onClick={() => handleDeleteBrand(brand.id)}>
+                            <IconTrash />
+                            Excluir
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
-                  </div>
-                  <div className="settings-brand-meta">
-                    <span className={`settings-source-badge ${brand.source}`}>{sourceLabel[brand.source]}</span>
-                    <button
-                      className="button icon small settings-brand-remove"
-                      type="button"
-                      aria-label={`Remover ${brand.name}`}
-                      onClick={() => handleDeleteBrand(brand.id)}
-                    >
-                      <IconTrash />
-                    </button>
                   </div>
                 </article>
               );
@@ -1139,6 +1283,10 @@ export default function SettingsPanel({
     return renderAccessSection();
   };
 
+  const editingBrandLogo = brandEditForm
+    ? resolveBrandLogo(brandEditForm.name, brandEditForm.logoUrl || null)
+    : null;
+
   return (
     <>
       <div className="settings-shell">
@@ -1216,11 +1364,14 @@ export default function SettingsPanel({
                         onChange={(event) => {
                           const file = event.target.files?.[0];
                           if (!file) return;
-                          const nextUrl = URL.createObjectURL(file);
-                          setManualLogoUrl((prev) => {
-                            if (prev.startsWith('blob:') && prev !== nextUrl) URL.revokeObjectURL(prev);
-                            return nextUrl;
-                          });
+                          void readFileAsDataUrl(file)
+                            .then((nextUrl) => {
+                              setManualLogoUrl(nextUrl);
+                              setCreateError(null);
+                            })
+                            .catch(() => {
+                              setCreateError('Nao foi possivel carregar a imagem.');
+                            });
                           event.currentTarget.value = '';
                         }}
                       />
@@ -1318,6 +1469,92 @@ export default function SettingsPanel({
                   {createSaving ? 'Salvando...' : 'Adicionar marca'}
                 </button>
               ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {brandEditOpen && brandEditForm ? (
+        <div className="modal-backdrop" onClick={closeBrandEditModal}>
+          <div className="modal modal-brand-edit" onClick={(event) => event.stopPropagation()}>
+            <div className="brand-edit-header">
+              <h3>Editar marca</h3>
+              <button type="button" onClick={closeBrandEditModal} aria-label="Fechar edicao da marca">
+                ✕
+              </button>
+            </div>
+
+            <label className="brand-edit-field">
+              <span>Logo</span>
+              <div className="brand-edit-logo-box">
+                <div className="brand-edit-logo-preview">
+                  {editingBrandLogo ? (
+                    <img src={editingBrandLogo} alt={brandEditForm.name} />
+                  ) : (
+                    <span>{brandEditForm.name.slice(0, 1).toUpperCase()}</span>
+                  )}
+                </div>
+
+                <div className="brand-edit-logo-actions">
+                  <label className="brand-edit-logo-change">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        void handleBrandLogoUpload(file);
+                        event.currentTarget.value = '';
+                      }}
+                    />
+                    Alterar
+                  </label>
+                  <button
+                    type="button"
+                    className="brand-edit-logo-remove"
+                    onClick={() => setBrandEditForm((prev) => (prev ? { ...prev, logoUrl: '' } : prev))}
+                  >
+                    Remover
+                  </button>
+                </div>
+              </div>
+            </label>
+
+            <label className="brand-edit-field">
+              <span>Nome</span>
+              <input
+                value={brandEditForm.name}
+                onChange={(event) =>
+                  setBrandEditForm((prev) => (prev ? { ...prev, name: event.target.value } : prev))
+                }
+                placeholder="Nome da marca"
+              />
+            </label>
+
+            <label className="brand-edit-field">
+              <span>Lucratividade</span>
+              <div className="brand-edit-profit-input">
+                <input
+                  value={brandEditForm.profitability}
+                  inputMode="decimal"
+                  onChange={(event) =>
+                    setBrandEditForm((prev) =>
+                      prev ? { ...prev, profitability: event.target.value.replace(/[^\d.,]/g, '').slice(0, 8) } : prev
+                    )
+                  }
+                />
+                <strong>%</strong>
+              </div>
+            </label>
+
+            {brandEditError ? <div className="field-error">{brandEditError}</div> : null}
+
+            <div className="brand-edit-footer">
+              <button type="button" className="button ghost" onClick={closeBrandEditModal}>
+                Cancelar
+              </button>
+              <button type="button" className="button primary" disabled={brandEditSaving} onClick={() => void handleSaveBrandEdit()}>
+                {brandEditSaving ? 'Salvando...' : 'Salvar'}
+              </button>
             </div>
           </div>
         </div>

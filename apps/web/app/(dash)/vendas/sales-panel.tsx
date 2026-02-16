@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { API_BASE, formatCurrency, toNumber } from '../lib';
+import { API_BASE, digitsOnly, formatCurrency, toNumber } from '../lib';
 import { IconChart, IconCreditCard, IconDollar, IconPercent } from '../icons';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
 
@@ -187,6 +187,12 @@ const getInitials = (value: string) => {
 };
 
 const toIsoDate = (value: Date) => value.toISOString().split('T')[0];
+
+const getProductNumericCode = (product?: Product | null) => {
+  const skuDigits = digitsOnly(product?.sku);
+  if (skuDigits) return skuDigits;
+  return digitsOnly(product?.barcode);
+};
 
 const fileToDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -464,8 +470,9 @@ export default function SalesPanel({
     const normalized = normalizeSearchText(productSearch);
     if (!normalized) return saleProducts;
     return saleProducts.filter((product) => {
+      const numericCode = getProductNumericCode(product);
       const haystack = normalizeSearchText(
-        `${product.name || ''} ${product.brand || ''} ${product.sku || ''} ${product.barcode || ''}`
+        `${product.name || ''} ${product.brand || ''} ${product.sku || ''} ${product.barcode || ''} ${numericCode}`
       );
       return haystack.includes(normalized);
     });
@@ -1425,6 +1432,7 @@ export default function SalesPanel({
                       const stock = Math.max(0, toNumber(product.quantity ?? 0));
                       const priceLabel = product.price ? formatCurrency(toNumber(product.price)) : 'Sem preco';
                       const inCart = saleItems.some((item) => item.productId === product.id);
+                      const numericCode = getProductNumericCode(product);
                       return (
                         <button
                           key={product.id}
@@ -1443,7 +1451,9 @@ export default function SalesPanel({
                             </span>
                           </div>
                           <div className="sale-product-meta">
-                            <strong>{product.sku ? `${product.sku} - ${product.name}` : product.name}</strong>
+                            <strong>
+                              {numericCode ? `${numericCode} - ${product.name}` : product.name}
+                            </strong>
                             <span>{product.brand || 'Sem marca'}</span>
                           </div>
                           <div className="sale-product-price">{priceLabel}</div>
@@ -1495,6 +1505,7 @@ export default function SalesPanel({
                       const product = item.product;
                       const quantity = item.quantity;
                       const available = item.available;
+                      const cartProductCode = getProductNumericCode(product);
                       return (
                         <div key={item.id} className="sale-cart-item">
                           <div className="sale-cart-info">
@@ -1509,7 +1520,7 @@ export default function SalesPanel({
                               <div className="sale-cart-title">{product?.name || 'Produto'}</div>
                               <div className="sale-cart-meta">
                                 {product?.brand || 'Sem marca'}
-                                {product?.sku ? ` • ${product.sku}` : ''}
+                                {cartProductCode ? ` • ${cartProductCode}` : ''}
                                 <span className={`sale-origin ${item.origin === 'stock' ? 'stock' : 'order'}`}>
                                   {item.origin === 'stock' ? 'Estoque' : 'Encomendar'}
                                 </span>
@@ -1624,7 +1635,10 @@ export default function SalesPanel({
                 )}
               </div>
               <div className="add-product-meta">
-                <span>{productModalProduct.brand || 'Sem marca'} · {productModalProduct.sku || 'Sem codigo'}</span>
+                <span>
+                  {productModalProduct.brand || 'Sem marca'} ·{' '}
+                  {getProductNumericCode(productModalProduct) || 'Sem codigo'}
+                </span>
                 <strong>{productModalProduct.name}</strong>
               </div>
             </div>

@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import type { ResellerBrandInput } from '../dto';
+import type { ResellerBrandInput, ResellerBrandUpdateInput } from '../dto';
 import { DEFAULT_ORG_ID } from '../config';
 import { query, withTransaction } from '../db';
 import { validateRequest } from '../middleware/validate';
 import { idParamSchema } from '../schemas/common';
-import { resellerBrandInputSchema } from '../schemas/brands';
+import { resellerBrandInputSchema, resellerBrandUpdateSchema } from '../schemas/brands';
 import { asyncHandler } from '../utils/async-handler';
 import { writeAudit } from '../utils/audit';
 
@@ -159,6 +159,92 @@ router.delete(
     }
 
     return res.status(204).send();
+  })
+);
+
+router.patch(
+  '/settings/brands/:id',
+  validateRequest({ params: idParamSchema, body: resellerBrandUpdateSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const userId = req.header('x-user-id') || null;
+    const brandId = req.params.id;
+    const payload = req.body as ResellerBrandUpdateInput;
+
+    const fields: string[] = [];
+    const values: Array<string | number | null> = [];
+
+    if (payload.name !== undefined) {
+      fields.push(`name = $${fields.length + 1}`);
+      values.push(payload.name.trim());
+    }
+    if (payload.source !== undefined) {
+      fields.push(`source = $${fields.length + 1}`);
+      values.push(payload.source);
+    }
+    if (payload.sourceBrand !== undefined) {
+      fields.push(`source_brand = $${fields.length + 1}`);
+      values.push(normalizeOptional(payload.sourceBrand));
+    }
+    if (payload.profitability !== undefined) {
+      fields.push(`profitability = $${fields.length + 1}`);
+      values.push(Math.max(0, Math.min(100, Number(payload.profitability))));
+    }
+    if (payload.logoUrl !== undefined) {
+      fields.push(`logo_url = $${fields.length + 1}`);
+      values.push(normalizeOptional(payload.logoUrl));
+    }
+
+    let updated: Record<string, unknown> | null = null;
+    try {
+      updated = await withTransaction(async (client) => {
+        const result = await client.query(
+          `UPDATE reseller_brands
+           SET ${fields.join(', ')}
+           WHERE id = $${fields.length + 1} AND organization_id = $${fields.length + 2}
+           RETURNING id,
+                     name,
+                     source,
+                     source_brand,
+                     profitability,
+                     logo_url,
+                     created_at`,
+          [...values, brandId, orgId]
+        );
+
+        const brand = result.rows[0] || null;
+        if (!brand) return null;
+
+        await writeAudit(client, {
+          organizationId: orgId,
+          userId,
+          entityType: 'reseller_brand',
+          entityId: brandId,
+          action: 'updated',
+          payload
+        });
+
+        return brand;
+      });
+    } catch (error) {
+      const code = error && typeof error === 'object' ? (error as { code?: string }).code : null;
+      if (code === '23505') {
+        return res.status(409).json({
+          code: 'name_conflict',
+          message: 'Ja existe uma marca com este nome.'
+        });
+      }
+      throw error;
+    }
+
+    if (!updated) {
+      return res.status(404).json({
+        code: 'not_found',
+        message: 'Marca nao encontrada.'
+      });
+    }
+
+    return res.json({ data: updated });
   })
 );
 

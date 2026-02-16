@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { API_BASE, formatCurrency, toNumber } from './lib';
+import { API_BASE, digitsOnly, formatCurrency, toNumber } from './lib';
 import { IconBox } from './icons';
 import { downloadPdf } from '../lib/pdf';
 
@@ -469,13 +469,13 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
 
   const getItemTitle = (item: SaleItemDetail) => {
     const baseName = item.product_name || sale.itemName || '';
-    const itemCode = item.sku || '';
+    const itemCode = digitsOnly(item.sku) || '';
     if (itemCode && baseName) return `${itemCode} - ${baseName}`;
     return baseName || itemCode;
   };
 
   const getItemMetaLine = (item: SaleItemDetail) => {
-    const itemCode = item.sku || '';
+    const itemCode = digitsOnly(item.sku) || '';
     if (!itemCode) return '';
     return `${item.product_brand || 'Sem marca'} • ${itemCode}`;
   };
@@ -1192,38 +1192,37 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
               </button>
             </div>
 
+            <div className="receipt-tabs">
+              <button
+                className={receiptTab === 'digital' ? 'active' : ''}
+                type="button"
+                onClick={() => setReceiptTab('digital')}
+              >
+                Digital
+              </button>
+              <button
+                className={receiptTab === 'termico' ? 'active' : ''}
+                type="button"
+                onClick={() => setReceiptTab('termico')}
+              >
+                Termico
+              </button>
+            </div>
+
             <div className="receipt-panel">
-              <div className="receipt-tabs">
-                <button
-                  className={receiptTab === 'digital' ? 'active' : ''}
-                  type="button"
-                  onClick={() => setReceiptTab('digital')}
-                >
-                  Digital
-                </button>
-                <button
-                  className={receiptTab === 'termico' ? 'active' : ''}
-                  type="button"
-                  onClick={() => setReceiptTab('termico')}
-                >
-                  Termico
-                </button>
-              </div>
-
               {receiptTab === 'digital' ? (
-                <div className="receipt-body" id="print-root" ref={digitalReceiptRef}>
+                <div className="receipt-body receipt-body-digital" id="print-root" ref={digitalReceiptRef}>
                   <div className="receipt-card receipt-card-group">
-                    <div className="receipt-hero">
-                      <div className="receipt-header">
-                        <strong>Resumo da venda</strong>
-                        <div className="receipt-logo">R</div>
-                      </div>
-                      <div className="receipt-meta">
-                        Emitido em {formatDate(sale.date)} às {formatTime(sale.date)} no Revendi Web
-                      </div>
+                  <div className="receipt-hero">
+                    <div className="receipt-header">
+                      <strong>Resumo da venda</strong>
+                      <div className="receipt-logo">R</div>
                     </div>
-
-                    <div className="receipt-section-divider" />
+                    <div className="receipt-meta">
+                      <span>Emitido em {formatDate(sale.date)}</span>
+                      <span>às {formatTime(sale.date)} no Revendi Web</span>
+                    </div>
+                  </div>
 
                     <div className="receipt-grid">
                       <div>
@@ -1247,8 +1246,6 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                       </div>
                     </div>
 
-                    <div className="receipt-section-divider" />
-
                     <div className="receipt-products receipt-section">
                       <h3>Produtos</h3>
                       {saleItems.length === 0 ? (
@@ -1261,15 +1258,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                           const title = getItemTitle(item);
                           return (
                             <div key={item.id} className="receipt-product-row">
-                              <div className="sale-thumb small">
-                                {getItemImage(item) ? (
-                                  <img className="product-thumb-image" src={getItemImage(item)} alt={title || 'Produto'} />
-                                ) : (
-                                  <span className="product-thumb-placeholder" aria-hidden="true">
-                                    <IconBox />
-                                  </span>
-                                )}
-                              </div>
+                              <span className="receipt-qty-badge">{qty}</span>
                               <div className="receipt-payment-meta">
                                 <strong>{title}</strong>
                                 <span>{qty} {qty === 1 ? 'unidade' : 'unidades'}</span>
@@ -1280,16 +1269,18 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                             </div>
                           );
                         })
-                      )}
+                    )}
+                  </div>
+
+                  <div className="receipt-payment-header">
+                    <strong>Pagamento</strong>
+                    <span className="receipt-pill pending">Pendente</span>
+                  </div>
+                  <div className="receipt-summary receipt-summary-table">
+                    <div>
+                      <span>Valor original</span>
+                      <strong>{formatCurrency(summary.total)}</strong>
                     </div>
-
-                    <div className="receipt-section-divider" />
-
-                    <div className="receipt-summary receipt-summary-table">
-                      <div>
-                        <span>Valor original</span>
-                        <strong>{formatCurrency(summary.total)}</strong>
-                      </div>
                       <div>
                         <span>Desconto</span>
                         <strong>-{formatCurrency(0)}</strong>
@@ -1308,28 +1299,31 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                       </div>
                     </div>
                   </div>
+                  <div className="receipt-print-footer" aria-hidden="true">
+                    <span>{formatDate(sale.date)}, {formatTime(sale.date)}</span>
+                    <span>Fatura de Venda</span>
+                  </div>
                 </div>
               ) : (
                 <div
-                  className="receipt-body"
+                  className="receipt-body receipt-body-thermal"
                   id="print-root"
                   ref={thermalReceiptRef}
-                  style={{ width: `${thermalWidthMm}mm` }}
                 >
-                  <div className="receipt-thermal">
+                  <div className="receipt-thermal" style={{ width: `${thermalWidthMm}mm` }}>
                     <pre>{thermalReceiptText}</pre>
                   </div>
                 </div>
               )}
+            </div>
 
-              <div className="receipt-actions">
-                <button className="button primary" type="button" onClick={handleDownloadReceipt}>
-                  ⬇ Baixar
-                </button>
-                <button className="button ghost" type="button" onClick={handlePrintReceipt}>
-                  🖨 Imprimir
-                </button>
-              </div>
+            <div className="receipt-actions">
+              <button className="button primary" type="button" onClick={handleDownloadReceipt}>
+                ⬇ Baixar
+              </button>
+              <button className="button ghost" type="button" onClick={handlePrintReceipt}>
+                🖨 Imprimir
+              </button>
             </div>
           </div>
         </div>

@@ -66,6 +66,8 @@ type FinanceEntry = {
   amount: number;
   dueDate: string;
   status: EntryStatus;
+  paidAt?: string | null;
+  settledAt?: string | null;
   customerId?: string | null;
   customerName?: string | null;
   method?: string | null;
@@ -146,6 +148,29 @@ const formatDate = (value: string) => {
   return date.toLocaleDateString('pt-BR');
 };
 
+const formatLabelDate = (value?: string | null) => {
+  const date = parseDateValue(value ?? '');
+  return date ? date.toLocaleDateString('pt-BR') : null;
+};
+
+const isDateBefore = (value: string | null | undefined, today: Date) => {
+  const date = parseDateValue(value);
+  if (!date) return false;
+  return date.getTime() < today.getTime();
+};
+
+const deriveReceivableStatus = (item: Receivable, today: Date): EntryStatus => {
+  if (item.status === 'paid' || !!item.settled_at) return 'paid';
+  if (item.status === 'overdue' || isDateBefore(item.due_date, today)) return 'overdue';
+  return 'pending';
+};
+
+const deriveExpenseStatus = (item: Expense, today: Date): EntryStatus => {
+  if (item.status === 'paid' || !!item.paid_at) return 'paid';
+  if (isDateBefore(item.due_date, today)) return 'overdue';
+  return 'pending';
+};
+
 const isSameMonth = (value: string, monthCursor: Date) => {
   const date = parseDateValue(value);
   if (!date) return false;
@@ -174,9 +199,18 @@ const toAmount = (input: string) => {
   return integerOnly ? Number(integerOnly) : NaN;
 };
 
-const statusLabel = (status: EntryStatus) => {
-  if (status === 'paid') return 'Pago';
-  if (status === 'overdue') return 'Atrasado';
+const statusLabel = (entry: FinanceEntry) => {
+  if (entry.status === 'paid') {
+    const paidDate =
+      entry.kind === 'expense'
+        ? entry.paidAt
+        : entry.incomeSource === 'receivable'
+        ? entry.settledAt
+        : entry.createdAt;
+    const dateLabel = formatLabelDate(paidDate);
+    return dateLabel ? `Pago em ${dateLabel}` : 'Pago';
+  }
+  if (entry.status === 'overdue') return 'Atrasado';
   return 'Pendente';
 };
 
@@ -259,6 +293,8 @@ export default function FinancePanel({
   }, []);
 
   const allEntries = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const incomeEntriesFromReceivables: FinanceEntry[] = receivables.map((item) => {
       const customerName = item.customer_name?.trim() || null;
       const description = customerName ? `Venda - ${customerName}` : `Venda #${shortSaleCode(item.sale_id)}`;
@@ -269,7 +305,8 @@ export default function FinancePanel({
         subtitle: `Receita - ${paymentMethodLabel(item.method)}`,
         amount: toNumber(item.amount),
         dueDate: item.due_date,
-        status: item.status,
+        status: deriveReceivableStatus(item, today),
+        settledAt: item.settled_at ?? item.created_at ?? undefined,
         customerId: item.customer_id || null,
         customerName,
         method: item.method,
@@ -290,6 +327,7 @@ export default function FinancePanel({
         amount: toNumber(item.amount),
         dueDate: item.due_date || (item.created_at ? item.created_at.slice(0, 10) : toInputDate(new Date())),
         status: 'paid',
+        settledAt: item.created_at,
         customerId: item.customer_id || null,
         customerName,
         method: item.method,
@@ -306,7 +344,8 @@ export default function FinancePanel({
       subtitle: `Despesa avulsa - ${paymentMethodLabel(item.method)}`,
       amount: toNumber(item.amount),
       dueDate: item.due_date,
-      status: item.status,
+      status: deriveExpenseStatus(item, today),
+      paidAt: item.paid_at,
       customerId: item.customer_id || null,
       customerName: item.customer_name || null,
       method: item.method,
@@ -451,7 +490,10 @@ export default function FinancePanel({
     }
   };
 
-  const updateEntryInState = (entry: FinanceEntry, updated: { status?: EntryStatus; paid_at?: string | null }) => {
+  const updateEntryInState = (
+    entry: FinanceEntry,
+    updated: { status?: EntryStatus; paid_at?: string | null; settled_at?: string | null }
+  ) => {
     if (entry.kind === 'expense') {
       setExpenses((prev) =>
         prev.map((item) =>
@@ -473,7 +515,7 @@ export default function FinancePanel({
           ? {
               ...item,
               status: updated.status || item.status,
-              settled_at: updated.paid_at ?? item.settled_at
+              settled_at: updated.settled_at ?? item.settled_at
             }
           : item
       )
@@ -501,7 +543,10 @@ export default function FinancePanel({
 
         const payload = (await res.json()) as { data?: Expense };
         if (payload.data) {
-          updateEntryInState(entry, { status: 'paid', paid_at: payload.data.paid_at || new Date().toISOString() });
+          updateEntryInState(entry, {
+            status: 'paid',
+            paid_at: payload.data.paid_at || new Date().toISOString()
+          });
         }
         return;
       }
@@ -518,7 +563,7 @@ export default function FinancePanel({
         return;
       }
 
-      updateEntryInState(entry, { status: 'paid', paid_at: new Date().toISOString() });
+      updateEntryInState(entry, { status: 'paid', settled_at: new Date().toISOString() });
     } catch {
       setActionError('Erro ao atualizar transacao.');
     } finally {
@@ -557,7 +602,7 @@ export default function FinancePanel({
         return;
       }
 
-      updateEntryInState(entry, { status: 'pending', paid_at: null });
+      updateEntryInState(entry, { status: 'pending', settled_at: null });
     } catch {
       setActionError('Erro ao atualizar transacao.');
     } finally {
@@ -699,10 +744,10 @@ export default function FinancePanel({
                 </div>
                 <div className="mono finance-value-cell">{formatCurrency(entry.amount)}</div>
                 <div>
-                  <span className={`finance-status-badge ${statusClass(entry.status)}`}>
-                    {statusLabel(entry.status)}
-                  </span>
-                </div>
+                <span className={`finance-status-badge ${statusClass(entry.status)}`}>
+                  {statusLabel(entry)}
+                </span>
+              </div>
                 <div className="mono">{formatDate(entry.dueDate)}</div>
                 <div className="finance-entry-actions">
                   {entry.kind === 'expense' || entry.incomeSource === 'receivable' ? (

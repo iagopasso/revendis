@@ -1,4 +1,4 @@
-import { fetchList, isInDateRange, toNumber } from '../../lib';
+import { fetchList, isInDateRange, toNumber, digitsOnly } from '../../lib';
 import ReportDetailPanel from '../report-detail-panel';
 import { buildReportRangeContext, type ReportSearchParams } from '../range';
 
@@ -49,7 +49,7 @@ export default async function RelatorioProximosDeVencerPage({
       id: product.id,
       values: {
         rank: `${index + 1}º`,
-        code: product.sku || '-',
+        code: digitsOnly(product.sku) || '-',
         product: product.name || '-',
         brand: product.brand || '-',
         expiresAt: formatDate(product.expires_at),
