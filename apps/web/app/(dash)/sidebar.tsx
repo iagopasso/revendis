@@ -18,7 +18,7 @@ import {
 } from './icons';
 
 const primaryNavItems = [
-  { href: '/vendas', label: 'Painel', icon: IconDashboard },
+  { href: '/dashboard', label: 'Painel', icon: IconDashboard },
   { href: '/estoque', label: 'Estoque', icon: IconBox },
   { href: '/vendas', label: 'Vendas', icon: IconTag },
   { href: '/compras', label: 'Compras', icon: IconCart },
@@ -40,7 +40,7 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar sidebar-expected">
-      <Link href="/" className="logo sidebar-expected-logo" aria-label="Pagina inicial">
+      <Link href="/dashboard" className="logo sidebar-expected-logo" aria-label="Painel inicial">
         <img src="/logo.png" alt="Revendis" />
       </Link>
 

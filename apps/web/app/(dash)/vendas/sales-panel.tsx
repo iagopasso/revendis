@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { API_BASE, digitsOnly, formatCurrency, toNumber } from '../lib';
+import { API_BASE, SALES_SYNC_STORAGE_KEY, digitsOnly, formatCurrency, toNumber } from '../lib';
 import { IconChart, IconCreditCard, IconDollar, IconPercent } from '../icons';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
 
@@ -186,7 +186,12 @@ const getInitials = (value: string) => {
   return initials || value.slice(0, 2).toUpperCase();
 };
 
-const toIsoDate = (value: Date) => value.toISOString().split('T')[0];
+const toIsoDate = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const getProductNumericCode = (product?: Product | null) => {
   const skuDigits = digitsOnly(product?.sku);
@@ -761,6 +766,13 @@ export default function SalesPanel({
     setLocalSales(sales);
     setPage(1);
   }, [sales]);
+
+  useEffect(() => {
+    const pendingSync = window.localStorage.getItem(SALES_SYNC_STORAGE_KEY);
+    if (!pendingSync) return;
+    window.localStorage.removeItem(SALES_SYNC_STORAGE_KEY);
+    router.refresh();
+  }, [router]);
 
   useEffect(() => {
     setLocalCustomers(customers);

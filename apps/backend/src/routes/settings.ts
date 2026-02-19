@@ -9,7 +9,7 @@ import type {
   SettingsStorefrontInput,
   SettingsSubscriptionInput
 } from '../dto';
-import { DEFAULT_ORG_ID } from '../config';
+import { DEFAULT_ORG_ID, DEFAULT_STORE_ID } from '../config';
 import { query, withTransaction } from '../db';
 import { validateRequest } from '../middleware/validate';
 import { idParamSchema } from '../schemas/common';
@@ -183,7 +183,8 @@ const ensureStorefrontColumns = async () => {
          ADD COLUMN IF NOT EXISTS storefront_selected_categories text[] NOT NULL DEFAULT '{}',
          ADD COLUMN IF NOT EXISTS storefront_price_from text NOT NULL DEFAULT '',
          ADD COLUMN IF NOT EXISTS storefront_price_to text NOT NULL DEFAULT '',
-         ADD COLUMN IF NOT EXISTS storefront_logo_url text`
+         ADD COLUMN IF NOT EXISTS storefront_logo_url text,
+         ADD COLUMN IF NOT EXISTS storefront_catalog_snapshot jsonb`
     );
 
     await query(
@@ -329,6 +330,49 @@ const selectStorefrontSettings = async (db: DbExecutor, orgId: string): Promise<
     priceTo: row?.storefront_price_to || '',
     logoUrl: row?.storefront_logo_url || ''
   };
+};
+
+const buildStorefrontCatalogSnapshot = async (db: DbExecutor, orgId: string) => {
+  const storeRes = await db.query<{ id: string }>(
+    `SELECT id
+     FROM stores
+     WHERE organization_id = $1
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [orgId]
+  );
+  const storefrontStoreId = storeRes.rows[0]?.id || DEFAULT_STORE_ID;
+
+  const productsResult = await db.query(
+    `SELECT p.id,
+            p.sku,
+            p.name,
+            p.barcode,
+            p.brand,
+            p.price,
+            p.active,
+            p.image_url,
+            p.category_id,
+            c.name AS category,
+            GREATEST(COALESCE(b.quantity, 0) - COALESCE(pending.quantity, 0), 0)::int AS quantity
+     FROM products p
+     LEFT JOIN inventory_balances b ON b.product_id = p.id AND b.store_id = $2
+     LEFT JOIN (
+       SELECT soi.product_id, COALESCE(SUM(soi.quantity), 0)::int AS quantity
+       FROM storefront_order_items soi
+       INNER JOIN storefront_orders so ON so.id = soi.storefront_order_id
+       WHERE so.store_id = $2
+         AND lower(COALESCE(so.status, 'pending')) IN ('pending', 'confirmed')
+       GROUP BY soi.product_id
+     ) pending ON pending.product_id = p.id
+     LEFT JOIN categories c ON c.id = p.category_id
+     WHERE p.organization_id = $1 AND p.active = true
+     ORDER BY p.created_at DESC
+     LIMIT 240`,
+    [orgId, storefrontStoreId]
+  );
+
+  return productsResult.rows;
 };
 
 const updateSettingsFields = async (
@@ -558,6 +602,15 @@ router.patch(
         }
 
         await updateSettingsFields(client, orgId, fields, values);
+
+        const storefrontCatalogSnapshot = await buildStorefrontCatalogSnapshot(client, orgId);
+        await client.query(
+          `UPDATE organization_settings
+           SET storefront_catalog_snapshot = $1::jsonb,
+               updated_at = now()
+           WHERE organization_id = $2`,
+          [JSON.stringify(storefrontCatalogSnapshot), orgId]
+        );
 
         await writeAudit(client, {
           organizationId: orgId,

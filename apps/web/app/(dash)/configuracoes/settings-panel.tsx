@@ -910,13 +910,6 @@ export default function SettingsPanel({
         </div>
       ) : (
         <>
-          <div className="settings-brand-toolbar">
-            <span className="meta">Marcas configuradas: {brands.length}</span>
-            <button className="button primary settings-brand-add" type="button" onClick={openCreateModal}>
-              <IconPlus />
-              Adicionar marca
-            </button>
-          </div>
           <div className="settings-brand-list" onClick={() => setBrandMenuOpenId(null)}>
             {brands.map((brand) => {
               const brandLogo = resolveBrandLogo(brand.name, brand.logo_url || null);
@@ -942,8 +935,8 @@ export default function SettingsPanel({
                       <div className="settings-brand-card-copy">
                         <strong>{brand.name}</strong>
                         <div className="meta">Lucratividade: {formatProfitability(brand.profitability)}%</div>
-                        <span className={`settings-brand-pill ${sourceClass}`}>{sourcePillLabel[brand.source]}</span>
                       </div>
+                      <span className={`settings-brand-pill ${sourceClass}`}>{sourcePillLabel[brand.source]}</span>
                     </div>
 
                     <div className="settings-brand-menu-wrap">
@@ -973,6 +966,12 @@ export default function SettingsPanel({
                 </article>
               );
             })}
+          </div>
+          <div className="settings-brand-toolbar">
+            <button className="button primary settings-brand-add" type="button" onClick={openCreateModal}>
+              <IconPlus />
+              Adicionar marca
+            </button>
           </div>
         </>
       )}

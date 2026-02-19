@@ -247,10 +247,11 @@ export type AccessMemberUpdateInput = {
 };
 
 export type StorefrontOrderInput = {
+  subdomain?: string;
   items: SaleItem[];
   customer: {
     name: string;
-    phone?: string;
+    phone: string;
     email?: string;
   };
   shipping?: {

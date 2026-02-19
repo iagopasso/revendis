@@ -50,6 +50,15 @@ export const IconCart = ({ className }: IconProps) => (
   </IconBase>
 );
 
+export const IconBag = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M6 8V6a6 6 0 0 1 12 0v2" />
+    <path d="M5 8h14l-1.2 13H6.2L5 8z" />
+    <path d="M9 12v0.5" />
+    <path d="M15 12v0.5" />
+  </IconBase>
+);
+
 export const IconUsers = ({ className }: IconProps) => (
   <IconBase className={className}>
     <circle cx="9" cy="8" r="3" />
@@ -115,6 +124,25 @@ export const IconCoins = ({ className }: IconProps) => (
     <ellipse cx="12" cy="6" rx="6" ry="2.5" />
     <path d="M6 6v5c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V6" />
     <path d="M6 11v5c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-5" />
+  </IconBase>
+);
+
+export const IconGift = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <rect x="3" y="9" width="18" height="12" rx="2" />
+    <path d="M3 13h18" />
+    <path d="M12 9v12" />
+    <path d="M12 9H7.5a2.5 2.5 0 1 1 0-5c2.4 0 4.5 3.2 4.5 5z" />
+    <path d="M12 9h4.5a2.5 2.5 0 1 0 0-5c-2.4 0-4.5 3.2-4.5 5z" />
+  </IconBase>
+);
+
+export const IconTruck = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M3 7h10v9H3V7z" />
+    <path d="M13 10h4l4 4v2h-8v-6z" />
+    <circle cx="8" cy="18" r="2" />
+    <circle cx="18" cy="18" r="2" />
   </IconBase>
 );
 

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, digitsOnly, formatCurrency, toNumber } from './lib';
 import { IconBox } from './icons';
-import { downloadPdf } from '../lib/pdf';
+import { buildPdfBlobUrl, downloadPdf } from '../lib/pdf';
 
 export type SaleDetail = {
   id: string;
@@ -836,7 +836,10 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
 
   const handleDownloadReceipt = async () => {
     if (!sale) return;
-    const node = receiptTab === 'digital' ? digitalReceiptRef.current : thermalReceiptRef.current;
+    const node =
+      receiptTab === 'digital'
+        ? digitalReceiptRef.current?.querySelector<HTMLElement>('.receipt-card-group') ?? digitalReceiptRef.current
+        : thermalReceiptRef.current?.querySelector<HTMLElement>('.receipt-thermal') ?? thermalReceiptRef.current;
     if (!node) {
       setToast('Extrato indisponivel para download');
       return;
@@ -852,9 +855,44 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     }
   };
 
-  const handlePrintReceipt = () => {
-    if (typeof window !== 'undefined') {
-      window.print();
+  const handlePrintReceipt = async () => {
+    if (!sale || typeof window === 'undefined') return;
+    const node =
+      receiptTab === 'digital'
+        ? digitalReceiptRef.current?.querySelector<HTMLElement>('.receipt-card-group') ?? digitalReceiptRef.current
+        : thermalReceiptRef.current?.querySelector<HTMLElement>('.receipt-thermal') ?? thermalReceiptRef.current;
+    if (!node) {
+      setToast('Extrato indisponivel para impressao');
+      return;
+    }
+    const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
+
+    try {
+      const blobUrl = await buildPdfBlobUrl({ element: node, format });
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.style.opacity = '0';
+      iframe.style.pointerEvents = 'none';
+      iframe.onload = () => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } finally {
+          window.setTimeout(() => {
+            URL.revokeObjectURL(blobUrl);
+            iframe.remove();
+          }, 1200);
+        }
+      };
+      iframe.src = blobUrl;
+      document.body.appendChild(iframe);
+    } catch {
+      setToast('Erro ao imprimir extrato');
     }
   };
 

@@ -35,8 +35,21 @@ type StorefrontPayload = {
   products?: StoreProduct[];
 };
 
-export default async function PublicStorePage({ params }: { params: Promise<{ subdomain: string }> }) {
+type PublicStoreSearchParams = Record<string, string | string[] | undefined>;
+
+export default async function PublicStorePage({
+  params,
+  searchParams
+}: {
+  params: Promise<{ subdomain: string }>;
+  searchParams?: Promise<PublicStoreSearchParams>;
+}) {
   const { subdomain } = await params;
+  const resolvedSearch = (await searchParams) ?? {};
+  const productFromQueryRaw = resolvedSearch.produto;
+  const initialProductId = Array.isArray(productFromQueryRaw)
+    ? productFromQueryRaw[0] || ''
+    : productFromQueryRaw || '';
   const fallbackName = 'Revendis Prime';
 
   let storefront: StorefrontPayload | null = null;
@@ -58,6 +71,7 @@ export default async function PublicStorePage({ params }: { params: Promise<{ su
       initialProducts={storefront?.products || []}
       initialStoreSettings={storefront?.settings}
       initialStoreName={storefront?.settings?.shopName || fallbackName}
+      initialProductId={typeof initialProductId === 'string' ? initialProductId : ''}
       unavailable={!storefront}
     />
   );

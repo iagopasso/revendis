@@ -2272,7 +2272,7 @@ export default function InventoryPanel({
                 <span>Estoque</span>
                 <span>Acoes</span>
               </div>
-              {displayProducts.map((product) => {
+              {displayProducts.map((product, index) => {
                 const quantity = toNumber(product.quantity ?? 0);
                 const stockLabel =
                   product.active && quantity > 0
@@ -2280,6 +2280,7 @@ export default function InventoryPanel({
                     : 'Sem estoque';
                 const hasPrice = product.price !== null && product.price !== undefined && `${product.price}` !== '';
                 const priceLabel = hasPrice ? formatCurrency(toNumber(product.price)) : 'Sem preco';
+                const openUpward = index >= displayProducts.length - 2;
                 return (
                   <div key={product.id} className="data-row cols-4 inventory-row">
                     <button
@@ -2322,7 +2323,7 @@ export default function InventoryPanel({
                         <IconDots />
                       </button>
                       {menuOpenId === product.id ? (
-                        <div className="inventory-dropdown">
+                        <div className={`inventory-dropdown${openUpward ? ' drop-up' : ''}`}>
                           <button
                             type="button"
                             onClick={() => {

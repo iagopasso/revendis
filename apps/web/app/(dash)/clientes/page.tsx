@@ -27,10 +27,35 @@ type SearchParams = {
   q?: string | string[];
   city?: string | string[];
   tag?: string | string[];
+  birthday?: string | string[];
   view?: string | string[];
 };
 
 const normalizeText = (value?: string | null) => (value || '').trim().toLowerCase();
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const toDate = (value?: string | null) => {
+  if (!value) return null;
+  const normalized = value.includes('T') ? value : `${value}T00:00:00`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const startOfDay = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate());
+
+const isBirthdayInNextDays = (value?: string | null, days = 7) => {
+  const date = toDate(value);
+  if (!date) return false;
+  const today = startOfDay(new Date());
+
+  let next = new Date(today.getFullYear(), date.getMonth(), date.getDate());
+  if (next < today) {
+    next = new Date(today.getFullYear() + 1, date.getMonth(), date.getDate());
+  }
+
+  const diff = Math.floor((startOfDay(next).getTime() - today.getTime()) / DAY_MS);
+  return diff >= 0 && diff <= days;
+};
 
 export default async function ClientesPage({
   searchParams
@@ -43,6 +68,7 @@ export default async function ClientesPage({
   const query = getStringParam(resolvedParams.q).trim();
   const cityFilter = getStringParam(resolvedParams.city) || 'all';
   const tagFilter = getStringParam(resolvedParams.tag) || 'all';
+  const birthdayFilter = getStringParam(resolvedParams.birthday) || 'all';
   const viewFilter = getStringParam(resolvedParams.view) === 'grid' ? 'grid' : 'table';
   const normalizedQuery = query.toLowerCase();
 
@@ -81,7 +107,10 @@ export default async function ClientesPage({
       cityFilter === 'all' || normalizeText(customer.city) === normalizeText(cityFilter);
     const matchesTag =
       tagFilter === 'all' || (customer.tags || []).some((tag) => normalizeText(tag) === normalizeText(tagFilter));
-    return matchesQuery && matchesCity && matchesTag;
+    const matchesBirthday =
+      birthdayFilter === 'all' ||
+      (birthdayFilter === 'week' && isBirthdayInNextDays(customer.birth_date, 7));
+    return matchesQuery && matchesCity && matchesTag && matchesBirthday;
   });
 
   const buildViewHref = (view: 'table' | 'grid') => {
@@ -89,6 +118,7 @@ export default async function ClientesPage({
     if (query) params.set('q', query);
     if (cityFilter !== 'all') params.set('city', cityFilter);
     if (tagFilter !== 'all') params.set('tag', tagFilter);
+    if (birthdayFilter !== 'all') params.set('birthday', birthdayFilter);
     params.set('view', view);
     const queryString = params.toString();
     return queryString ? `/clientes?${queryString}` : '/clientes';
@@ -132,6 +162,7 @@ export default async function ClientesPage({
             <input name="q" placeholder="Buscar cliente" defaultValue={query} />
             {cityFilter !== 'all' ? <input type="hidden" name="city" value={cityFilter} /> : null}
             {tagFilter !== 'all' ? <input type="hidden" name="tag" value={tagFilter} /> : null}
+            {birthdayFilter !== 'all' ? <input type="hidden" name="birthday" value={birthdayFilter} /> : null}
           </form>
           <div className="toolbar-group">
             <FilterSelect
@@ -148,6 +179,14 @@ export default async function ClientesPage({
               options={[
                 { label: 'Todas tags', value: 'all' },
                 ...tags.map((tag) => ({ label: tag, value: tag }))
+              ]}
+            />
+            <FilterSelect
+              name="birthday"
+              value={birthdayFilter}
+              options={[
+                { label: 'Todos aniversarios', value: 'all' },
+                { label: 'Aniversariantes da semana', value: 'week' }
               ]}
             />
             <span className="meta">Clientes ativos: {filteredCustomers.length}</span>

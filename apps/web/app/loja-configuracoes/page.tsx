@@ -2,8 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
-import { IconArrowLeft, IconSearch, IconUpload } from '../(dash)/icons';
+import { IconArrowLeft, IconCart, IconSearch, IconUpload, IconWhatsapp } from '../(dash)/icons';
 import { API_BASE } from '../(dash)/lib';
 import {
   buildPublicStoreUrl,
@@ -63,6 +62,22 @@ const toNumber = (value: unknown) => {
   return 0;
 };
 
+const mapCatalogProducts = (items?: CatalogProduct[] | null): PreviewProduct[] => {
+  const mapped =
+    items
+      ?.filter((item) => item.active !== false)
+      .map<PreviewProduct>((item) => ({
+        id: item.id,
+        name: item.name?.trim() || 'Produto sem nome',
+        price: Math.max(0, toNumber(item.price)),
+        brand: item.brand?.trim() || 'Sem marca',
+        category: item.category?.trim() || 'Sem categoria',
+        imageUrl: item.image_url?.trim() || '',
+        inStock: toNumber(item.quantity) > 0
+      })) || [];
+  return mapped.length > 0 ? mapped : previewFallbackProducts;
+};
+
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const normalizeApiMessage = (value: unknown, fallback: string) => {
@@ -77,6 +92,11 @@ const normalizeApiMessage = (value: unknown, fallback: string) => {
   return fallback;
 };
 
+const uniqueValues = (list: string[]) =>
+  Array.from(new Set(list.map((item) => item.trim()).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b, 'pt-BR')
+  );
+
 const normalizeToken = (value: string) =>
   value
     .normalize('NFD')
@@ -87,19 +107,21 @@ const normalizeToken = (value: string) =>
 const includesToken = (list: string[], value: string) =>
   list.some((item) => normalizeToken(item) === normalizeToken(value));
 
-const uniqueValues = (list: string[]) =>
-  Array.from(new Set(list.map((item) => item.trim()).filter(Boolean))).sort((a, b) =>
-    a.localeCompare(b, 'pt-BR')
-  );
+const onlyDigits = (value: string) => value.replace(/\D/g, '');
+
+const toWhatsappPhone = (value: string) => {
+  const digits = onlyDigits(value);
+  if (!digits) return '';
+  if (digits.startsWith('55')) return digits;
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  return digits;
+};
 
 export default function LojaConfiguracoesPage() {
   const [shopName, setShopName] = useState(DEFAULT_STOREFRONT_SETTINGS.shopName);
   const [subdomain, setSubdomain] = useState(DEFAULT_STOREFRONT_SETTINGS.subdomain);
   const [shopColor, setShopColor] = useState(DEFAULT_STOREFRONT_SETTINGS.shopColor);
   const [publicStorePrefix, setPublicStorePrefix] = useState('/loja/');
-  const [search, setSearch] = useState('');
-  const [priceFrom, setPriceFrom] = useState(DEFAULT_STOREFRONT_SETTINGS.priceFrom);
-  const [priceTo, setPriceTo] = useState(DEFAULT_STOREFRONT_SETTINGS.priceTo);
   const [onlyStockProducts, setOnlyStockProducts] = useState(DEFAULT_STOREFRONT_SETTINGS.onlyStockProducts);
   const [showOutOfStockProducts, setShowOutOfStockProducts] = useState(
     DEFAULT_STOREFRONT_SETTINGS.showOutOfStockProducts
@@ -109,18 +131,19 @@ export default function LojaConfiguracoesPage() {
   const [filterByPrice, setFilterByPrice] = useState(DEFAULT_STOREFRONT_SETTINGS.filterByPrice);
   const [whatsapp, setWhatsapp] = useState(DEFAULT_STOREFRONT_SETTINGS.whatsapp);
   const [showWhatsappButton, setShowWhatsappButton] = useState(DEFAULT_STOREFRONT_SETTINGS.showWhatsappButton);
-  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<PreviewProduct[]>(previewFallbackProducts);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveMessage, setSaveMessage] = useState('');
+  const previewSearch = '';
+  const previewSelectedBrands: string[] = [];
+  const previewSelectedCategories: string[] = [];
+  const previewPriceFrom = '';
+  const previewPriceTo = '';
 
   const applySettings = (settings: ReturnType<typeof normalizeStorefrontSettings>) => {
     setShopName(settings.shopName);
     setSubdomain(settings.subdomain);
     setShopColor(settings.shopColor);
-    setPriceFrom(settings.priceFrom);
-    setPriceTo(settings.priceTo);
     setOnlyStockProducts(settings.onlyStockProducts);
     setShowOutOfStockProducts(settings.showOutOfStockProducts);
     setFilterByCategory(settings.filterByCategory);
@@ -128,8 +151,6 @@ export default function LojaConfiguracoesPage() {
     setFilterByPrice(settings.filterByPrice);
     setWhatsapp(settings.whatsapp);
     setShowWhatsappButton(settings.showWhatsappButton);
-    setSelectedBrands(settings.selectedBrands);
-    setSelectedCategories(settings.selectedCategories);
   };
 
   useEffect(() => {
@@ -167,20 +188,7 @@ export default function LojaConfiguracoesPage() {
 
         if (catalogResponse.ok) {
           const payload = (await catalogResponse.json()) as { data?: CatalogProduct[] };
-          const mapped =
-            payload?.data
-              ?.filter((item) => item.active !== false)
-              .map<PreviewProduct>((item) => ({
-                id: item.id,
-                name: item.name?.trim() || 'Produto sem nome',
-                price: Math.max(0, toNumber(item.price)),
-                brand: item.brand?.trim() || 'Sem marca',
-                category: item.category?.trim() || 'Sem categoria',
-                imageUrl: item.image_url?.trim() || '',
-                inStock: toNumber(item.quantity) > 0
-              })) || [];
-
-          setCatalogProducts(mapped.length > 0 ? mapped : previewFallbackProducts);
+          setCatalogProducts(mapCatalogProducts(payload?.data));
         }
       } catch {
         // keep local and fallback values
@@ -209,14 +217,6 @@ export default function LojaConfiguracoesPage() {
     [catalogProducts]
   );
 
-  useEffect(() => {
-    setSelectedBrands((prev) => prev.filter((item) => includesToken(brandOptions, item)));
-  }, [brandOptions]);
-
-  useEffect(() => {
-    setSelectedCategories((prev) => prev.filter((item) => includesToken(categoryOptions, item)));
-  }, [categoryOptions]);
-
   const buildSettingsPayload = () =>
     normalizeStorefrontSettings({
       shopName,
@@ -229,10 +229,11 @@ export default function LojaConfiguracoesPage() {
       filterByPrice,
       whatsapp,
       showWhatsappButton,
-      selectedBrands,
-      selectedCategories,
-      priceFrom,
-      priceTo
+      // The right panel is preview-only; no preselected filters are configured here.
+      selectedBrands: [],
+      selectedCategories: [],
+      priceFrom: '',
+      priceTo: ''
     });
 
   const handleSave = async () => {
@@ -262,6 +263,17 @@ export default function LojaConfiguracoesPage() {
       saveStorefrontSettings(synced);
       emitStorefrontSettingsUpdated(synced);
       applySettings(synced);
+
+      try {
+        const catalogResponse = await fetch(`${API_BASE}/storefront/catalog`, { cache: 'no-store' });
+        if (catalogResponse.ok) {
+          const catalogPayload = (await catalogResponse.json()) as { data?: CatalogProduct[] };
+          setCatalogProducts(mapCatalogProducts(catalogPayload?.data));
+        }
+      } catch {
+        // keep current preview list when catalog refresh is unavailable
+      }
+
       setSaveStatus('saved');
       setSaveMessage('Configuracoes salvas.');
     } catch (error) {
@@ -273,44 +285,13 @@ export default function LojaConfiguracoesPage() {
   };
 
   const filteredProducts = useMemo(() => {
-    const from = Number(priceFrom.replace(',', '.')) || 0;
-    const to = Number(priceTo.replace(',', '.')) || Number.POSITIVE_INFINITY;
-    const searchTerm = normalizeToken(search);
-
     return catalogProducts.filter((item) => {
-      const matchesSearch = !searchTerm || normalizeToken(item.name).includes(searchTerm);
-      const matchesStockVisibility = showOutOfStockProducts || item.inStock;
-      const matchesBrand =
-        !filterByBrand ||
-        selectedBrands.length === 0 ||
-        selectedBrands.some((brand) => normalizeToken(brand) === normalizeToken(item.brand));
-      const matchesCategory =
-        !filterByCategory ||
-        selectedCategories.length === 0 ||
-        selectedCategories.some((category) => normalizeToken(category) === normalizeToken(item.category));
-      const matchesPrice = !filterByPrice || (item.price >= from && item.price <= to);
-      return matchesSearch && matchesStockVisibility && matchesBrand && matchesCategory && matchesPrice;
+      const matchesStockVisibility = (showOutOfStockProducts && !onlyStockProducts) || item.inStock;
+      return matchesStockVisibility;
     });
-  }, [
-    catalogProducts,
-    filterByBrand,
-    filterByCategory,
-    filterByPrice,
-    priceFrom,
-    priceTo,
-    search,
-    selectedBrands,
-    selectedCategories,
-    showOutOfStockProducts
-  ]);
+  }, [catalogProducts, onlyStockProducts, showOutOfStockProducts]);
 
-  const toggleInList = (value: string, setList: Dispatch<SetStateAction<string[]>>) => {
-    setList((prev) => {
-      const token = normalizeToken(value);
-      const exists = prev.some((item) => normalizeToken(item) === token);
-      return exists ? prev.filter((item) => normalizeToken(item) !== token) : [...prev, value];
-    });
-  };
+  const whatsappPhone = toWhatsappPhone(whatsapp);
 
   const publicStoreUrl = buildPublicStoreUrl(subdomain, typeof window !== 'undefined' ? window.location.origin : '');
 
@@ -421,13 +402,7 @@ export default function LojaConfiguracoesPage() {
                 role="switch"
                 aria-checked={filterByCategory}
                 aria-label="Possibilitar filtrar por categoria"
-                onClick={() =>
-                  setFilterByCategory((prev) => {
-                    const next = !prev;
-                    if (!next) setSelectedCategories([]);
-                    return next;
-                  })
-                }
+                onClick={() => setFilterByCategory((prev) => !prev)}
               >
                 <span />
               </button>
@@ -440,13 +415,7 @@ export default function LojaConfiguracoesPage() {
                 role="switch"
                 aria-checked={filterByBrand}
                 aria-label="Possibilitar filtrar por marca"
-                onClick={() =>
-                  setFilterByBrand((prev) => {
-                    const next = !prev;
-                    if (!next) setSelectedBrands([]);
-                    return next;
-                  })
-                }
+                onClick={() => setFilterByBrand((prev) => !prev)}
               >
                 <span />
               </button>
@@ -459,16 +428,7 @@ export default function LojaConfiguracoesPage() {
                 role="switch"
                 aria-checked={filterByPrice}
                 aria-label="Possibilitar filtrar por preço"
-                onClick={() =>
-                  setFilterByPrice((prev) => {
-                    const next = !prev;
-                    if (!next) {
-                      setPriceFrom('');
-                      setPriceTo('');
-                    }
-                    return next;
-                  })
-                }
+                onClick={() => setFilterByPrice((prev) => !prev)}
               >
                 <span />
               </button>
@@ -501,18 +461,21 @@ export default function LojaConfiguracoesPage() {
         <section className="store-config-preview">
           <div className="store-preview-top">
             <strong>{shopName || 'Loja'}</strong>
-            <label className="store-preview-search">
+            <label className="store-preview-search readonly">
               <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                value={previewSearch}
+                readOnly
                 placeholder="Buscar por produtos"
               />
               <IconSearch />
             </label>
+            <button type="button" className="store-preview-cart" aria-label="Carrinho" tabIndex={-1}>
+              <IconCart />
+            </button>
           </div>
 
           <div className="store-preview-body">
-            <aside className="store-preview-filters">
+            <aside className="store-preview-filters readonly">
               {filterByBrand ? (
                 <>
                   <strong>Marcas</strong>
@@ -521,11 +484,7 @@ export default function LojaConfiguracoesPage() {
                   ) : (
                     brandOptions.map((brand) => (
                       <label key={brand} className="store-check">
-                        <input
-                          type="checkbox"
-                          checked={includesToken(selectedBrands, brand)}
-                          onChange={() => toggleInList(brand, setSelectedBrands)}
-                        />
+                        <input type="checkbox" checked={includesToken(previewSelectedBrands, brand)} readOnly />
                         <span>{brand}</span>
                       </label>
                     ))
@@ -541,11 +500,7 @@ export default function LojaConfiguracoesPage() {
                   ) : (
                     categoryOptions.map((category) => (
                       <label key={category} className="store-check">
-                        <input
-                          type="checkbox"
-                          checked={includesToken(selectedCategories, category)}
-                          onChange={() => toggleInList(category, setSelectedCategories)}
-                        />
+                        <input type="checkbox" checked={includesToken(previewSelectedCategories, category)} readOnly />
                         <span>{category}</span>
                       </label>
                     ))
@@ -559,14 +514,14 @@ export default function LojaConfiguracoesPage() {
                   <div className="store-price-range">
                     <label>
                       De
-                      <input value={priceFrom} onChange={(event) => setPriceFrom(event.target.value)} placeholder="R$ 0,00" />
+                      <input value={previewPriceFrom} readOnly placeholder="R$ 0,00" />
                     </label>
                     <label>
                       Até
-                      <input value={priceTo} onChange={(event) => setPriceTo(event.target.value)} placeholder="R$ 0,00" />
+                      <input value={previewPriceTo} readOnly placeholder="R$ 0,00" />
                     </label>
                   </div>
-                  <button type="button" className="store-btn primary full">
+                  <button type="button" className="store-btn primary full" aria-disabled="true">
                     Aplicar
                   </button>
                 </>
@@ -581,14 +536,32 @@ export default function LojaConfiguracoesPage() {
                   </div>
                   <strong>{product.name}</strong>
                   <span>{formatPrice(product.price)}</span>
-                  {!product.inStock ? <em>Sem estoque</em> : null}
-                  <button type="button" className="store-btn primary" disabled={onlyStockProducts && !product.inStock}>
-                    {onlyStockProducts && !product.inStock ? 'Indisponível' : 'Adicionar à sacola'}
-                  </button>
+                  {!product.inStock ? <em>Produto esgotado</em> : null}
+                  {!onlyStockProducts || product.inStock ? (
+                    <button type="button" className="store-btn primary">
+                      Adicionar à sacola
+                    </button>
+                  ) : null}
                 </article>
               ))}
             </div>
           </div>
+
+          {showWhatsappButton ? (
+            <a
+              href={whatsappPhone ? `https://wa.me/${whatsappPhone}` : '#'}
+              target="_blank"
+              rel="noreferrer"
+              className={`store-preview-whatsapp${whatsappPhone ? '' : ' disabled'}`}
+              aria-label="Abrir WhatsApp da loja"
+              aria-disabled={!whatsappPhone}
+              onClick={(event) => {
+                if (!whatsappPhone) event.preventDefault();
+              }}
+            >
+              <IconWhatsapp />
+            </a>
+          ) : null}
         </section>
       </section>
     </main>

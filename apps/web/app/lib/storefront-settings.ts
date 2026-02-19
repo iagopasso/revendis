@@ -31,11 +31,20 @@ export type StorefrontRuntimePromotion = {
   name: string;
   discount: number;
   productIds: string[];
+  mode?: 'global' | 'per_product';
+  discountsByProduct?: Record<string, number>;
+  startDate?: string;
+  endDate?: string;
+  status?: 'active' | 'scheduled' | 'ended';
+  createdAt?: string;
 };
 
 export type StorefrontRuntimeState = {
   activeProducts: StorefrontRuntimeProduct[];
   promotions: StorefrontRuntimePromotion[];
+  hiddenProductIds: string[];
+  productDescriptions: Record<string, string>;
+  storePriceOverrides: Record<string, number>;
 };
 
 export const DEFAULT_STOREFRONT_SETTINGS: StorefrontSettings = {
@@ -57,7 +66,10 @@ export const DEFAULT_STOREFRONT_SETTINGS: StorefrontSettings = {
 
 export const DEFAULT_STOREFRONT_RUNTIME_STATE: StorefrontRuntimeState = {
   activeProducts: [],
-  promotions: []
+  promotions: [],
+  hiddenProductIds: [],
+  productDescriptions: {},
+  storePriceOverrides: {}
 };
 
 export const STOREFRONT_SETTINGS_EVENT = 'revendis:storefront-settings-updated';
@@ -180,11 +192,30 @@ const normalizeRuntimePromotion = (item: unknown): StorefrontRuntimePromotion | 
   if (!item || typeof item !== 'object') return null;
   const record = item as Partial<StorefrontRuntimePromotion>;
   if (typeof record.id !== 'string' || typeof record.name !== 'string') return null;
+  const discountsByProduct =
+    record.discountsByProduct && typeof record.discountsByProduct === 'object'
+      ? Object.fromEntries(
+          Object.entries(record.discountsByProduct)
+            .filter(([key]) => typeof key === 'string' && key.trim().length > 0)
+            .map(([key, value]) => [key, Math.max(0, Number(value) || 0)])
+        )
+      : undefined;
+  const mode = record.mode === 'per_product' ? 'per_product' : record.mode === 'global' ? 'global' : undefined;
+  const status =
+    record.status === 'ended' || record.status === 'scheduled' || record.status === 'active'
+      ? record.status
+      : undefined;
   return {
     id: record.id,
     name: record.name,
     discount: Number(record.discount) || 0,
-    productIds: toStringArray(record.productIds)
+    productIds: toStringArray(record.productIds),
+    mode,
+    discountsByProduct: discountsByProduct && Object.keys(discountsByProduct).length ? discountsByProduct : undefined,
+    startDate: typeof record.startDate === 'string' ? record.startDate : undefined,
+    endDate: typeof record.endDate === 'string' ? record.endDate : undefined,
+    status,
+    createdAt: typeof record.createdAt === 'string' ? record.createdAt : undefined
   };
 };
 
@@ -194,13 +225,35 @@ export const loadStorefrontRuntimeState = (): StorefrontRuntimeState | null => {
     const raw = window.localStorage.getItem(STOREFRONT_RUNTIME_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StorefrontRuntimeState>;
+    const hiddenProductIds = Array.isArray(parsed.hiddenProductIds)
+      ? parsed.hiddenProductIds.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean)
+      : [];
+    const productDescriptions =
+      parsed.productDescriptions && typeof parsed.productDescriptions === 'object'
+        ? Object.fromEntries(
+            Object.entries(parsed.productDescriptions)
+              .filter(([key, value]) => typeof key === 'string' && typeof value === 'string' && key.trim().length > 0)
+              .map(([key, value]) => [key.trim(), value])
+          )
+        : {};
+    const storePriceOverrides =
+      parsed.storePriceOverrides && typeof parsed.storePriceOverrides === 'object'
+        ? Object.fromEntries(
+            Object.entries(parsed.storePriceOverrides)
+              .filter(([key, value]) => typeof key === 'string' && key.trim().length > 0 && Number.isFinite(Number(value)))
+              .map(([key, value]) => [key.trim(), Math.max(0, Number(value) || 0)])
+          )
+        : {};
     return {
       activeProducts: Array.isArray(parsed.activeProducts)
         ? parsed.activeProducts.map(normalizeRuntimeProduct).filter((item): item is StorefrontRuntimeProduct => Boolean(item))
         : [],
       promotions: Array.isArray(parsed.promotions)
         ? parsed.promotions.map(normalizeRuntimePromotion).filter((item): item is StorefrontRuntimePromotion => Boolean(item))
-        : []
+        : [],
+      hiddenProductIds,
+      productDescriptions,
+      storePriceOverrides
     };
   } catch {
     return null;
@@ -213,7 +266,10 @@ export const saveStorefrontRuntimeState = (state: StorefrontRuntimeState) => {
     STOREFRONT_RUNTIME_STORAGE_KEY,
     JSON.stringify({
       activeProducts: state.activeProducts,
-      promotions: state.promotions
+      promotions: state.promotions,
+      hiddenProductIds: state.hiddenProductIds,
+      productDescriptions: state.productDescriptions,
+      storePriceOverrides: state.storePriceOverrides
     })
   );
 };

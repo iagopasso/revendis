@@ -44,6 +44,6 @@ start_service() {
 
 start_service "backend" "npm --workspace backend run dev" "3001"
 start_service "web" "npm --workspace web run dev" "3000"
-start_service "mobile" "npm --workspace mobile run dev" "8081"
+start_service "mobile" "npm --workspace mobile run dev" "8082"
 
 echo "Logs in $LOG_DIR"

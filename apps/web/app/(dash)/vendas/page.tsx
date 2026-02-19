@@ -10,6 +10,10 @@ import {
 } from '../lib';
 import SalesPanel from './sales-panel';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+
 type Sale = {
   id: string;
   status: string;
@@ -115,7 +119,9 @@ export default async function VendasPage({
     { label: 'A entregar', value: 'pending' },
     { label: 'Ja entregue', value: 'delivered' }
   ];
-  if (deliveryFilter === 'confirmed') {
+  if (deliveryFilter === 'not-delivered') {
+    deliveryOptions.unshift({ label: 'Nao entregue', value: 'not-delivered' });
+  } else if (deliveryFilter === 'confirmed') {
     deliveryOptions.unshift({ label: 'Confirmado', value: 'confirmed' });
   } else if (deliveryFilter === 'cancelled') {
     deliveryOptions.unshift({ label: 'Cancelado', value: 'cancelled' });
@@ -164,6 +170,8 @@ export default async function VendasPage({
     const matchesDelivery =
       !deliveryFilter
         ? true
+        : deliveryFilter === 'not-delivered'
+          ? sale.status !== 'delivered' && sale.status !== 'cancelled'
         : deliveryFilter === 'delivered'
           ? sale.status === 'delivered' || sale.status === 'confirmed'
           : sale.status === deliveryFilter;
