@@ -18,6 +18,7 @@ export const naturaConsultantCatalogSchema = z
 export const catalogBrandsSyncSchema = z
   .object({
     brands: z.array(brandSchema).optional(),
+    allBrands: z.boolean().optional(),
     limit: z.number().int().positive().max(2000).optional(),
     inStockOnly: z.boolean().optional(),
     deactivateMissing: z.boolean().optional(),
@@ -28,6 +29,7 @@ export const catalogBrandsSyncSchema = z
 export const catalogBrandsPreloadSchema = z
   .object({
     brands: z.array(brandSchema).optional(),
+    allBrands: z.boolean().optional(),
     limit: z.number().int().positive().max(10000).optional(),
     inStockOnly: z.boolean().optional(),
     clearMissing: z.boolean().optional(),

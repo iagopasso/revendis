@@ -758,7 +758,8 @@ export default function InventoryPanel({
     setCatalogError(null);
     try {
       const params = new URLSearchParams({
-        limit: '10000'
+        limit: '10000',
+        allBrands: 'true'
       });
       const endpoint = `${API_BASE}/catalog/preloaded/products?${params.toString()}`;
       const res = await fetch(endpoint, {
@@ -819,6 +820,7 @@ export default function InventoryPanel({
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',
         body: JSON.stringify({
+          allBrands: true,
           inStockOnly: false,
           clearMissing: true,
           allowSampleFallback: true,

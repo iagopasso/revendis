@@ -1,7 +1,14 @@
 import type { ReactNode } from 'react';
+import { redirect } from 'next/navigation';
+import { auth } from '../../auth';
 import Sidebar from './sidebar';
 
-export default function DashboardLayout({ children }: { children: ReactNode }) {
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  const session = await auth();
+  if (!session) {
+    redirect('/login');
+  }
+
   return (
     <div className="page">
       <Sidebar />

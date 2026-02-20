@@ -147,11 +147,27 @@ type FetchJsonResult = {
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 8000;
 const MAX_VTEX_PAGES = 20;
 const VTEX_PAGE_SIZE = 50;
-const MAX_SHOPIFY_PAGES = 12;
+const VTEX_MAX_PAGES_BY_BRAND: Partial<Record<CatalogBrandSlug, number>> = {
+  'mary-kay': 60,
+  eudora: 80,
+  boticario: 80,
+  oui: 80
+};
+const MAX_SHOPIFY_PAGES = 40;
 const SHOPIFY_PAGE_SIZE = 250;
 const MAX_SITEMAP_FILES = 25;
 const MAX_SITEMAP_PRODUCT_URLS = 220;
 const MAX_SITEMAP_FETCH_CONCURRENCY = 6;
+const TRAY_PAGE_SIZE = 50;
+const MAX_TRAY_PAGES = 80;
+const DIAMANTE_PRODUCT_SITEMAP_PREFIX = '/sitemap/product-';
+const MAX_DIAMANTE_PRODUCT_URLS = 1200;
+const AVON_BFF_PATH = '/bff-app-avon-brazil/search';
+const AVON_BFF_CATEGORY = 'todos-produtos';
+const AVON_BFF_PAGE_SIZE = 200;
+const MAX_AVON_BFF_PAGES = 30;
+const DEFAULT_AVON_BFF_API_KEY = '39643690-ecee-455d-8d8c-f313cef95da6';
+const DEFAULT_AVON_BFF_TENANT = 'brazil-avon';
 const AVON_PATHS = ['/', '/c/perfumaria', '/c/maquiagem', '/c/corpo-e-banho'] as const;
 const GENERIC_BRAND_PATHS: Record<
   Exclude<CatalogBrandSlug, 'avon' | 'mary-kay' | 'tupperware' | 'eudora' | 'boticario' | 'oui' | 'natura'>,
@@ -255,10 +271,43 @@ const normalizeBarcode = (value: unknown) => {
   return null;
 };
 
+const toBoolean = (value: unknown, fallback: boolean) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value > 0;
+  if (typeof value === 'string') {
+    const normalized = normalizeText(value).toLowerCase();
+    if (!normalized) return fallback;
+    if (
+      ['1', 'true', 'sim', 'yes', 'y', 'disponivel', 'available', 'instock', 'in stock'].includes(
+        normalized
+      )
+    ) {
+      return true;
+    }
+    if (
+      ['0', 'false', 'nao', 'no', 'n', 'indisponivel', 'unavailable', 'outofstock', 'out of stock'].includes(
+        normalized
+      )
+    ) {
+      return false;
+    }
+  }
+  return fallback;
+};
+
 const slugifyCategory = (value: string) => {
   const normalized = normalizeBrandToken(value);
   return normalized || 'catalogo';
 };
+
+const slugifyUrlSegment = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .trim();
 
 const hashId = (value: string) =>
   createHash('sha1').update(value, 'utf8').digest('hex').slice(0, 16).toUpperCase();
@@ -523,11 +572,13 @@ const fetchTextWithTimeout = async ({
 const fetchJsonWithTimeout = async ({
   url,
   timeoutMs = DEFAULT_UPSTREAM_TIMEOUT_MS,
-  signal
+  signal,
+  headers
 }: {
   url: string;
   timeoutMs?: number;
   signal?: AbortSignal;
+  headers?: Record<string, string>;
 }): Promise<FetchJsonResult> => {
   const wrapped = withTimeoutController(timeoutMs, signal);
   try {
@@ -535,7 +586,8 @@ const fetchJsonWithTimeout = async ({
       headers: {
         accept: 'application/json,text/plain,*/*',
         'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
-        'user-agent': 'Mozilla/5.0 (compatible; RevendisCatalogBot/1.0)'
+        'user-agent': 'Mozilla/5.0 (compatible; RevendisCatalogBot/1.0)',
+        ...(headers || {})
       },
       signal: wrapped.signal
     });
@@ -747,6 +799,605 @@ const parseAvonCatalogProducts = (html: string, sourcePath: string): BrandCatalo
   return results;
 };
 
+const resolveAvonBffProductImage = (value: unknown) => {
+  const toImagePath = (entry: unknown) => {
+    if (typeof entry === 'string') return entry;
+    if (!entry || typeof entry !== 'object') return '';
+    const image = entry as Record<string, unknown>;
+    if (typeof image.absURL === 'string') return image.absURL;
+    if (typeof image.url === 'string') return image.url;
+    if (typeof image.src === 'string') return image.src;
+    return '';
+  };
+
+  const resolveFromList = (list: unknown[]) => {
+    for (const item of list) {
+      const resolved = toAbsoluteUrl(BRAND_BASE_URL.avon, toImagePath(item));
+      if (resolved) return resolved;
+    }
+    return null;
+  };
+
+  if (Array.isArray(value)) {
+    return resolveFromList(value);
+  }
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const candidates = ['large', 'medium', 'small', 'desktop', 'mobile']
+    .map((key) => raw[key])
+    .filter((item): item is unknown[] => Array.isArray(item))
+    .flatMap((bucket) => bucket);
+
+  const preferred = resolveFromList(candidates);
+  if (preferred) return preferred;
+
+  return resolveFromList(
+    Object.values(raw)
+      .filter((entry): entry is unknown[] => Array.isArray(entry))
+      .flatMap((entry) => entry)
+  );
+};
+
+const toAvonProductUrl = ({ productId, name }: { productId: string; name: string }) => {
+  const slug = slugifyUrlSegment(name) || slugifyUrlSegment(productId) || 'produto';
+  return `${BRAND_BASE_URL.avon}/p/${slug}/${productId}`;
+};
+
+const mapAvonBffProduct = (raw: Record<string, unknown>): BrandCatalogProduct | null => {
+  const productId = normalizeText(
+    typeof raw.productId === 'string'
+      ? raw.productId
+      : typeof raw.productIdView === 'string'
+        ? raw.productIdView
+        : ''
+  );
+  if (!productId) return null;
+
+  const friendlyName = normalizeText(typeof raw.friendlyName === 'string' ? raw.friendlyName : '');
+  const name = normalizeText(
+    typeof raw.name === 'string' ? raw.name : friendlyName || productId
+  );
+  if (!name) return null;
+
+  const priceRaw =
+    raw.price && typeof raw.price === 'object' ? (raw.price as Record<string, unknown>) : null;
+  const salesRaw =
+    priceRaw?.sales && typeof priceRaw.sales === 'object'
+      ? (priceRaw.sales as Record<string, unknown>)
+      : null;
+  const listRaw =
+    priceRaw?.list && typeof priceRaw.list === 'object'
+      ? (priceRaw.list as Record<string, unknown>)
+      : null;
+
+  const url = toAbsoluteUrl(BRAND_BASE_URL.avon, typeof raw.url === 'string' ? raw.url : '') || toAvonProductUrl({
+    productId,
+    name: friendlyName || name
+  });
+
+  return {
+    id: productId,
+    sku: productId,
+    barcode: null,
+    name,
+    brand: normalizeText(typeof raw.brand === 'string' ? raw.brand : CATALOG_BRAND_LABELS.avon),
+    price: toPrice(
+      salesRaw?.value ??
+        salesRaw?.decimalPrice ??
+        listRaw?.value ??
+        listRaw?.decimalPrice ??
+        priceRaw?.value ??
+        null
+    ),
+    inStock:
+      typeof raw.inStock === 'boolean'
+        ? raw.inStock
+        : typeof raw.orderable === 'boolean'
+          ? raw.orderable
+          : true,
+    url,
+    imageUrl: resolveAvonBffProductImage(raw.images),
+    sourceCategory: slugifyCategory(
+      normalizeText(
+        typeof raw.categoryId === 'string'
+          ? raw.categoryId
+          : typeof raw.classificationId === 'string'
+            ? raw.classificationId
+            : 'catalogo'
+      )
+    ),
+    sourceBrand: 'avon'
+  };
+};
+
+const fetchAvonBffCatalogProducts = async ({
+  signal
+}: {
+  signal?: AbortSignal;
+}): Promise<UpstreamFetchResult> => {
+  const deduped = new Map<string, BrandCatalogProduct>();
+  const failedSources: string[] = [];
+  const apiKey = (process.env.AVON_BFF_API_KEY || DEFAULT_AVON_BFF_API_KEY).trim();
+  const tenant = (process.env.AVON_BFF_TENANT || DEFAULT_AVON_BFF_TENANT).trim();
+
+  if (!apiKey || !tenant) {
+    return {
+      products: [],
+      failedSources: ['avon_bff_missing_credentials']
+    };
+  }
+
+  for (let page = 0; page < MAX_AVON_BFF_PAGES; page += 1) {
+    const start = page * AVON_BFF_PAGE_SIZE;
+    const searchUrl = new URL(`${BRAND_BASE_URL.avon}${AVON_BFF_PATH}`);
+    searchUrl.searchParams.set('apiMode', 'product');
+    searchUrl.searchParams.set('count', String(AVON_BFF_PAGE_SIZE));
+    searchUrl.searchParams.set('start', String(start));
+    searchUrl.searchParams.set('refine_1', `cgid=${AVON_BFF_CATEGORY}`);
+
+    try {
+      const response = await fetchJsonWithTimeout({
+        url: searchUrl.toString(),
+        signal,
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          x_use_Slas: 'true',
+          tenant_id: tenant,
+          client_app: 'Web'
+        }
+      });
+
+      if (!response.ok || !response.json || typeof response.json !== 'object') {
+        failedSources.push(searchUrl.toString());
+        break;
+      }
+
+      const body = response.json as Record<string, unknown>;
+      const rawProducts = Array.isArray(body.products) ? body.products : [];
+      const totalRaw = typeof body.total === 'number' ? body.total : Number(body.total);
+      const total = Number.isFinite(totalRaw) ? totalRaw : null;
+
+      if (rawProducts.length === 0) {
+        break;
+      }
+
+      rawProducts.forEach((item) => {
+        if (!item || typeof item !== 'object') return;
+        const mapped = mapAvonBffProduct(item as Record<string, unknown>);
+        if (mapped) {
+          deduped.set(mapped.id, mapped);
+        }
+      });
+
+      if (total !== null) {
+        if (start + rawProducts.length >= total) {
+          break;
+        }
+      } else if (rawProducts.length < AVON_BFF_PAGE_SIZE) {
+        break;
+      }
+    } catch {
+      failedSources.push(searchUrl.toString());
+      break;
+    }
+  }
+
+  return {
+    products: Array.from(deduped.values()),
+    failedSources: Array.from(new Set(failedSources))
+  };
+};
+
+const resolveTrayCatalogUrl = (baseUrl: string, value: unknown) => {
+  if (typeof value === 'string') {
+    return toAbsoluteUrl(baseUrl, value);
+  }
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  return toAbsoluteUrl(
+    baseUrl,
+    typeof raw.https === 'string'
+      ? raw.https
+      : typeof raw.http === 'string'
+        ? raw.http
+        : typeof raw.url === 'string'
+          ? raw.url
+          : ''
+  );
+};
+
+const resolveTrayCatalogImageUrl = (baseUrl: string, value: unknown) => {
+  if (typeof value === 'string') {
+    return toAbsoluteUrl(baseUrl, value);
+  }
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const raw = value as Record<string, unknown>;
+  if (raw.ProductImage && typeof raw.ProductImage === 'object') {
+    return resolveTrayCatalogImageUrl(baseUrl, raw.ProductImage);
+  }
+
+  return toAbsoluteUrl(
+    baseUrl,
+    typeof raw.https === 'string'
+      ? raw.https
+      : typeof raw.http === 'string'
+        ? raw.http
+        : typeof raw.src === 'string'
+          ? raw.src
+          : typeof raw.url === 'string'
+            ? raw.url
+            : ''
+  );
+};
+
+const mapTrayCatalogProduct = ({
+  raw,
+  sourceBrand,
+  baseUrl
+}: {
+  raw: Record<string, unknown>;
+  sourceBrand: CatalogBrandSlug;
+  baseUrl: string;
+}): BrandCatalogProduct | null => {
+  const payload =
+    raw.Product && typeof raw.Product === 'object'
+      ? (raw.Product as Record<string, unknown>)
+      : raw;
+
+  const id = normalizeText(String(payload.id ?? ''));
+  const name = normalizeText(
+    typeof payload.name === 'string' ? payload.name : typeof payload.model === 'string' ? payload.model : ''
+  );
+  if (!id || !name) return null;
+
+  const trayUrl = resolveTrayCatalogUrl(baseUrl, payload.url);
+  const url = trayUrl || `${baseUrl}/produto/${slugifyUrlSegment(name) || id}`;
+
+  const images = Array.isArray(payload.ProductImage) ? payload.ProductImage : [];
+  const firstImage = images[0] || null;
+  const imageUrl = resolveTrayCatalogImageUrl(baseUrl, firstImage);
+
+  const sku =
+    normalizeText(typeof payload.model === 'string' ? payload.model : '') ||
+    normalizeText(typeof payload.ean === 'string' ? payload.ean : '') ||
+    id;
+  const barcode = normalizeBarcode(payload.ean) || normalizeBarcode(sku) || null;
+  const categoryRaw =
+    typeof payload.category_id === 'string' || typeof payload.category_id === 'number'
+      ? String(payload.category_id)
+      : 'catalogo';
+
+  return {
+    id,
+    sku,
+    barcode,
+    name,
+    brand: normalizeText(typeof payload.brand === 'string' ? payload.brand : CATALOG_BRAND_LABELS[sourceBrand]),
+    price: toPrice(payload.promotional_price ?? payload.price ?? null),
+    inStock: toBoolean(payload.available_in_store ?? payload.available ?? payload.availability, true),
+    url,
+    imageUrl,
+    sourceCategory: slugifyCategory(categoryRaw),
+    sourceBrand
+  };
+};
+
+const fetchTrayCatalogProducts = async ({
+  brand,
+  baseUrl,
+  path = '/web_api/products',
+  signal,
+  filterFn
+}: {
+  brand: CatalogBrandSlug;
+  baseUrl: string;
+  path?: string;
+  signal?: AbortSignal;
+  filterFn?: (product: BrandCatalogProduct) => boolean;
+}): Promise<UpstreamFetchResult> => {
+  const deduped = new Map<string, BrandCatalogProduct>();
+  const failedSources: string[] = [];
+  const endpoint = toAbsoluteUrl(baseUrl, path);
+
+  if (!endpoint) {
+    return {
+      products: [],
+      failedSources: [`${baseUrl}${path}`]
+    };
+  }
+
+  for (let page = 1; page <= MAX_TRAY_PAGES; page += 1) {
+    const url = new URL(endpoint);
+    url.searchParams.set('page', String(page));
+    url.searchParams.set('limit', String(TRAY_PAGE_SIZE));
+
+    try {
+      const response = await fetchJsonWithTimeout({
+        url: url.toString(),
+        signal
+      });
+
+      if (!response.ok || !response.json || typeof response.json !== 'object') {
+        failedSources.push(url.toString());
+        break;
+      }
+
+      const body = response.json as Record<string, unknown>;
+      const productsRaw = Array.isArray(body.Products) ? body.Products : [];
+      if (productsRaw.length === 0) {
+        break;
+      }
+
+      productsRaw.forEach((entry) => {
+        if (!entry || typeof entry !== 'object') return;
+        const mapped = mapTrayCatalogProduct({
+          raw: entry as Record<string, unknown>,
+          sourceBrand: brand,
+          baseUrl
+        });
+        if (mapped && (!filterFn || filterFn(mapped))) {
+          deduped.set(mapped.id, mapped);
+        }
+      });
+
+      const paging =
+        body.paging && typeof body.paging === 'object'
+          ? (body.paging as Record<string, unknown>)
+          : null;
+      const totalRaw = typeof paging?.total === 'number' ? paging.total : Number(paging?.total);
+      const total = Number.isFinite(totalRaw) ? totalRaw : null;
+
+      if (total !== null && deduped.size >= total) {
+        break;
+      }
+      if (productsRaw.length < TRAY_PAGE_SIZE) {
+        break;
+      }
+    } catch {
+      failedSources.push(url.toString());
+      break;
+    }
+  }
+
+  return {
+    products: Array.from(deduped.values()),
+    failedSources: Array.from(new Set(failedSources))
+  };
+};
+
+const fetchExtaseCatalogProducts = async ({
+  signal
+}: {
+  signal?: AbortSignal;
+}): Promise<UpstreamFetchResult> => {
+  const tray = await fetchTrayCatalogProducts({
+    brand: 'extase',
+    baseUrl: BRAND_BASE_URL.extase,
+    filterFn: BRAND_UPSTREAM_PRODUCT_FILTERS.extase,
+    signal
+  });
+
+  if (tray.products.length > 0 && tray.failedSources.length === 0) {
+    return tray;
+  }
+
+  const fallback = await fetchGenericBrandCatalogProducts({
+    brand: 'extase',
+    baseUrl: BRAND_BASE_URL.extase,
+    paths: GENERIC_BRAND_PATHS.extase,
+    signal,
+    filterFn: BRAND_UPSTREAM_PRODUCT_FILTERS.extase
+  });
+
+  return mergeUpstreamResults(tray, fallback);
+};
+
+const parseDiamanteCatalogProductFromPage = ({
+  html,
+  productUrl
+}: {
+  html: string;
+  productUrl: string;
+}): BrandCatalogProduct | null => {
+  const name = normalizeText(
+    html.match(/<h1[^>]*itemprop=["']name["'][^>]*>([^<]+)<\/h1>/i)?.[1] ||
+      html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"]+)["']/i)?.[1] ||
+      ''
+  );
+  if (!name) return null;
+
+  const sku = normalizeText(
+    html.match(/<span[^>]*itemprop=["']sku["'][^>]*>([^<]+)<\/span>/i)?.[1] ||
+      html.match(/<div[^>]*class=["'][^"']*produto-sku[^"']*["'][^>]*>([^<]+)<\/div>/i)?.[1] ||
+      ''
+  );
+  const productId = normalizeText(html.match(/data-produto-id=["']([^"']+)["']/i)?.[1] || '');
+  const priceValue =
+    html.match(/<meta[^>]*itemprop=["']price["'][^>]*content=["']([^"]+)["']/i)?.[1] ||
+    html.match(/data-sell-price=["']([^"']+)["']/i)?.[1] ||
+    html.match(/var\s+produto_preco\s*=\s*([0-9.,]+)/i)?.[1] ||
+    null;
+  const availability = normalizeText(
+    html.match(/<meta[^>]*itemprop=["']availability["'][^>]*content=["']([^"]+)["']/i)?.[1] ||
+      html.match(/<div[^>]*class=["'][^"']*acoes-produto[^"']*(disponivel|indisponivel)[^"']*["']/i)?.[1] ||
+      ''
+  ).toLowerCase();
+
+  const imageUrl = toAbsoluteUrl(
+    BRAND_BASE_URL.diamante,
+    html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"]+)["']/i)?.[1] || ''
+  );
+
+  const categorySlug = normalizeText(
+    html.match(
+      /<li>\s*<a href=["']https?:\/\/www\.diamanteprofissional\.com\.br\/([^"\/?#]+)[^"']*["']/i
+    )?.[1] || 'catalogo'
+  );
+
+  return {
+    id: productId || sku || `DIAMANTE-${hashId(productUrl)}`,
+    sku: sku || productId || `DIAMANTE-${hashId(productUrl)}`,
+    barcode: normalizeBarcode(sku),
+    name,
+    brand: CATALOG_BRAND_LABELS.diamante,
+    price: toPrice(priceValue),
+    inStock: availability
+      ? (availability.includes('instock') || availability.includes('disponivel')) &&
+        !availability.includes('outofstock') &&
+        !availability.includes('indisponivel')
+      : !html.toLowerCase().includes('esgotado'),
+    url: productUrl,
+    imageUrl,
+    sourceCategory: slugifyCategory(categorySlug),
+    sourceBrand: 'diamante'
+  };
+};
+
+const fetchDiamanteSitemapProductUrls = async ({
+  signal
+}: {
+  signal?: AbortSignal;
+}) => {
+  const failedSources: string[] = [];
+  const collected = new Set<string>();
+  const sitemapIndexUrl = `${BRAND_BASE_URL.diamante}/sitemap.xml`;
+  let productSitemaps: string[] = [];
+
+  try {
+    const xml = await fetchTextWithTimeout({
+      url: sitemapIndexUrl,
+      signal
+    });
+    productSitemaps = parseXmlLocTags(xml)
+      .map((loc) => toAbsoluteUrl(BRAND_BASE_URL.diamante, loc))
+      .filter((loc): loc is string => Boolean(loc))
+      .filter((loc) => {
+        const pathname = (() => {
+          try {
+            return new URL(loc).pathname.toLowerCase();
+          } catch {
+            return '';
+          }
+        })();
+        return pathname.includes(DIAMANTE_PRODUCT_SITEMAP_PREFIX) && pathname.endsWith('.xml');
+      });
+  } catch {
+    failedSources.push(sitemapIndexUrl);
+  }
+
+  if (productSitemaps.length === 0) {
+    productSitemaps = [`${BRAND_BASE_URL.diamante}/sitemap/product-1.xml`];
+  }
+
+  for (const sitemapUrl of productSitemaps) {
+    try {
+      const xml = await fetchTextWithTimeout({
+        url: sitemapUrl,
+        signal
+      });
+      parseXmlLocTags(xml)
+        .map((loc) => toAbsoluteUrl(BRAND_BASE_URL.diamante, loc))
+        .filter((loc): loc is string => Boolean(loc))
+        .filter((loc) => {
+          const pathname = (() => {
+            try {
+              return new URL(loc).pathname.toLowerCase();
+            } catch {
+              return '';
+            }
+          })();
+          return pathname.length > 1 && !pathname.endsWith('.xml') && !pathname.includes('/sitemap/');
+        })
+        .slice(0, MAX_DIAMANTE_PRODUCT_URLS)
+        .forEach((loc) => {
+          if (collected.size < MAX_DIAMANTE_PRODUCT_URLS) {
+            collected.add(loc);
+          }
+        });
+    } catch {
+      failedSources.push(sitemapUrl);
+    }
+  }
+
+  return {
+    urls: Array.from(collected),
+    failedSources: Array.from(new Set(failedSources))
+  };
+};
+
+const fetchDiamanteCatalogProductsFromSitemap = async ({
+  signal
+}: {
+  signal?: AbortSignal;
+}): Promise<UpstreamFetchResult> => {
+  const sitemap = await fetchDiamanteSitemapProductUrls({ signal });
+  const failedSources = [...sitemap.failedSources];
+  const deduped = new Map<string, BrandCatalogProduct>();
+  const uniqueUrls = Array.from(new Set(sitemap.urls)).slice(0, MAX_DIAMANTE_PRODUCT_URLS);
+  const concurrency = Math.min(MAX_SITEMAP_FETCH_CONCURRENCY, Math.max(1, uniqueUrls.length));
+  let pointer = 0;
+
+  const workers = Array.from({ length: concurrency }).map(async () => {
+    while (pointer < uniqueUrls.length) {
+      const current = uniqueUrls[pointer];
+      pointer += 1;
+      if (!current) continue;
+
+      try {
+        const html = await fetchTextWithTimeout({
+          url: current,
+          signal
+        });
+        const parsed = parseDiamanteCatalogProductFromPage({
+          html,
+          productUrl: current
+        });
+        if (parsed) {
+          deduped.set(parsed.id, parsed);
+        }
+      } catch {
+        failedSources.push(current);
+      }
+    }
+  });
+
+  await Promise.all(workers);
+
+  return {
+    products: Array.from(deduped.values()),
+    failedSources: Array.from(new Set(failedSources))
+  };
+};
+
+const fetchDiamanteCatalogProducts = async ({
+  signal
+}: {
+  signal?: AbortSignal;
+}): Promise<UpstreamFetchResult> => {
+  const dedicated = await fetchDiamanteCatalogProductsFromSitemap({ signal });
+  if (dedicated.products.length > 0 && dedicated.failedSources.length === 0) {
+    return dedicated;
+  }
+
+  const fallback = await fetchGenericBrandCatalogProducts({
+    brand: 'diamante',
+    baseUrl: BRAND_BASE_URL.diamante,
+    paths: GENERIC_BRAND_PATHS.diamante,
+    signal
+  });
+
+  return mergeUpstreamResults(dedicated, fallback);
+};
+
 const mapVtexProduct = ({
   raw,
   sourceBrand,
@@ -828,18 +1479,22 @@ const fetchVtexCatalogProducts = async ({
   brand,
   baseUrl,
   filterFn,
+  maxPages = VTEX_MAX_PAGES_BY_BRAND[brand] || MAX_VTEX_PAGES,
   signal
 }: {
   brand: CatalogBrandSlug;
   baseUrl: string;
   filterFn?: (product: BrandCatalogProduct) => boolean;
+  maxPages?: number;
   signal?: AbortSignal;
 }): Promise<UpstreamFetchResult> => {
   const products: BrandCatalogProduct[] = [];
   const deduped = new Map<string, BrandCatalogProduct>();
   const failedSources: string[] = [];
 
-  for (let page = 0; page < MAX_VTEX_PAGES; page += 1) {
+  const safeMaxPages = Math.max(1, Math.min(200, Math.trunc(maxPages)));
+
+  for (let page = 0; page < safeMaxPages; page += 1) {
     const from = page * VTEX_PAGE_SIZE;
     const to = from + VTEX_PAGE_SIZE - 1;
     const url = `${baseUrl.replace(/\/$/, '')}/api/catalog_system/pub/products/search?_from=${from}&_to=${to}`;
@@ -984,7 +1639,7 @@ const fetchMaryKayCatalogProducts = async ({
     signal
   });
 
-const fetchAvonCatalogProducts = async ({
+const fetchAvonCatalogProductsFromPages = async ({
   signal
 }: {
   signal?: AbortSignal;
@@ -1009,6 +1664,19 @@ const fetchAvonCatalogProducts = async ({
     products: Array.from(deduped.values()),
     failedSources: Array.from(new Set(failedSources))
   };
+};
+
+const fetchAvonCatalogProducts = async ({
+  signal
+}: {
+  signal?: AbortSignal;
+}): Promise<UpstreamFetchResult> => {
+  const bff = await fetchAvonBffCatalogProducts({ signal });
+  if (bff.products.length > 0 && bff.failedSources.length === 0) {
+    return bff;
+  }
+  const pages = await fetchAvonCatalogProductsFromPages({ signal });
+  return mergeUpstreamResults(bff, pages);
 };
 
 const parseXmlLocTags = (xml: string) =>
@@ -1339,8 +2007,6 @@ const fetchUpstreamBrandProducts = async ({
     case 'odorata':
     case 'racco':
     case 'skelt':
-    case 'extase':
-    case 'diamante':
       return fetchGenericBrandCatalogProducts({
         brand,
         baseUrl: BRAND_BASE_URL[brand],
@@ -1348,6 +2014,10 @@ const fetchUpstreamBrandProducts = async ({
         signal,
         filterFn: BRAND_UPSTREAM_PRODUCT_FILTERS[brand]
       });
+    case 'extase':
+      return fetchExtaseCatalogProducts({ signal });
+    case 'diamante':
+      return fetchDiamanteCatalogProducts({ signal });
   }
 };
 

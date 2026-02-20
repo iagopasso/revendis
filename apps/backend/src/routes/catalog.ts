@@ -145,11 +145,11 @@ const parseCategoryList = (value: unknown) => {
   );
 };
 
-const parseBodyLimit = (value: unknown, fallback: number) => {
+const parseBodyLimit = (value: unknown, fallback: number, max = 1000) => {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return fallback;
   }
-  return Math.min(1000, Math.max(1, Math.trunc(value)));
+  return Math.min(max, Math.max(1, Math.trunc(value)));
 };
 
 const parsePreloadBodyLimit = (value: unknown, fallback: number) => {
@@ -242,6 +242,7 @@ type NaturaMagazineCatalogInput = {
 
 type CatalogBrandsSyncInput = {
   brands?: string[];
+  allBrands?: boolean;
   limit?: number;
   inStockOnly?: boolean;
   deactivateMissing?: boolean;
@@ -250,6 +251,7 @@ type CatalogBrandsSyncInput = {
 
 type CatalogBrandsPreloadInput = {
   brands?: string[];
+  allBrands?: boolean;
   limit?: number;
   inStockOnly?: boolean;
   clearMissing?: boolean;
@@ -445,6 +447,26 @@ const resolveConfiguredCatalogBrands = async (orgId: string): Promise<CatalogBra
     .filter((item): item is CatalogBrandSlug => item !== null);
 
   return Array.from(new Set(mapped));
+};
+
+const resolveRequestedCatalogBrands = async ({
+  orgId,
+  requestedBrands,
+  allBrands
+}: {
+  orgId: string;
+  requestedBrands: CatalogBrandSlug[] | null;
+  allBrands: boolean;
+}): Promise<CatalogBrandSlug[]> => {
+  if (requestedBrands) {
+    return requestedBrands;
+  }
+  if (allBrands) {
+    return [...CATALOG_BRANDS];
+  }
+
+  const configured = await resolveConfiguredCatalogBrands(orgId);
+  return configured.length > 0 ? configured : [...CATALOG_BRANDS];
 };
 
 const resolveManualSourceBrand = ({
@@ -748,7 +770,12 @@ router.get(
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     const requestedBrands = parseOptionalBrands(req.query.brands);
-    const brands = requestedBrands ?? (await resolveConfiguredCatalogBrands(orgId));
+    const allBrands = parseBool(req.query.allBrands, false);
+    const brands = await resolveRequestedCatalogBrands({
+      orgId,
+      requestedBrands,
+      allBrands
+    });
     const queryValue = parseQueryValue(req.query.q).trim();
     const inStock = parseInStock(req.query.inStock);
     const limit = parseCacheLimit(req.query.limit);
@@ -825,6 +852,7 @@ router.get(
       data: limited,
       meta: {
         brands,
+        allBrands,
         brandsWithProducts,
         total: filtered.length,
         count: limited.length,
@@ -846,8 +874,12 @@ router.post(
     const payload = req.body as CatalogBrandsPreloadInput;
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     const requestedBrands = parseBodyBrands(payload.brands);
-    const selectedBrands =
-      requestedBrands.length > 0 ? requestedBrands : await resolveConfiguredCatalogBrands(orgId);
+    const allBrands = payload.allBrands === true;
+    const selectedBrands = await resolveRequestedCatalogBrands({
+      orgId,
+      requestedBrands: requestedBrands.length > 0 ? requestedBrands : null,
+      allBrands
+    });
     const inStockOnly = payload.inStockOnly === true;
     const clearMissing = payload.clearMissing !== false;
     const allowSampleFallback = payload.allowSampleFallback === true;
@@ -1017,10 +1049,27 @@ router.post(
     const persisted = await withTransaction(async (client) => {
       let upsertedProducts = 0;
       let removedProducts = 0;
+      const skippedSampleBrands = new Set<CatalogBrandSlug>();
 
       for (const entry of fetchedByBrand) {
         if (entry.cacheHit) {
           continue;
+        }
+
+        if (entry.source === 'sample') {
+          const existingUpstream = await client.query<{ total: number }>(
+            `SELECT count(*)::int AS total
+             FROM catalog_preloaded_products
+             WHERE organization_id = $1
+               AND source_brand = $2
+               AND fetched_source = 'upstream'`,
+            [orgId, entry.brand]
+          );
+          const hasUpstream = Number(existingUpstream.rows[0]?.total || 0) > 0;
+          if (hasUpstream) {
+            skippedSampleBrands.add(entry.brand);
+            continue;
+          }
         }
 
         const cachedSkus: string[] = [];
@@ -1102,7 +1151,8 @@ router.post(
 
       return {
         upsertedProducts,
-        removedProducts
+        removedProducts,
+        skippedSampleBrands: Array.from(skippedSampleBrands)
       };
     });
 
@@ -1110,11 +1160,13 @@ router.post(
       data: normalized,
       meta: {
         selectedBrands,
+        allBrands,
         cachedBrands: fetchedByBrand.filter((entry) => entry.cacheHit).map((entry) => entry.brand),
         syncedBrands: fetchedByBrand.filter((entry) => !entry.cacheHit).map((entry) => entry.brand),
         total: normalized.length,
         upsertedProducts: persisted.upsertedProducts,
         removedProducts: persisted.removedProducts,
+        skippedSampleBrands: persisted.skippedSampleBrands,
         inStockOnly,
         clearMissing,
         allowSampleFallback,
@@ -1869,12 +1921,16 @@ router.post(
     const payload = req.body as CatalogBrandsSyncInput;
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     const requestedBrands = parseBodyBrands(payload.brands);
-    const selectedBrands =
-      requestedBrands.length > 0 ? requestedBrands : await resolveConfiguredCatalogBrands(orgId);
+    const allBrands = payload.allBrands === true;
+    const selectedBrands = await resolveRequestedCatalogBrands({
+      orgId,
+      requestedBrands: requestedBrands.length > 0 ? requestedBrands : null,
+      allBrands
+    });
     const inStockOnly = payload.inStockOnly === true;
     const deactivateMissing = payload.deactivateMissing !== false;
     const allowSampleFallback = payload.allowSampleFallback === true;
-    const perBrandLimit = parseBodyLimit(payload.limit, 1000);
+    const perBrandLimit = parseBodyLimit(payload.limit, 2000, 2000);
 
     const fetchedByBrand = await Promise.all(
       selectedBrands.map(async (brand) => {
@@ -2028,6 +2084,7 @@ router.post(
       data: normalized,
       meta: {
         selectedBrands,
+        allBrands,
         total: normalized.length,
         upsertedProducts: sync.upsertedProducts,
         removedBrands: sync.removedBrands,
@@ -2108,7 +2165,7 @@ router.post(
       });
     }
     const categories = parseCategoryList(payload.categories);
-    const limit = parseBodyLimit(payload.limit, MAX_LIMIT);
+    const limit = parseBodyLimit(payload.limit, MAX_LIMIT, 1000);
     const inStockOnly = payload.inStockOnly === true;
     const classifyBrand = payload.classifyBrand?.trim() || null;
 
@@ -2181,7 +2238,7 @@ router.post(
     const categories = parseCategoryList(payload.categories);
     const inStockOnly = payload.inStockOnly === true;
     const deactivateMissing = payload.deactivateMissing !== false;
-    const limit = parseBodyLimit(payload.limit, 1000);
+    const limit = parseBodyLimit(payload.limit, 1000, 1000);
     const classifyBrand = payload.classifyBrand?.trim() || null;
 
     const { products, failedSources, failedDetails, resolvedPaths } = await fetchNaturaConsultantCatalogProducts({

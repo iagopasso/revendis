@@ -15,9 +15,14 @@ Monorepo inicial para web, mobile e backend.
 
 ## Scripts
 - `npm run dev`: inicia apps (via Turborepo)
+- `npm run dev:mobile`: inicia somente mobile (Expo na porta 8082)
+- `npm run dev:mobile:ios`: abre mobile no simulador iOS
+- `npm run dev:mobile:android`: abre mobile no emulador Android
+- `npm run dev:mobile:web`: abre mobile via web
 - `npm run build`: build de todos os pacotes
 - `npm run lint`: lint (placeholders)
 - `npm run test`: testes (placeholders)
+- `npm run typecheck:mobile`: valida TypeScript do app mobile
 - `npm run openapi:lint`: valida o contrato OpenAPI
 - `npm run openapi:bundle`: gera `docs/openapi.json`
 - `npm run openapi:types`: gera tipos em `packages/api-types`
@@ -31,6 +36,7 @@ Monorepo inicial para web, mobile e backend.
 
 ## Proximos passos
 - Instalar dependencias com `pnpm install --link-workspace-packages`.
+- Configurar mobile usando `apps/mobile/env.example` + `docs/mobile.md`.
 - Para subir em background com tmux: `bash scripts/start-tmux.sh`.
 - Para inicializar o banco do zero: `bash scripts/db-init.sh`.
 - Preencher matriz de paridade e backlog detalhado em `docs/`.

@@ -10,6 +10,7 @@
 - `data-model.md`: Modelo de dados (Sprint 2).
 - `api-client-examples.md`: Exemplos de uso do cliente OpenAPI.
 - `e2e.md`: Instrucoes para testes E2E web/mobile.
+- `mobile.md`: Setup e execucao do app mobile (Expo).
 - `qa-plan.md`: Plano de testes e checklist de regressao.
 - `runbook.md`: Runbook de producao e on-call.
 - `roadmap.md`: Roadmap de manutencao e crescimento.

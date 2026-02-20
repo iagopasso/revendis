@@ -183,8 +183,7 @@ const loadPublicStoreCatalog = async (orgId: string, storefrontStoreId: string) 
      ) pending ON pending.product_id = p.id
      LEFT JOIN categories c ON c.id = p.category_id
      WHERE p.organization_id = $1 AND p.active = true
-     ORDER BY p.created_at DESC
-     LIMIT 240`,
+     ORDER BY p.created_at DESC`,
     [orgId, storefrontStoreId]
   );
   return productsResult.rows;
@@ -299,8 +298,7 @@ router.get(
        ) pending ON pending.product_id = p.id
        LEFT JOIN categories c ON c.id = p.category_id
        WHERE p.organization_id = $1 AND p.active = true
-       ORDER BY p.created_at DESC
-       LIMIT 100`,
+       ORDER BY p.created_at DESC`,
       [orgId, storeId]
     );
     res.json({ data: result.rows });
@@ -365,8 +363,8 @@ router.get(
     );
     const storefrontStoreId = storeRes.rows[0]?.id || DEFAULT_STORE_ID;
     const snapshotProducts = parseStorefrontCatalogSnapshot(settingsRow.storefront_catalog_snapshot);
-    let products = snapshotProducts;
-    if (!products) {
+    let products: Array<Record<string, unknown>> = snapshotProducts || [];
+    try {
       products = await loadPublicStoreCatalog(orgId, storefrontStoreId);
       try {
         await query(
@@ -378,6 +376,8 @@ router.get(
       } catch {
         // keep response even if snapshot persistence fails
       }
+    } catch {
+      // keep last snapshot as fallback when live query fails
     }
 
     const shopName = normalizeOptional(settingsRow.business_name || settingsRow.organization_name) || 'Loja';

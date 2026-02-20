@@ -5,21 +5,61 @@ const fallbackOrgId = '00000000-0000-0000-0000-000000000001';
 const fallbackStoreId = '00000000-0000-0000-0000-000000000101';
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+const asNonEmptyString = (value: unknown) => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+const isLocalhostHost = (value: string) =>
+  value === 'localhost' || value === '127.0.0.1' || value === '::1';
+
+const resolveRuntimeHostname = () => {
+  const maybeHost = (globalThis as { location?: { hostname?: string } }).location?.hostname;
+  if (typeof maybeHost !== 'string') return '';
+  return maybeHost.trim();
+};
+
+const resolveReachableBaseUrl = (value: string) => {
+  const normalized = value.trim();
+  if (!normalized) return value;
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return normalized;
+    if (!isLocalhostHost(parsed.hostname)) return normalized;
+
+    const runtimeHost = resolveRuntimeHostname();
+    if (!runtimeHost || isLocalhostHost(runtimeHost)) return normalized;
+
+    parsed.hostname = runtimeHost;
+    return trimTrailingSlash(parsed.toString());
+  } catch {
+    return normalized;
+  }
+};
 
 const expoExtra = Constants.expoConfig?.extra as
   | { apiUrl?: string; orgId?: string; storeId?: string }
   | undefined;
 
-const configuredBaseUrl = trimTrailingSlash(
-  (expoExtra?.apiUrl as string | undefined)?.trim() || fallbackBaseUrl
-);
+const resolvedApiUrl =
+  asNonEmptyString(expoExtra?.apiUrl) ||
+  asNonEmptyString(process.env.EXPO_PUBLIC_API_URL) ||
+  fallbackBaseUrl;
+const resolvedOrgId =
+  asNonEmptyString(expoExtra?.orgId) ||
+  asNonEmptyString(process.env.EXPO_PUBLIC_ORG_ID) ||
+  fallbackOrgId;
+const resolvedStoreId =
+  asNonEmptyString(expoExtra?.storeId) ||
+  asNonEmptyString(process.env.EXPO_PUBLIC_STORE_ID) ||
+  fallbackStoreId;
 
-const apiBaseUrl = configuredBaseUrl || fallbackBaseUrl;
+const apiBaseUrl = trimTrailingSlash(resolveReachableBaseUrl(resolvedApiUrl)) || fallbackBaseUrl;
 
 const defaultHeaders: Record<string, string> = {
   'content-type': 'application/json',
-  'x-org-id': (expoExtra?.orgId as string | undefined) || fallbackOrgId,
-  'x-store-id': (expoExtra?.storeId as string | undefined) || fallbackStoreId
+  'x-org-id': resolvedOrgId,
+  'x-store-id': resolvedStoreId
 };
 
 const buildUrl = (path: string) => {

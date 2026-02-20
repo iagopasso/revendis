@@ -5,9 +5,13 @@
   "main": "index.tsx",
   "scripts": {
     "dev": "expo start --port 8082",
-    "build": "echo 'mobile build placeholder'",
-    "lint": "echo 'mobile lint placeholder'",
-    "test": "echo 'mobile tests placeholder'",
+    "dev:ios": "expo start --ios --port 8082",
+    "dev:android": "expo start --android --port 8082",
+    "dev:web": "expo start --web --port 8082",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck",
+    "lint": "npm run typecheck",
+    "test": "npm run typecheck",
     "e2e:build": "detox build -c ios.sim.debug",
     "e2e": "detox test -c ios.sim.debug"
   },

@@ -367,8 +367,7 @@ const buildStorefrontCatalogSnapshot = async (db: DbExecutor, orgId: string) => 
      ) pending ON pending.product_id = p.id
      LEFT JOIN categories c ON c.id = p.category_id
      WHERE p.organization_id = $1 AND p.active = true
-     ORDER BY p.created_at DESC
-     LIMIT 240`,
+     ORDER BY p.created_at DESC`,
     [orgId, storefrontStoreId]
   );
 
