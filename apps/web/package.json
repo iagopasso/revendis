@@ -6,8 +6,9 @@
     "node": ">=22 <23"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "__NEXT_DEVTOOL_SEGMENT_EXPLORER=0 next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
+    "start": "next start",
     "lint": "echo 'web lint placeholder'",
     "test": "echo 'web tests placeholder'",
     "e2e": "playwright test -c playwright.config.ts"

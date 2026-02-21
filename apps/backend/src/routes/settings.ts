@@ -987,4 +987,63 @@ router.patch(
   })
 );
 
+router.delete(
+  '/settings/access/self',
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const userId = req.header('x-user-id') || null;
+    const queryEmailRaw = req.query.email;
+    const queryEmail =
+      typeof queryEmailRaw === 'string'
+        ? queryEmailRaw
+        : Array.isArray(queryEmailRaw)
+          ? `${queryEmailRaw[0] || ''}`
+          : '';
+    const email = `${req.header('x-user-email') || queryEmail || ''}`.trim().toLowerCase();
+
+    if (!email) {
+      return res.status(400).json({
+        code: 'missing_email',
+        message: 'Informe o email da conta para exclusao.'
+      });
+    }
+
+    const deleted = await withTransaction(async (client) => {
+      const result = await client.query<{ id: string }>(
+        `DELETE FROM users
+         WHERE organization_id = $1
+           AND lower(email) = lower($2)
+         RETURNING id`,
+        [orgId, email]
+      );
+
+      const member = result.rows[0] || null;
+      if (!member) return null;
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        userId,
+        entityType: 'settings_access',
+        entityId: member.id,
+        action: 'deleted',
+        payload: {
+          email,
+          source: 'self'
+        }
+      });
+
+      return member;
+    });
+
+    if (!deleted) {
+      return res.status(404).json({
+        code: 'not_found',
+        message: 'Conta nao encontrada.'
+      });
+    }
+
+    return res.status(204).send();
+  })
+);
+
 export default router;

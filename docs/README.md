@@ -14,4 +14,7 @@
 - `qa-plan.md`: Plano de testes e checklist de regressao.
 - `runbook.md`: Runbook de producao e on-call.
 - `roadmap.md`: Roadmap de manutencao e crescimento.
+- `deploy-cloud.md`: Guia de deploy cloud (Railway/Neon e similares).
+- `checklist-railway-neon.md`: Checklist pratico de deploy Railway + Neon.
+- `branch-flow-staging-local.md`: Fluxo de branches com staging local e producao em `main`.
 - `templates/`: Roteiros e planilhas para pesquisa.

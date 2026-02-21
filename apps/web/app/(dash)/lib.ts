@@ -1,7 +1,16 @@
 export type ListResponse<T> = { data: T[] };
 export type ItemResponse<T> = { data: T };
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const withNoTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+
+const resolveApiBase = () => {
+  const envBase = withNoTrailingSlash(process.env.NEXT_PUBLIC_API_URL || '');
+  if (envBase) return envBase;
+  if (typeof window === 'undefined') return 'http://localhost:3001/api';
+  return '/api/backend';
+};
+
+export const API_BASE = resolveApiBase();
 export const SALES_SYNC_STORAGE_KEY = 'revendis:sales-sync-at';
 const API_TIMEOUT_MS = Math.max(2000, Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 10000));
 

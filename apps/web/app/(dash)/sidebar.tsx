@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { signOut } from 'next-auth/react';
 import { API_BASE } from './lib';
 import {
   formatRelativeTime,
@@ -23,8 +24,11 @@ import {
   IconGlobe,
   IconMegaphone,
   IconMessage,
+  IconLogout,
   IconPieChart,
   IconTag,
+  IconTrash,
+  IconUser,
   IconWhatsapp,
   IconUsers
 } from './icons';
@@ -47,14 +51,27 @@ const utilityNavItems = [
 ];
 
 const NOTIFICATIONS_FETCH_TIMEOUT_MS = 8000;
+const DEFAULT_ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || '00000000-0000-0000-0000-000000000001';
 
-export default function Sidebar() {
+type SidebarProps = {
+  sessionUser: {
+    name: string;
+    email: string;
+  };
+};
+
+export default function Sidebar({ sessionUser }: SidebarProps) {
   const pathname = usePathname();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(true);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
   const notificationsRef = useRef<HTMLDivElement | null>(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const [accountActionLoading, setAccountActionLoading] = useState(false);
+  const [accountFeedback, setAccountFeedback] = useState('');
+  const [accountFeedbackError, setAccountFeedbackError] = useState(false);
 
   const loadNotifications = useCallback(async () => {
     const controller = new AbortController();
@@ -127,6 +144,36 @@ export default function Sidebar() {
     };
   }, [notificationsOpen]);
 
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (!profileMenuRef.current?.contains(target)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setProfileMenuOpen(false);
+    };
+
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [profileMenuOpen]);
+
+  useEffect(() => {
+    if (!accountFeedback) return;
+    const timer = window.setTimeout(() => {
+      setAccountFeedback('');
+      setAccountFeedbackError(false);
+    }, 2400);
+    return () => window.clearTimeout(timer);
+  }, [accountFeedback]);
+
   const markNotificationAsRead = useCallback((notificationId: string) => {
     setReadNotificationIds((current) => {
       if (current.has(notificationId)) return current;
@@ -142,8 +189,64 @@ export default function Sidebar() {
   );
 
   const visibleNotifications = notifications.slice(0, 8);
+  const displayLabel = useMemo(() => {
+    const base = (sessionUser.name || sessionUser.email || 'Perfil').trim();
+    const initials = base
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((token) => token[0]?.toUpperCase() || '')
+      .join('');
+    return initials || 'PF';
+  }, [sessionUser.email, sessionUser.name]);
 
   const toggleNotifications = () => setNotificationsOpen((current) => !current);
+
+  const handleSignOut = async () => {
+    setProfileMenuOpen(false);
+    await signOut({ callbackUrl: '/login' });
+  };
+
+  const handleDeleteOwnAccount = async () => {
+    const email = sessionUser.email.trim().toLowerCase();
+    if (!email) {
+      setAccountFeedback('Nao foi possivel identificar sua conta.');
+      setAccountFeedbackError(true);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Tem certeza que deseja excluir sua conta? Esta acao remove seu acesso.'
+    );
+    if (!confirmed) return;
+
+    setAccountActionLoading(true);
+    setAccountFeedback('');
+    setAccountFeedbackError(false);
+
+    try {
+      const response = await fetch(`${API_BASE}/settings/access/self`, {
+        method: 'DELETE',
+        headers: {
+          'x-org-id': DEFAULT_ORG_ID,
+          'x-user-email': email
+        }
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message || 'Nao foi possivel excluir sua conta.');
+      }
+
+      await signOut({ callbackUrl: '/login' });
+    } catch (error) {
+      setAccountFeedback(error instanceof Error ? error.message : 'Nao foi possivel excluir sua conta.');
+      setAccountFeedbackError(true);
+    } finally {
+      setAccountActionLoading(false);
+      setProfileMenuOpen(false);
+    }
+  };
 
   return (
     <aside className="sidebar sidebar-expected">
@@ -251,9 +354,43 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      <button type="button" className="sidebar-avatar-btn" aria-label="Perfil">
-        <span>IP</span>
-      </button>
+      <div className="sidebar-footer profile-menu-wrapper" ref={profileMenuRef}>
+        <button
+          type="button"
+          className="sidebar-avatar-btn profile-trigger"
+          aria-label="Perfil"
+          aria-expanded={profileMenuOpen}
+          onClick={() => setProfileMenuOpen((current) => !current)}
+        >
+          <span>{displayLabel}</span>
+        </button>
+
+        {profileMenuOpen ? (
+          <div className="profile-menu" role="menu" aria-label="Conta">
+            <Link href="/configuracoes" onClick={() => setProfileMenuOpen(false)}>
+              <IconUser />
+              Minha conta
+            </Link>
+            <button type="button" onClick={() => void handleSignOut()}>
+              <IconLogout />
+              Sair
+            </button>
+            <div className="profile-menu-divider" />
+            <button
+              type="button"
+              className="danger"
+              onClick={() => void handleDeleteOwnAccount()}
+              disabled={accountActionLoading}
+            >
+              <IconTrash />
+              {accountActionLoading ? 'Excluindo conta...' : 'Excluir conta'}
+            </button>
+            {accountFeedback ? (
+              <p className={`profile-menu-feedback${accountFeedbackError ? ' error' : ''}`}>{accountFeedback}</p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </aside>
   );
 }

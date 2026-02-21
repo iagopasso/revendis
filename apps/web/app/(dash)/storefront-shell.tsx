@@ -146,6 +146,49 @@ const parseMoney = (value: string) => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+const fallbackCopyText = (text: string) => {
+  if (typeof document === 'undefined') return false;
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch {
+    copied = false;
+  } finally {
+    document.body.removeChild(textarea);
+  }
+  return copied;
+};
+
+const copyText = async (text: string) => {
+  const canUseClipboardApi =
+    typeof navigator !== 'undefined' &&
+    typeof window !== 'undefined' &&
+    window.isSecureContext &&
+    Boolean(navigator.clipboard?.writeText);
+
+  if (canUseClipboardApi) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fallback below
+    }
+  }
+
+  return fallbackCopyText(text);
+};
+
 const normalizeSearchText = (value: string) =>
   value
     .normalize('NFD')
@@ -373,6 +416,8 @@ export default function StorefrontShell({
 
   const [shareOpen, setShareOpen] = useState(false);
   const shareRef = useRef<HTMLDivElement | null>(null);
+  const [storeLinkFeedback, setStoreLinkFeedback] = useState('');
+  const [storeLinkFeedbackError, setStoreLinkFeedbackError] = useState(false);
 
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [openPromotionMenuRowId, setOpenPromotionMenuRowId] = useState<string | null>(null);
@@ -452,6 +497,15 @@ export default function StorefrontShell({
       storePriceOverrides
     });
   }, [activeProducts, promotions, hiddenProductIds, productDescriptions, storePriceOverrides]);
+
+  useEffect(() => {
+    if (!storeLinkFeedback) return;
+    const timer = window.setTimeout(() => {
+      setStoreLinkFeedback('');
+      setStoreLinkFeedbackError(false);
+    }, 2200);
+    return () => window.clearTimeout(timer);
+  }, [storeLinkFeedback]);
 
   useEffect(() => {
     const handleSettingsUpdated = (event: Event) => {
@@ -881,6 +935,21 @@ export default function StorefrontShell({
     const targetUrl = `${storeUrl}${separator}produto=${encodeURIComponent(productId)}`;
     window.open(targetUrl, '_blank', 'noopener,noreferrer');
     setOpenProductMenuId(null);
+  };
+
+  const handleCopyStoreLink = async () => {
+    const copied = await copyText(storeUrl);
+    if (copied) {
+      setStoreLinkFeedback('Link copiado.');
+      setStoreLinkFeedbackError(false);
+      return;
+    }
+
+    setStoreLinkFeedback('Nao foi possivel copiar automaticamente.');
+    setStoreLinkFeedbackError(true);
+    if (typeof window !== 'undefined') {
+      window.prompt('Copie o link da loja:', storeUrl);
+    }
   };
 
   const removePromotion = (promotionId: string) => {
@@ -1566,11 +1635,16 @@ export default function StorefrontShell({
                     type="button"
                     className="store-link-copy"
                     aria-label="Copiar link"
-                    onClick={() => navigator.clipboard.writeText(storeUrl)}
+                    onClick={() => void handleCopyStoreLink()}
                   >
                     <IconCopy />
                   </button>
                 </div>
+                {storeLinkFeedback ? (
+                  <span className={`store-link-feedback${storeLinkFeedbackError ? ' error' : ''}`}>
+                    {storeLinkFeedback}
+                  </span>
+                ) : null}
               </div>
             </div>
           </article>
