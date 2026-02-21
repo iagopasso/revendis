@@ -652,6 +652,7 @@ export default function FinancePanel({
 
           <div className="finance-toolbar-actions">
             <label className="select finance-select">
+              <span>Tipo</span>
               <select
                 value={transactionFilter}
                 onChange={(event) => setTransactionFilter(event.target.value as TransactionFilter)}
@@ -666,6 +667,7 @@ export default function FinancePanel({
             </label>
 
             <label className="select finance-select">
+              <span>Cliente</span>
               <select value={customerFilter} onChange={(event) => setCustomerFilter(event.target.value)}>
                 {customerOptions.map((option) => (
                   <option key={option.value} value={option.value}>

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { IconBox, IconDots, IconEdit, IconPlus, IconTrash } from '../icons';
+import { IconBox, IconDots, IconEdit, IconPlus, IconSearch, IconTrash } from '../icons';
 import { API_BASE, formatCurrency, toNumber, digitsOnly } from '../lib';
 import { resolveBrandLogo } from '../brand-logos';
 import DateRangePicker from '../date-range';
@@ -1095,17 +1095,22 @@ export default function PurchasesPanel({
     <>
       <section className="panel filters-panel-static purchases-filters-panel">
       <div className="toolbar">
-        <div className="search">
-          <span>🔍</span>
-          <input
-            placeholder="Buscar por numero do pedido..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
+        <div className="search search-with-label">
+          <span className="search-field-label">Numero do pedido</span>
+          <div className="search-inline">
+            <span aria-hidden="true">🔍</span>
+            <input
+              aria-label="Buscar por numero do pedido"
+              placeholder="Buscar por numero do pedido..."
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
         </div>
 
         <div className="toolbar-group purchases-toolbar-group">
           <label className="select">
+            <span>Status</span>
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value as 'all' | PurchaseStatus)}
@@ -1120,6 +1125,7 @@ export default function PurchasesPanel({
           </label>
 
           <label className="select">
+            <span>Marca</span>
             <select value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}>
               <option value="all">Todas as marcas</option>
               {brands.map((brand) => (
@@ -1165,7 +1171,7 @@ export default function PurchasesPanel({
                   <span className="purchase-cell-label">Numero</span>
                   <strong className="purchase-cell-value">N.° {purchaseNumber}</strong>
                 </div>
-                <div className="purchase-cell">
+                <div className="purchase-cell purchase-cell-brand">
                   <span className="purchase-cell-label">Marca</span>
                   <span className="purchase-cell-value">
                     <span className="purchase-brand">
@@ -1180,13 +1186,13 @@ export default function PurchasesPanel({
                     </span>
                   </span>
                 </div>
-                <div className="purchase-cell">
+                <div className="purchase-cell purchase-cell-date">
                   <span className="purchase-cell-label">Data</span>
                   <span className="purchase-cell-value data-cell mono">
                     {formatDateLabel(purchase.purchase_date || purchase.created_at)}
                   </span>
                 </div>
-                <div className="purchase-cell">
+                <div className="purchase-cell purchase-cell-total">
                   <span className="purchase-cell-label">Total</span>
                   <span className="purchase-cell-value data-cell mono">
                     {formatCurrency(toNumber(purchase.total))}
@@ -1198,6 +1204,16 @@ export default function PurchasesPanel({
                 </div>
                 <div className="purchase-actions-cell">
                   <div className="purchase-actions">
+                    {purchase.status !== 'draft' ? (
+                      <button
+                        type="button"
+                        className="button ghost small purchase-quick-view"
+                        onClick={() => setViewPurchase(purchase)}
+                        disabled={processingId === purchase.id}
+                      >
+                        Visualizar
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className={`button icon small${menuOpenId === purchase.id ? ' active' : ''}`}
@@ -1320,8 +1336,10 @@ export default function PurchasesPanel({
             {createStep === 'products' ? (
               <div className="purchase-create-step purchase-create-products">
                 <div ref={productSearchRef} className="purchase-create-search">
-                  <label className="purchase-create-search-field">
+                  <label className="purchase-create-search-field store-search large">
+                    <span className="input-field-label">Buscar produto</span>
                     <input
+                      aria-label="Buscar produto para compra"
                       placeholder="Busque usando o nome, codigo da marca ou codigo de barras"
                       value={purchaseProductQuery}
                       onFocus={() => setProductSearchOpen(true)}
@@ -1337,31 +1355,45 @@ export default function PurchasesPanel({
                         handleProductSearchSelect(purchaseProductResults[0]);
                       }}
                     />
-                    <button
-                      type="button"
-                      aria-label="Buscar produtos"
-                      onClick={() => setProductSearchOpen(true)}
-                    >
-                      ⌕
-                    </button>
+                    <span className="search-icon" aria-hidden="true">
+                      <IconSearch />
+                    </span>
                   </label>
 
                   {productSearchOpen ? (
-                    <div className="purchase-create-search-results">
+                    <div className="purchase-create-search-results store-modal-list">
                       {purchaseProductResults.length === 0 ? (
                         <span className="meta">Nenhum produto encontrado para a marca selecionada.</span>
                       ) : (
-                        purchaseProductResults.map((product) => (
-                          <button
-                            key={product.id}
-                            type="button"
-                            className="purchase-search-result"
-                            onClick={() => handleProductSearchSelect(product)}
-                          >
-                            <strong>{getProductHeadline(product)}</strong>
-                            <span>{getProductMeta(product)}</span>
-                          </button>
-                        ))
+                        purchaseProductResults.map((product) => {
+                          const imageUrl = getProductImage(product);
+                          const priceLabel = formatCurrency(Math.max(0, toNumber(product.price)));
+                          return (
+                            <button
+                              key={product.id}
+                              type="button"
+                              className="purchase-search-result store-checkbox-row"
+                              onClick={() => handleProductSearchSelect(product)}
+                            >
+                              <span className="purchase-search-result-main store-checkbox-main">
+                                <span className="purchase-search-result-thumb store-checkbox-thumb">
+                                  {imageUrl ? (
+                                    <img className="product-thumb-image" src={imageUrl} alt={product.name} />
+                                  ) : (
+                                    <span className="product-thumb-placeholder" aria-hidden="true">
+                                      <IconBox />
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="purchase-search-result-copy store-checkbox-copy">
+                                  <strong>{getProductHeadline(product)}</strong>
+                                  <span>{getProductMeta(product)}</span>
+                                </span>
+                              </span>
+                              <span className="purchase-search-result-price store-checkbox-price">{priceLabel}</span>
+                            </button>
+                          );
+                        })
                       )}
                     </div>
                   ) : null}
@@ -1382,7 +1414,6 @@ export default function PurchasesPanel({
                       <span>Preco</span>
                       <span>Validade</span>
                       <span>Quantidade</span>
-                      <span />
                     </div>
 
                     <div className="purchase-create-products-list">
@@ -1408,13 +1439,23 @@ export default function PurchasesPanel({
                                 <strong>{getProductHeadline(product)}</strong>
                                 <span>{getProductMeta(product)}</span>
                               </div>
+                              <button
+                                type="button"
+                                className="purchase-create-product-remove"
+                                aria-label="Remover produto"
+                                onClick={() => removeDraftItem(item.id)}
+                              >
+                                <IconTrash />
+                              </button>
                             </div>
 
                             <label className="purchase-create-product-input">
+                              <span className="purchase-create-product-label">Preco</span>
                               <input
                                 value={item.price}
                                 inputMode="decimal"
                                 placeholder="R$ 0,00"
+                                aria-label="Preco do produto"
                                 onChange={(event) =>
                                   updateDraftItem(item.id, (current) => ({
                                     ...current,
@@ -1425,11 +1466,13 @@ export default function PurchasesPanel({
                             </label>
 
                             <label className="purchase-create-product-input">
+                              <span className="purchase-create-product-label">Validade</span>
                               <input
                                 value={item.expiryDate}
                                 inputMode="numeric"
                                 maxLength={10}
                                 placeholder="dd/mm/aaaa"
+                                aria-label="Validade do produto"
                                 onChange={(event) =>
                                   updateDraftItem(item.id, (current) => ({
                                     ...current,
@@ -1439,39 +1482,35 @@ export default function PurchasesPanel({
                               />
                             </label>
 
-                            <div className="purchase-create-product-qty">
-                              <input
-                                type="number"
-                                min="1"
-                                value={item.quantity}
-                                onChange={(event) => handleDraftQuantityChange(item.id, event.target.value)}
-                              />
-                              <div className="purchase-create-product-qty-actions">
-                                <button
-                                  type="button"
-                                  aria-label="Aumentar quantidade"
-                                  onClick={() => adjustDraftQuantity(item.id, 1)}
-                                >
-                                  ▲
-                                </button>
-                                <button
-                                  type="button"
-                                  aria-label="Diminuir quantidade"
-                                  onClick={() => adjustDraftQuantity(item.id, -1)}
-                                >
-                                  ▼
-                                </button>
+                            <div className="purchase-create-product-qty-field">
+                              <span className="purchase-create-product-label">Quantidade</span>
+                              <div className="purchase-create-product-qty">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={item.quantity}
+                                  aria-label="Quantidade do produto"
+                                  onChange={(event) => handleDraftQuantityChange(item.id, event.target.value)}
+                                />
+                                <div className="purchase-create-product-qty-actions">
+                                  <button
+                                    type="button"
+                                    aria-label="Aumentar quantidade"
+                                    onClick={() => adjustDraftQuantity(item.id, 1)}
+                                  >
+                                    ▲
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label="Diminuir quantidade"
+                                    onClick={() => adjustDraftQuantity(item.id, -1)}
+                                  >
+                                    ▼
+                                  </button>
+                                </div>
                               </div>
                             </div>
 
-                            <button
-                              type="button"
-                              className="purchase-create-product-remove"
-                              aria-label="Remover produto"
-                              onClick={() => removeDraftItem(item.id)}
-                            >
-                              <IconTrash />
-                            </button>
                           </article>
                         );
                       })}

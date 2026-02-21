@@ -157,9 +157,12 @@ export default async function ClientesPage({
 
       <section className="panel filters-panel-static clients-filters-panel">
         <div className="toolbar">
-          <form className="search" method="get">
-            <span>🔍</span>
-            <input name="q" placeholder="Buscar cliente" defaultValue={query} />
+          <form className="search search-with-label" method="get">
+            <span className="search-field-label">Buscar cliente</span>
+            <div className="search-inline">
+              <span aria-hidden="true">🔍</span>
+              <input aria-label="Buscar cliente" name="q" placeholder="Buscar cliente" defaultValue={query} />
+            </div>
             {cityFilter !== 'all' ? <input type="hidden" name="city" value={cityFilter} /> : null}
             {tagFilter !== 'all' ? <input type="hidden" name="tag" value={tagFilter} /> : null}
             {birthdayFilter !== 'all' ? <input type="hidden" name="birthday" value={birthdayFilter} /> : null}

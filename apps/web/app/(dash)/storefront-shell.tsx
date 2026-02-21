@@ -1653,7 +1653,10 @@ export default function StorefrontShell({
         {section === 'orders' ? (
           <>
             <label className="store-search" aria-label="Buscar pedido">
-              <IconSearch />
+              <span className="input-field-label">Buscar pedido</span>
+              <span className="search-icon" aria-hidden="true">
+                <IconSearch />
+              </span>
               <input
                 type="search"
                 placeholder="Buscar pedido"
@@ -1711,7 +1714,10 @@ export default function StorefrontShell({
         {section === 'products' ? (
           <>
             <label className="store-search" aria-label="Buscar produto da loja">
-              <IconSearch />
+              <span className="input-field-label">Buscar produto</span>
+              <span className="search-icon" aria-hidden="true">
+                <IconSearch />
+              </span>
               <input
                 type="search"
                 placeholder="Buscar produto"
@@ -1985,7 +1991,10 @@ export default function StorefrontShell({
             </header>
 
             <label className="store-search large" aria-label="Pesquisar produto para incluir">
-              <IconSearch />
+              <span className="input-field-label">Pesquisar produto</span>
+              <span className="search-icon" aria-hidden="true">
+                <IconSearch />
+              </span>
               <input
                 type="search"
                 placeholder="Pesquisar"
@@ -2112,7 +2121,10 @@ export default function StorefrontShell({
             {promotionStep === 'select' ? (
               <>
                 <label className="store-search large" aria-label="Pesquisar produtos da promoção">
-                  <IconSearch />
+                  <span className="input-field-label">Pesquisar produtos</span>
+                  <span className="search-icon" aria-hidden="true">
+                    <IconSearch />
+                  </span>
                   <input
                     type="search"
                     placeholder="Digite e pressione ENTER para buscar"
@@ -2483,7 +2495,10 @@ export default function StorefrontShell({
             <section className="store-order-accept-products">
               <strong>Produtos</strong>
               <label className="store-order-accept-search" aria-label="Pesquisar produtos do pedido">
-                <IconSearch />
+                <span className="input-field-label">Pesquisar produtos</span>
+                <span className="search-icon" aria-hidden="true">
+                  <IconSearch />
+                </span>
                 <input
                   type="search"
                   placeholder="Pesquisar produtos"
