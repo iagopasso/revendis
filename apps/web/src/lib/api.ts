@@ -1,6 +1,15 @@
 import { createApiClient } from '@revendis/api-client';
 
-const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const withNoTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+
+const resolveBaseUrl = () => {
+  const envBase = withNoTrailingSlash(process.env.NEXT_PUBLIC_API_URL || '');
+  if (envBase) return envBase;
+  if (typeof window === 'undefined') return 'http://localhost:3001/api';
+  return '/api/backend';
+};
+
+const baseUrl = resolveBaseUrl();
 
 export const api = createApiClient({
   baseUrl,

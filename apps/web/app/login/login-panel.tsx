@@ -73,8 +73,8 @@ export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPane
   const credentialsSubmitting = submittingProvider === 'credentials';
 
   const providerHint = useMemo(() => {
-    if (hasProvider) return 'Entre com e-mail/senha de administrador ou use Google/Facebook.';
-    return 'Entre com e-mail/senha de administrador. O login social e opcional.';
+    if (hasProvider) return 'Entre com e-mail/senha de admin ou revenda, ou use Google/Facebook.';
+    return 'Entre com e-mail/senha de admin ou revenda. O login social e opcional.';
   }, [hasProvider]);
 
   const handleProviderSignIn = async (provider: 'google' | 'facebook') => {
@@ -99,24 +99,49 @@ export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPane
     setFeedback('');
     setSubmittingProvider('credentials');
     try {
-      const result = await signIn('credentials', {
-        redirect: false,
+      const csrfResponse = await fetch('/api/auth/csrf', {
+        cache: 'no-store',
+        credentials: 'same-origin'
+      });
+      if (!csrfResponse.ok) throw new Error('csrf_fetch_failed');
+
+      const csrfPayload = (await csrfResponse.json().catch(() => null)) as { csrfToken?: string } | null;
+      const csrfToken = csrfPayload?.csrfToken;
+      if (!csrfToken) throw new Error('csrf_missing');
+
+      const body = new URLSearchParams({
+        csrfToken,
         email,
         password,
         callbackUrl: '/dashboard'
       });
 
-      if (result?.error) {
-        setFeedback('Credenciais invalidas.');
+      const loginResponse = await fetch('/api/auth/callback/credentials', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-Auth-Return-Redirect': '1'
+        },
+        body,
+        credentials: 'same-origin'
+      });
+
+      const loginPayload = (await loginResponse.json().catch(() => null)) as { url?: string } | null;
+      const redirectUrl = loginPayload?.url || '/dashboard';
+      const parsedUrl = new URL(redirectUrl, window.location.origin);
+      const error = parsedUrl.searchParams.get('error');
+
+      if (error) {
+        setFeedback(error === 'CredentialsSignin' ? 'Credenciais invalidas.' : 'Nao foi possivel iniciar a sessao.');
         return;
       }
 
-      if (result?.url) {
-        window.location.href = result.url;
+      if (!loginResponse.ok) {
+        setFeedback('Nao foi possivel iniciar a sessao.');
         return;
       }
 
-      window.location.href = '/dashboard';
+      window.location.href = `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
     } catch {
       setFeedback('Nao foi possivel iniciar a sessao.');
     } finally {

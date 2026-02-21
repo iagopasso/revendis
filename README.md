@@ -39,4 +39,6 @@ Monorepo inicial para web, mobile e backend.
 - Configurar mobile usando `apps/mobile/env.example` + `docs/mobile.md`.
 - Para subir em background com tmux: `bash scripts/start-tmux.sh`.
 - Para inicializar o banco do zero: `bash scripts/db-init.sh`.
+- Para deploy cloud (web + backend + banco SaaS): `docs/deploy-cloud.md`.
+- Para fluxo de staging local + producao (`main`): `docs/branch-flow-staging-local.md`.
 - Preencher matriz de paridade e backlog detalhado em `docs/`.
