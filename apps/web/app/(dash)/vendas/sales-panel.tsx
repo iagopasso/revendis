@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { API_BASE, SALES_SYNC_STORAGE_KEY, digitsOnly, formatCurrency, toNumber } from '../lib';
-import { IconChart, IconCreditCard, IconDollar, IconPercent } from '../icons';
+import { IconChart, IconCreditCard, IconDollar, IconPercent, IconSearch } from '../icons';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
 
 type PaymentStatus = 'paid' | 'pending' | 'overdue' | 'partial';
@@ -289,16 +289,6 @@ const parseMoney = (value: string) => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
-const normalizePaymentMethod = (value: string) =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-
-const isCreditCardMethod = (value: string) =>
-  normalizePaymentMethod(value).includes('cartao de credito');
-
 const CUSTOMER_RETURN_BACK = '__back__';
 
 const parseReturnPath = (value?: string | null) => {
@@ -416,7 +406,7 @@ export default function SalesPanel({
   const [saleCustomerId, setSaleCustomerId] = useState('');
   const [saleItems, setSaleItems] = useState<SaleDraftItem[]>([]);
   const [saleDate, setSaleDate] = useState(toIsoDate(new Date()));
-  const [salePaid, setSalePaid] = useState(false);
+  const [salePaid, setSalePaid] = useState(true);
   const [saleRegisterAmount, setSaleRegisterAmount] = useState('');
   const [saleDownPayment, setSaleDownPayment] = useState('');
   const [saleRegisterMethod, setSaleRegisterMethod] = useState('');
@@ -514,9 +504,7 @@ export default function SalesPanel({
   const saleTotalValue = Math.max(0, saleSubtotal - saleDiscountTotal);
   const saleRegisterTotal = parseMoney(saleRegisterAmount);
   const saleDownPaymentTotal = parseMoney(saleDownPayment);
-  const saleIsCreditCardPayment = isCreditCardMethod(saleRegisterMethod);
-  const saleEffectiveDownPaymentTotal = saleIsCreditCardPayment ? saleRegisterTotal : saleDownPaymentTotal;
-  const salePendingTotal = Math.max(0, saleRegisterTotal - saleEffectiveDownPaymentTotal);
+  const salePendingTotal = Math.max(0, saleRegisterTotal - saleDownPaymentTotal);
 
   const clearCreateParams = () => {
     const params = new URLSearchParams(searchParams.toString());
@@ -737,7 +725,7 @@ export default function SalesPanel({
     setSalePaid(true);
     setSaleRegisterAmount('');
     setSaleDownPayment('');
-    setSaleRegisterMethod('Dinheiro');
+    setSaleRegisterMethod('');
     setSaleInstallments([]);
     setSaleDiscount('');
     setProductSearch('');
@@ -874,28 +862,6 @@ export default function SalesPanel({
       setSaleDownPayment(formatCurrency(saleRegisterTotal));
     }
   }, [createSaleOpen, salePaid, saleRegisterTotal, saleDownPaymentTotal]);
-
-  useEffect(() => {
-    if (!createSaleOpen || salePaid || !saleIsCreditCardPayment) return;
-    if (saleRegisterTotal <= 0) {
-      setSaleDownPayment('');
-      setSaleInstallments([]);
-      return;
-    }
-    if (Math.abs(saleDownPaymentTotal - saleRegisterTotal) > 0.01) {
-      setSaleDownPayment(formatCurrency(saleRegisterTotal));
-    }
-    if (saleInstallments.length > 0) {
-      setSaleInstallments([]);
-    }
-  }, [
-    createSaleOpen,
-    salePaid,
-    saleIsCreditCardPayment,
-    saleRegisterTotal,
-    saleDownPaymentTotal,
-    saleInstallments.length
-  ]);
 
   const updateSaleInstallment = (id: string, field: 'dueDate' | 'amount', value: string) => {
     if (field === 'amount') {
@@ -1103,14 +1069,20 @@ export default function SalesPanel({
     const discountValue = Math.min(rawTotalAmount, saleDiscountTotal);
     const totalAmount = Math.max(0, rawTotalAmount - discountValue);
     const saleDateValue = saleDate || toIsoDate(new Date());
-    const downPaymentAmount = Math.max(0, saleIsCreditCardPayment ? saleRegisterTotal : saleDownPaymentTotal);
+    const paymentMethodValue = saleRegisterMethod.trim();
+    const downPaymentAmount = Math.max(0, saleDownPaymentTotal);
     const remainingAmount = Math.max(0, saleRegisterTotal - downPaymentAmount);
     const normalizedInstallments =
-      !saleIsCreditCardPayment && remainingAmount > 0
+      remainingAmount > 0
         ? saleInstallments.length > 0
           ? saleInstallments
           : buildInstallments(1, remainingAmount, saleDateValue)
         : [];
+
+    if (!paymentMethodValue) {
+      setCreateSaleError('Selecione a forma de pagamento');
+      return;
+    }
 
     if (!salePaid) {
       if (saleRegisterTotal <= 0) {
@@ -1123,12 +1095,12 @@ export default function SalesPanel({
         return;
       }
 
-      if (!saleIsCreditCardPayment && downPaymentAmount > saleRegisterTotal) {
+      if (downPaymentAmount > saleRegisterTotal) {
         setCreateSaleError('A entrada nao pode ser maior que o valor do pagamento');
         return;
       }
 
-      if (!saleIsCreditCardPayment && remainingAmount > 0) {
+      if (remainingAmount > 0) {
         if (normalizedInstallments.some((installment) => !installment.dueDate)) {
           setCreateSaleError('Informe o vencimento de todas as parcelas');
           return;
@@ -1175,7 +1147,8 @@ export default function SalesPanel({
                   {
                     sku: item.product.sku,
                     quantity: item.quantity,
-                    price: item.unitPrice
+                    price: item.unitPrice,
+                    origin: item.origin === 'order' ? 'order' : 'stock'
                   }
                 ]
               : []
@@ -1183,7 +1156,7 @@ export default function SalesPanel({
           payments: paidAtCheckout > 0
             ? [
                 {
-                  method: saleRegisterMethod || 'Dinheiro',
+                  method: paymentMethodValue,
                   amount: paidAtCheckout
                 }
               ]
@@ -1219,7 +1192,7 @@ export default function SalesPanel({
               saleId,
               amount,
               dueDate: installment.dueDate,
-              method: saleRegisterMethod || undefined
+              method: paymentMethodValue
             })
           });
 
@@ -1427,16 +1400,20 @@ export default function SalesPanel({
 
             <div className="sale-overlay-body">
               <section className="sale-products-column">
-                <label className="sale-product-search">
+                <label className="sale-product-search store-search large">
+                  <span className="input-field-label">Buscar produto</span>
                   <input
+                    aria-label="Buscar produto para venda"
                     placeholder="Busque usando o nome, codigo da marca ou codigo de barras"
                     value={productSearch}
                     onChange={(event) => setProductSearch(event.target.value)}
                   />
-                  <span>⌕</span>
+                  <span className="search-icon" aria-hidden="true">
+                    <IconSearch />
+                  </span>
                 </label>
 
-                <div className="sale-product-grid">
+                <div className="sale-product-grid store-modal-list">
                   {filteredProducts.length === 0 ? (
                     <div className="sale-grid-empty">Nenhum produto encontrado.</div>
                   ) : (
@@ -1449,26 +1426,28 @@ export default function SalesPanel({
                         <button
                           key={product.id}
                           type="button"
-                          className={`sale-product-card${inCart ? ' selected' : ''}${stock <= 0 ? ' out' : ''}`}
+                          className={`sale-product-card store-checkbox-row${inCart ? ' selected' : ''}${stock <= 0 ? ' out' : ''}`}
                           onClick={() => openAddProductModal(product)}
                         >
-                          <div className="sale-product-thumb">
-                            {product.image_url ? (
-                              <img src={product.image_url} alt={product.name} />
-                            ) : (
-                              <span className="sale-product-placeholder">📦</span>
-                            )}
-                            <span className={`sale-product-badge ${stock > 0 ? 'stock' : 'nostock'}`}>
-                              {stock > 0 ? `${stock} un.` : 'Sem estoque'}
-                            </span>
+                          <div className="sale-product-main store-checkbox-main">
+                            <div className="sale-product-thumb store-checkbox-thumb">
+                              {product.image_url ? (
+                                <img src={product.image_url} alt={product.name} />
+                              ) : (
+                                <span className="sale-product-placeholder">📦</span>
+                              )}
+                            </div>
+                            <div className="sale-product-meta store-checkbox-copy">
+                              <strong>
+                                {numericCode ? `${numericCode} - ${product.name}` : product.name}
+                              </strong>
+                              <span>{product.brand || 'Sem marca'}</span>
+                            </div>
                           </div>
-                          <div className="sale-product-meta">
-                            <strong>
-                              {numericCode ? `${numericCode} - ${product.name}` : product.name}
-                            </strong>
-                            <span>{product.brand || 'Sem marca'}</span>
-                          </div>
-                          <div className="sale-product-price">{priceLabel}</div>
+                          <span className={`sale-product-badge ${stock > 0 ? 'stock' : 'nostock'}`}>
+                            {stock > 0 ? `${stock} un.` : 'Sem estoque'}
+                          </span>
+                          <div className="sale-product-price store-checkbox-price">{priceLabel}</div>
                         </button>
                       );
                     })
@@ -1609,6 +1588,130 @@ export default function SalesPanel({
                     <span>Total</span>
                     <strong>{formatCurrency(saleTotalValue)}</strong>
                   </div>
+                  <label className="modal-field sale-payment-method-field">
+                    <span>Forma de pagamento</span>
+                    <select
+                      value={saleRegisterMethod}
+                      onChange={(event) => {
+                        setSaleRegisterMethod(event.target.value);
+                        if (createSaleError) setCreateSaleError(null);
+                      }}
+                    >
+                      <option value="">Selecione</option>
+                      {paymentMethods.map((method) => (
+                        <option key={method} value={method}>
+                          {method}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="sale-payment-condition">
+                    <span className="sale-cart-label">Condicao de pagamento</span>
+                    <div className="sale-payment-condition-toggle">
+                      <button
+                        type="button"
+                        className={salePaid ? 'active' : ''}
+                        onClick={() => {
+                          setSalePaid(true);
+                          setSaleRegisterAmount('');
+                          setSaleDownPayment('');
+                          setSaleInstallments([]);
+                          if (createSaleError) setCreateSaleError(null);
+                        }}
+                      >
+                        Pago no ato
+                      </button>
+                      <button
+                        type="button"
+                        className={!salePaid ? 'active' : ''}
+                        onClick={() => {
+                          setSalePaid(false);
+                          if (saleTotalValue > 0) {
+                            setSaleRegisterAmount(formatCurrency(saleTotalValue));
+                          }
+                          if (createSaleError) setCreateSaleError(null);
+                        }}
+                      >
+                        Parcelado
+                      </button>
+                    </div>
+                  </div>
+                  {!salePaid ? (
+                    <div className="sale-payment-details">
+                      <label className="modal-field sale-register-amount-field">
+                        <span>Valor do pagamento</span>
+                        <input value={saleRegisterAmount} readOnly />
+                      </label>
+                      <label className="modal-field sale-down-payment-field">
+                        <span>Entrada</span>
+                        <input
+                          value={saleDownPayment}
+                          inputMode="decimal"
+                          placeholder="R$ 0,00"
+                          onChange={(event) => {
+                            setSaleDownPayment(formatCurrencyInput(event.target.value));
+                            if (createSaleError) setCreateSaleError(null);
+                          }}
+                        />
+                      </label>
+                      <div className="summary-row">
+                        <span>Saldo pendente</span>
+                        <strong>{formatCurrency(salePendingTotal)}</strong>
+                      </div>
+                      <div className="installments">
+                        <div className="installments-header">
+                          <strong>Parcelas</strong>
+                          <div className="installments-controls">
+                            <button className="button icon small" type="button" onClick={handleDecreaseSaleInstallments}>
+                              −
+                            </button>
+                            <span>{saleInstallments.length || 0}</span>
+                            <button className="button icon small" type="button" onClick={handleIncreaseSaleInstallments}>
+                              +
+                            </button>
+                          </div>
+                        </div>
+                        {salePendingTotal > 0 ? (
+                          <div className="installments-list">
+                            {saleInstallments.map((installment, index) => (
+                              <div key={installment.id} className="installment-row">
+                                <div className="installment-index">{index + 1}</div>
+                                <div className="installment-fields">
+                                  <label>
+                                    <span>Vencimento</span>
+                                    <input
+                                      type="date"
+                                      value={installment.dueDate}
+                                      onChange={(event) =>
+                                        updateSaleInstallment(installment.id, 'dueDate', event.target.value)
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    <span>Valor</span>
+                                    <input
+                                      value={installment.amount}
+                                      inputMode="decimal"
+                                      placeholder="R$ 0,00"
+                                      onChange={(event) =>
+                                        updateSaleInstallment(
+                                          installment.id,
+                                          'amount',
+                                          formatCurrencyInput(event.target.value)
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="installments-empty">Sem parcelas pendentes.</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
                   <label className="modal-field sale-date-field">
                     <span>Data da venda</span>
                     <input type="date" value={saleDate} onChange={(event) => setSaleDate(event.target.value)} />
@@ -1618,7 +1721,12 @@ export default function SalesPanel({
                     className="button primary sale-submit"
                     type="button"
                     onClick={handleCreateSale}
-                    disabled={createSaleSaving || saleItemsDetailed.length === 0 || !saleCustomerName}
+                    disabled={
+                      createSaleSaving ||
+                      saleItemsDetailed.length === 0 ||
+                      !saleCustomerName ||
+                      !saleRegisterMethod.trim()
+                    }
                   >
                     {createSaleSaving ? 'Salvando...' : 'Concluir venda'}
                   </button>
@@ -1716,7 +1824,9 @@ export default function SalesPanel({
               </button>
             </div>
             <label className="customer-picker-search">
+              <span className="input-field-label">Buscar cliente</span>
               <input
+                aria-label="Buscar cliente"
                 placeholder="Buscar cliente"
                 value={saleCustomerQuery}
                 onChange={(event) => {
@@ -1733,7 +1843,7 @@ export default function SalesPanel({
                 }}
                 autoFocus
               />
-              <span>⌕</span>
+              <span className="search-icon" aria-hidden="true">⌕</span>
             </label>
 
             <div className="customer-picker-results">

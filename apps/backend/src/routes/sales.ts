@@ -114,10 +114,14 @@ router.post(
         const saleId = saleRes.rows[0].id;
 
         for (const item of items) {
+          const origin = item.origin === 'order' ? 'order' : 'stock';
           if (item.unitId && item.quantity !== 1) {
             throw buildError(400, 'invalid_unit_selection', 'Quantidade invalida para unidade especifica.');
           }
           const explicitUnitIds = item.unitIds ?? (item.unitId ? [item.unitId] : []);
+          if (origin === 'order' && explicitUnitIds.length) {
+            throw buildError(400, 'invalid_unit_selection', 'Itens de encomenda nao aceitam unidades especificas.');
+          }
           if (explicitUnitIds.length && explicitUnitIds.length !== item.quantity) {
             throw buildError(400, 'invalid_unit_selection', 'Quantidade nao corresponde as unidades informadas.');
           }
@@ -138,7 +142,7 @@ router.post(
           );
           const saleItemId = saleItemRes.rows[0].id;
 
-          if (productId) {
+          if (productId && origin !== 'order') {
             if (explicitUnitIds.length) {
               const unitsRes = await client.query(
                 `SELECT id, status

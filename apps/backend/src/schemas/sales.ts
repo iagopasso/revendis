@@ -5,6 +5,7 @@ export const saleItemSchema = z
     sku: z.string().min(1),
     quantity: z.number().int().positive(),
     price: z.number().nonnegative(),
+    origin: z.enum(['stock', 'order']).optional(),
     unitId: z.string().uuid().optional(),
     unitIds: z.array(z.string().uuid()).optional()
   })

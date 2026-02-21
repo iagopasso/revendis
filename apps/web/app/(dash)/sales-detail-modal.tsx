@@ -165,6 +165,16 @@ const buildRow = (label: string, value: string, columns: number) => {
   return `${padRight(label, available)}${value}`;
 };
 
+const compactText = (value: string, maxLength: number) => {
+  const normalized = value.trim();
+  if (!normalized || maxLength <= 0) return '';
+  if (normalized.length <= maxLength) return normalized;
+  if (maxLength <= 3) return normalized.slice(0, maxLength);
+  const edge = Math.max(1, Math.floor((maxLength - 3) / 2));
+  const tail = Math.max(1, maxLength - 3 - edge);
+  return `${normalized.slice(0, edge)}...${normalized.slice(-tail)}`;
+};
+
 const formatCurrencyInput = (value: string) => {
   const digits = value.replace(/\D/g, '');
   if (!digits) return '';
@@ -213,16 +223,6 @@ const statusClass = (status: SaleDetail['status']) => {
   if (status === 'delivered') return 'delivered';
   if (status === 'pending') return 'pending';
   return 'cancelled';
-};
-
-const getOverdueDays = (dueDate?: string) => {
-  if (!dueDate) return 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const due = new Date(`${dueDate}T00:00:00`);
-  if (Number.isNaN(due.getTime())) return 0;
-  const diff = today.getTime() - due.getTime();
-  return diff > 0 ? Math.ceil(diff / (1000 * 60 * 60 * 24)) : 0;
 };
 
 const getPaymentStatus = (
@@ -444,13 +444,8 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
   };
 
   const isCancelled = deliveryStatus === 'cancelled';
-  const paymentDueDate = receivables[0]?.due_date || paymentState.dueDate;
   const isPaid = summary.total > 0 ? summary.paid >= summary.total : false;
   const showPaymentCallout = !isCancelled && summary.remaining > 0 && receivables.length === 0;
-  const overdueDays = isPaid ? 0 : getOverdueDays(paymentDueDate);
-  const isOverdue = overdueDays > 0;
-
-  const receiptStatus = isPaid ? 'Pago' : isOverdue ? `Atrasado (${overdueDays} dias)` : 'Pendente';
 
   const customerName = detail?.customer_name || sale.customer;
   const customerPhotoUrl = detail?.customer_photo_url || sale.customerPhotoUrl;
@@ -554,6 +549,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
   const thermalWidthMm: 80 | 58 = receiptInstallments.length > 4 ? 58 : 80;
   const thermalColumns = thermalWidthMm === 58 ? 24 : 32;
   const thermalFormat = thermalWidthMm === 58 ? 'thermal-58' : 'thermal-80';
+  const thermalSaleValue = `#${compactText(sale.id, Math.max(8, thermalColumns - 8))}`;
   const thermalLine = repeatChar('=', thermalColumns);
   const thermalDash = repeatChar('-', thermalColumns);
   const thermalSubtotal = toNumber(detail?.subtotal ?? summary.total);
@@ -575,7 +571,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     centerText('COMPROVANTE DE VENDA', thermalColumns),
     thermalDash,
     `Data: ${formatDate(sale.date)}`,
-    `Venda: #${sale.id}`,
+    buildRow('Venda:', thermalSaleValue, thermalColumns),
     `Cliente: ${customerName}`,
     thermalDash,
     'PRODUTOS',
@@ -1312,7 +1308,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
 
                   <div className="receipt-payment-header">
                     <strong>Pagamento</strong>
-                    <span className="receipt-pill pending">Pendente</span>
+                    <span className={`receipt-pill ${receiptPaymentStatusClass}`}>{receiptPaymentStatus}</span>
                   </div>
                   <div className="receipt-summary receipt-summary-table">
                     <div>

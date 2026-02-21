@@ -2100,9 +2100,12 @@ export default function InventoryPanel({
 
         <section className="panel filters-panel-static inventory-filters-panel">
           <div className="toolbar">
-            <form className="search" method="get">
-              <span>🔍</span>
-              <input name="q" placeholder="Buscar produto" defaultValue={query} />
+            <form className="search search-with-label" method="get">
+              <span className="search-field-label">Buscar produto</span>
+              <div className="search-inline">
+                <span aria-hidden="true">🔍</span>
+                <input aria-label="Buscar produto" name="q" placeholder="Buscar produto" defaultValue={query} />
+              </div>
               {stockFilter !== 'all' ? <input type="hidden" name="stock" value={stockFilter} /> : null}
               {categoryFilter !== 'all' ? <input type="hidden" name="category" value={categoryFilter} /> : null}
               {brandFilter !== 'all' ? <input type="hidden" name="brand" value={brandFilter} /> : null}
@@ -2401,70 +2404,84 @@ export default function InventoryPanel({
                       {catalogSyncing ? 'Sincronizando catalogo...' : 'Sincronizar catalogo agora'}
                     </button>
                   </div>
-                  <div className="modal-suggestions-list">
+                  <div className="modal-suggestions-list store-modal-list">
                     {catalogLoading ? <span className="meta">Carregando produtos pre-cadastrados...</span> : null}
                     {!catalogLoading && catalogError ? <span className="meta">{catalogError}</span> : null}
                     {!catalogLoading && !catalogError && catalogLoaded && displayedCatalogProducts.length === 0 ? (
                       <span className="meta">Nenhum produto encontrado no catalogo.</span>
                     ) : null}
                     {!catalogLoading && !catalogError
-                      ? displayedCatalogProducts.map((item) => (
-                          <button
-                            key={item.id}
-                            className="modal-suggestion"
-                            type="button"
-                            onClick={() => {
-                              const normalizedSourceCategory = normalizeSearchText(
-                                (item.sourceCategory || '').replace(/[-_]+/g, ' ')
-                              );
-                              const categoryId =
-                                categories.find(
-                                  (category) => {
-                                    const categoryToken = normalizeSearchText(category.name);
-                                    return (
-                                      categoryToken === normalizedSourceCategory ||
-                                      categoryToken.includes(normalizedSourceCategory) ||
-                                      normalizedSourceCategory.includes(categoryToken)
-                                    );
-                                  }
-                                )?.id || '';
+                      ? displayedCatalogProducts.map((item) => {
+                          const code = toDigits(item.code || item.sku || item.barcode || item.id);
+                          const meta = `${item.brand || 'Sem marca'}${code ? ` • ${code}` : ''}`;
+                          const priceLabel =
+                            item.price !== undefined && item.price !== null && `${item.price}` !== ''
+                              ? formatCurrency(Math.max(0, toNumber(item.price)))
+                              : 'Sem preco';
+                          return (
+                            <button
+                              key={item.id}
+                              className="modal-suggestion store-checkbox-row"
+                              type="button"
+                              onClick={() => {
+                                const normalizedSourceCategory = normalizeSearchText(
+                                  (item.sourceCategory || '').replace(/[-_]+/g, ' ')
+                                );
+                                const categoryId =
+                                  categories.find(
+                                    (category) => {
+                                      const categoryToken = normalizeSearchText(category.name);
+                                      return (
+                                        categoryToken === normalizedSourceCategory ||
+                                        categoryToken.includes(normalizedSourceCategory) ||
+                                        normalizedSourceCategory.includes(categoryToken)
+                                      );
+                                    }
+                                  )?.id || '';
 
-                              openForm(
-                                {
-                                  ...emptyDraft,
-                                  name: item.name,
-                                  brand: item.brand || '',
-                                  brandCode: toDigits(item.code || item.sku || item.id),
-                                  barcode: item.barcode || item.code || item.sku || '',
-                                  category: categoryId,
-                                  price:
-                                    item.price !== undefined &&
-                                    item.price !== null &&
-                                    `${item.price}` !== ''
-                                      ? formatCurrency(toNumber(item.price))
-                                      : '',
-                                  imageUrl: getCatalogSuggestionThumb(item)
-                                },
-                                'create'
-                              );
-                            }}
-                          >
-                            <span className="modal-suggestion-thumb">
-                              <img
-                                src={getCatalogSuggestionThumb(item)}
-                                alt={item.name}
-                                loading="lazy"
-                                onError={(event) => {
-                                  const fallback = buildCatalogFallbackThumb(item.name, item.brand);
-                                  if (event.currentTarget.src !== fallback) {
-                                    event.currentTarget.src = fallback;
-                                  }
-                                }}
-                              />
-                            </span>
-                            <span>{item.name}</span>
-                          </button>
-                        ))
+                                openForm(
+                                  {
+                                    ...emptyDraft,
+                                    name: item.name,
+                                    brand: item.brand || '',
+                                    brandCode: toDigits(item.code || item.sku || item.id),
+                                    barcode: item.barcode || item.code || item.sku || '',
+                                    category: categoryId,
+                                    price:
+                                      item.price !== undefined &&
+                                      item.price !== null &&
+                                      `${item.price}` !== ''
+                                        ? formatCurrency(toNumber(item.price))
+                                        : '',
+                                    imageUrl: getCatalogSuggestionThumb(item)
+                                  },
+                                  'create'
+                                );
+                              }}
+                            >
+                              <span className="modal-suggestion-main store-checkbox-main">
+                                <span className="modal-suggestion-thumb store-checkbox-thumb">
+                                  <img
+                                    src={getCatalogSuggestionThumb(item)}
+                                    alt={item.name}
+                                    loading="lazy"
+                                    onError={(event) => {
+                                      const fallback = buildCatalogFallbackThumb(item.name, item.brand);
+                                      if (event.currentTarget.src !== fallback) {
+                                        event.currentTarget.src = fallback;
+                                      }
+                                    }}
+                                  />
+                                </span>
+                                <span className="modal-suggestion-copy store-checkbox-copy">
+                                  <strong>{item.name}</strong>
+                                  <span>{meta}</span>
+                                </span>
+                              </span>
+                              <span className="modal-suggestion-price store-checkbox-price">{priceLabel}</span>
+                            </button>
+                          );
+                        })
                       : null}
                   </div>
                 </div>
@@ -3077,7 +3094,9 @@ export default function InventoryPanel({
                 </button>
               </div>
               <label className="customer-search-field">
+                <span className="input-field-label">Buscar cliente</span>
                 <input
+                  aria-label="Buscar cliente"
                   placeholder={customersLoading ? 'Carregando clientes...' : 'Buscar cliente'}
                   value={sellCustomerQuery}
                   onChange={(event) => {
@@ -3090,7 +3109,7 @@ export default function InventoryPanel({
                     setSellCustomerId(match?.id || '');
                   }}
                 />
-                <span>⌕</span>
+                <span className="search-icon" aria-hidden="true">⌕</span>
               </label>
 
               {sellCustomerName ? (

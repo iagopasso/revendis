@@ -40,7 +40,7 @@ const primaryNavItems = [
   { href: '/compras', label: 'Compras', icon: IconCart },
   { href: '/clientes', label: 'Clientes', icon: IconUsers },
   { href: '/financeiro', label: 'Financeiro', icon: IconDollar },
-  { href: '/', label: 'Loja online', icon: IconGlobe },
+  { href: '/loja', label: 'Loja online', icon: IconGlobe },
   { href: '/relatorios', label: 'Relatórios', icon: IconPieChart },
   { href: '/configuracoes', label: 'Configurações', icon: IconMessage }
 ];

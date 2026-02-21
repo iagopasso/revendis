@@ -76,6 +76,7 @@ export type SaleItem = {
   sku: string;
   quantity: number;
   price: number;
+  origin?: 'stock' | 'order';
   unitId?: string;
   unitIds?: string[];
 };
