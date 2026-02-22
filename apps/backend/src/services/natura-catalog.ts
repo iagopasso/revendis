@@ -10,6 +10,7 @@ const NATURA_BFF_PAGE_SIZE = Number(process.env.NATURA_BFF_PAGE_SIZE || 100);
 const NATURA_BFF_MAX_PAGES = Number(process.env.NATURA_BFF_MAX_PAGES || 120);
 const NATURA_ENABLE_ROOT_CATALOG_STRATEGY = process.env.NATURA_ENABLE_ROOT_CATALOG_STRATEGY !== '0';
 const NATURA_ROOT_CATALOG_PATHS = ['/c/root', '/c/natura'] as const;
+const NATURA_ROOT_CATALOG_MIN_PRODUCTS = Number(process.env.NATURA_ROOT_CATALOG_MIN_PRODUCTS || 80);
 const DEFAULT_TIMEOUT_MS = 12000;
 const NATURA_CONSULTANT_AUTH_URL =
   process.env.NATURA_CONSULTANT_AUTH_URL ||
@@ -1535,6 +1536,10 @@ export const fetchNaturaCatalogProducts = async ({
   requestAuth
 }: FetchNaturaCatalogOptions = {}): Promise<FetchNaturaCatalogResult> => {
   const effectiveTimeoutMs = Math.max(3000, safePositiveInt(timeoutMs, DEFAULT_TIMEOUT_MS));
+  const rootCatalogMinProducts = Math.max(
+    1,
+    safePositiveInt(NATURA_ROOT_CATALOG_MIN_PRODUCTS, 80)
+  );
 
   const requestedPaths = Array.from(
     new Set(
@@ -1544,6 +1549,8 @@ export const fetchNaturaCatalogProducts = async ({
     )
   );
 
+  const rootSeedProducts = new Map<string, NaturaCatalogProduct>();
+
   if (!requestedPaths.length && NATURA_ENABLE_ROOT_CATALOG_STRATEGY) {
     const rootCatalog = await fetchNaturaRootCatalogProducts({
       signal,
@@ -1552,19 +1559,22 @@ export const fetchNaturaCatalogProducts = async ({
     });
 
     if (rootCatalog && rootCatalog.products.length > 0) {
-      const dedupedRoot = new Map<string, NaturaCatalogProduct>();
       rootCatalog.products.forEach((product) => {
-        if (!dedupedRoot.has(product.id)) {
-          dedupedRoot.set(product.id, product);
+        if (!rootSeedProducts.has(product.id)) {
+          rootSeedProducts.set(product.id, product);
         }
       });
 
-      return {
-        products: Array.from(dedupedRoot.values()),
-        failedSources: [],
-        failedDetails: [],
-        resolvedPaths: [rootCatalog.resolvedPath]
-      };
+      // Some root endpoints return only highlighted products.
+      // If the count is low, continue crawling category paths to complete the catalog.
+      if (rootSeedProducts.size >= rootCatalogMinProducts) {
+        return {
+          products: Array.from(rootSeedProducts.values()),
+          failedSources: [],
+          failedDetails: [],
+          resolvedPaths: [rootCatalog.resolvedPath]
+        };
+      }
     }
   }
 
@@ -1578,7 +1588,7 @@ export const fetchNaturaCatalogProducts = async ({
 
   const failedSources: string[] = [];
   const failedDetails: FetchNaturaFailureDetail[] = [];
-  const deduped = new Map<string, NaturaCatalogProduct>();
+  const deduped = new Map<string, NaturaCatalogProduct>(rootSeedProducts);
 
   for (const path of resolvedPaths) {
     if (signal?.aborted) {

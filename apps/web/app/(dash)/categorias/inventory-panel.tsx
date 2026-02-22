@@ -12,6 +12,7 @@ import {
   IconGrid,
   IconList,
   IconPlus,
+  IconScan,
   IconTrash,
   IconUpload
 } from '../icons';
@@ -80,6 +81,11 @@ type CatalogPreloadedSourceMeta = {
   brand: string;
   source?: 'sample' | 'upstream';
   count?: number;
+};
+
+type CatalogScanMatch = {
+  stockProduct: Product | null;
+  catalogProduct: CatalogSuggestionProduct | null;
 };
 
 type CatalogManualImportProduct = {
@@ -156,6 +162,7 @@ type InstallmentInput = {
 
 type InventoryPanelProps = {
   products: Product[];
+  allProducts: Product[];
   productCount: number;
   totalUnits: number;
   productsLength: number;
@@ -171,6 +178,12 @@ type InventoryPanelProps = {
   viewParam: string;
 };
 
+type BarcodeDetectorResult = { rawValue?: string };
+type BarcodeDetectorInstance = {
+  detect: (source: HTMLVideoElement) => Promise<BarcodeDetectorResult[]>;
+};
+type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => BarcodeDetectorInstance;
+
 const paymentMethods = [
   'Dinheiro',
   'Cartao de Credito',
@@ -183,6 +196,7 @@ const paymentMethods = [
 ];
 
 const UPLOAD_IMAGE_MAX_SIZE_PX = 520;
+const barcodeFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf'];
 
 const emptyDraft: ProductDraft = {
   name: '',
@@ -209,28 +223,11 @@ const catalogBrandOptions = [
   { slug: 'boticario', label: 'Boticario', aliases: ['boticario', 'o boticario', 'o-boticario'] },
   { slug: 'oui', label: 'Oui', aliases: ['oui'] },
   { slug: 'natura', label: 'Natura', aliases: ['natura'] },
-  { slug: 'demillus', label: 'Demillus', aliases: ['demillus', 'de millus'] },
-  { slug: 'farmasi', label: 'Farmasi', aliases: ['farmasi'] },
-  { slug: 'hinode', label: 'Hinode', aliases: ['hinode'] },
-  { slug: 'jequiti', label: 'Jequiti', aliases: ['jequiti'] },
-  {
-    slug: 'loccitane-au-bresil',
-    label: "L'Occitane au Bresil",
-    aliases: ['loccitane au bresil', "l'occitane au bresil", 'loccitane']
-  },
-  { slug: 'mahogany', label: 'Mahogany', aliases: ['mahogany'] },
-  { slug: 'moments-paris', label: 'Moments Paris', aliases: ['moments paris', 'moments-paris'] },
-  { slug: 'odorata', label: 'Odorata', aliases: ['odorata'] },
-  {
-    slug: 'quem-disse-berenice',
-    label: 'Quem Disse, Berenice?',
-    aliases: ['quem disse berenice', 'quem disse, berenice?', 'qdb']
-  },
-  { slug: 'racco', label: 'Racco', aliases: ['racco'] },
-  { slug: 'skelt', label: 'Skelt', aliases: ['skelt'] },
   { slug: 'extase', label: 'Extase', aliases: ['extase', 'extasee', 'extasis'] },
   { slug: 'diamante', label: 'Diamante', aliases: ['diamante'] }
 ] as const;
+
+type CatalogSourceBrand = (typeof catalogBrandOptions)[number]['slug'];
 
 const normalizeSearchText = (value: string) =>
   value
@@ -239,7 +236,53 @@ const normalizeSearchText = (value: string) =>
     .toLowerCase()
     .trim();
 
+const normalizeBrandLookupToken = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+
+const catalogBrandAliasLookup = catalogBrandOptions.reduce<Record<string, CatalogSourceBrand>>(
+  (acc, option) => {
+    const tokens = [option.slug, option.label, ...option.aliases];
+    tokens.forEach((token) => {
+      const normalized = normalizeBrandLookupToken(token);
+      if (normalized) acc[normalized] = option.slug;
+    });
+    return acc;
+  },
+  {}
+);
+
+const catalogBrandCodePrefixLookup: Record<string, CatalogSourceBrand> = {
+  avnbra: 'avon',
+  avonbra: 'avon',
+  mkbra: 'mary-kay',
+  mkybra: 'mary-kay',
+  marykaybra: 'mary-kay',
+  tupbra: 'tupperware',
+  tupperbra: 'tupperware',
+  eudbra: 'eudora',
+  botbra: 'boticario',
+  ouibra: 'oui',
+  natbra: 'natura',
+  extbra: 'extase',
+  diambra: 'diamante'
+};
+
 const toDigits = (value: string) => value.replace(/\D/g, '');
+const normalizeCodeToken = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-_./]+/g, '');
+const normalizeDigitsToken = (value: string) => {
+  const digits = toDigits(value);
+  if (!digits) return '';
+  return digits.replace(/^0+/, '') || '0';
+};
 
 const escapeSvgText = (value: string) =>
   value
@@ -558,6 +601,48 @@ const getProductCode = (product?: Product | null) => {
   return toDigits(product.barcode || '');
 };
 
+const extractCatalogBrandTokensFromCode = (value?: string | null) => {
+  if (!value) return [];
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+
+  const tokens = new Set<string>();
+  const leadingAlpha = trimmed.match(/^[A-Za-zÀ-ÿ]+/)?.[0] || '';
+  const firstChunk = trimmed.split(/[^A-Za-z0-9À-ÿ]+/).find((chunk) => chunk.trim().length > 0) || '';
+
+  [leadingAlpha, firstChunk].forEach((candidate) => {
+    const normalized = normalizeBrandLookupToken(candidate);
+    if (!normalized) return;
+    tokens.add(normalized);
+    if (normalized.endsWith('bra') && normalized.length > 3) {
+      tokens.add(normalized.slice(0, -3));
+    }
+  });
+
+  return Array.from(tokens);
+};
+
+const resolveCatalogSourceBrandFromProduct = (product: Product): CatalogSourceBrand | null => {
+  const brandToken = normalizeBrandLookupToken(product.brand || '');
+  if (brandToken) {
+    const aliasMatch = catalogBrandAliasLookup[brandToken];
+    if (aliasMatch) return aliasMatch;
+  }
+
+  const codeCandidates = [product.sku || '', product.barcode || '', getProductCode(product)];
+  for (const value of codeCandidates) {
+    const tokens = extractCatalogBrandTokensFromCode(value);
+    for (const token of tokens) {
+      const prefixMatch = catalogBrandCodePrefixLookup[token];
+      if (prefixMatch) return prefixMatch;
+      const aliasMatch = catalogBrandAliasLookup[token];
+      if (aliasMatch) return aliasMatch;
+    }
+  }
+
+  return null;
+};
+
 const getProductHeadline = (product?: Product | null) => {
   if (!product) return '';
   const code = getProductCode(product);
@@ -589,6 +674,7 @@ const getProductImage = (product?: Product | null) => {
 
 export default function InventoryPanel({
   products,
+  allProducts,
   productCount,
   totalUnits,
   productsLength,
@@ -613,6 +699,11 @@ export default function InventoryPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [openImport, setOpenImport] = useState(false);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
+  const scannerStreamRef = useRef<MediaStream | null>(null);
+  const scannerFrameRef = useRef<number | null>(null);
+  const scannerDetectingRef = useRef(false);
+  const scannerResolvedRef = useRef(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [productTab, setProductTab] = useState<'estoque' | 'vendas'>('estoque');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -674,8 +765,22 @@ export default function InventoryPanel({
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  const [barcodeScannerLoading, setBarcodeScannerLoading] = useState(false);
+  const [barcodeScannerError, setBarcodeScannerError] = useState<string | null>(null);
+  const [barcodeScanEntryStep, setBarcodeScanEntryStep] = useState<
+    'search' | 'form' | 'inventory-search'
+  >('form');
+  const [lastScannedCode, setLastScannedCode] = useState('');
+  const [scannedProduct, setScannedProduct] = useState<Product | null>(null);
+  const [scannedProductCode, setScannedProductCode] = useState('');
+  const [scanLinkOpen, setScanLinkOpen] = useState(false);
+  const [scanLinkCode, setScanLinkCode] = useState('');
+  const [scanLinkQuery, setScanLinkQuery] = useState('');
+  const [scanLinkSavingId, setScanLinkSavingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [localProducts, setLocalProducts] = useState<Product[]>(products);
+  const [allInventoryProducts, setAllInventoryProducts] = useState<Product[]>(allProducts);
 
   const view = viewParam === 'grid' ? 'grid' : 'list';
   const filterBrandOptions = uniqueBrands(brands);
@@ -708,6 +813,52 @@ export default function InventoryPanel({
       ...(customerDraft.tagsInput.trim() ? [customerDraft.tagsInput.trim()] : [])
     ])
   );
+  const scanLinkCandidates = useMemo(() => {
+    const rawTerm = scanLinkQuery.trim();
+    const normalizedTerm = normalizeSearchText(rawTerm);
+    const compactTerm = normalizeCodeToken(rawTerm);
+    const digitsTerm = toDigits(rawTerm);
+    const digitsNormalizedTerm = normalizeDigitsToken(rawTerm);
+    const normalizedTokens = normalizedTerm.split(/\s+/).filter(Boolean);
+    const compactTokens = normalizedTokens.map((token) => normalizeCodeToken(token)).filter(Boolean);
+
+    const list = allInventoryProducts.filter((product) => {
+      if (!rawTerm) return true;
+
+      const searchable = [
+        product.name || '',
+        product.brand || '',
+        product.sku || '',
+        product.barcode || '',
+        getProductCode(product),
+        getProductHeadline(product),
+        getProductMetaLine(product)
+      ]
+        .join(' ')
+        .trim();
+      const normalized = normalizeSearchText(searchable);
+      const compact = normalizeCodeToken(searchable);
+      const digits = toDigits(searchable);
+      const digitsNormalized = normalizeDigitsToken(searchable);
+
+      if (normalizedTerm && normalized.includes(normalizedTerm)) return true;
+      if (compactTerm && compact.includes(compactTerm)) return true;
+      if (digitsTerm && digits.includes(digitsTerm)) return true;
+      if (digitsNormalizedTerm && digitsNormalized.includes(digitsNormalizedTerm)) return true;
+
+      const matchesNormalizedTokens =
+        normalizedTokens.length > 0 && normalizedTokens.every((token) => normalized.includes(token));
+      if (matchesNormalizedTokens) return true;
+
+      const matchesCompactTokens =
+        compactTokens.length > 0 && compactTokens.every((token) => compact.includes(token));
+      if (matchesCompactTokens) return true;
+
+      return false;
+    });
+
+    return list.slice(0, 24);
+  }, [allInventoryProducts, scanLinkQuery]);
 
   const updateView = (nextView: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -741,7 +892,45 @@ export default function InventoryPanel({
     return `${basePath}?${params.toString()}`;
   };
 
-  const loadCatalogProducts = async (signal?: AbortSignal) => {
+  const buildSearchHref = (nextQuery: string) => {
+    const params = new URLSearchParams({
+      q: nextQuery,
+      stock: stockFilter === 'all' ? '' : stockFilter,
+      category: categoryFilter === 'all' ? '' : categoryFilter,
+      brand: brandFilter === 'all' ? '' : brandFilter,
+      view
+    });
+    return `${basePath}?${params.toString()}`;
+  };
+
+  const applyInventorySearchQuery = (value: string) => {
+    const trimmed = value.trim();
+    const params = new URLSearchParams(searchParams.toString());
+    if (trimmed) {
+      params.set('q', trimmed);
+    } else {
+      params.delete('q');
+    }
+    if (stockFilter !== 'all') {
+      params.set('stock', stockFilter);
+    } else {
+      params.delete('stock');
+    }
+    if (categoryFilter !== 'all') {
+      params.set('category', categoryFilter);
+    } else {
+      params.delete('category');
+    }
+    if (brandFilter !== 'all') {
+      params.set('brand', brandFilter);
+    } else {
+      params.delete('brand');
+    }
+    params.set('view', view);
+    router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname);
+  };
+
+  const loadCatalogProducts = async ({ signal }: { signal?: AbortSignal } = {}) => {
     setCatalogLoading(true);
     setCatalogError(null);
     try {
@@ -810,6 +999,35 @@ export default function InventoryPanel({
     }
   };
 
+  const buildDraftFromCatalogSuggestion = (item: CatalogSuggestionProduct): ProductDraft => {
+    const normalizedSourceCategory = normalizeSearchText(
+      (item.sourceCategory || '').replace(/[-_]+/g, ' ')
+    );
+    const categoryId =
+      categories.find((category) => {
+        const categoryToken = normalizeSearchText(category.name);
+        return (
+          categoryToken === normalizedSourceCategory ||
+          categoryToken.includes(normalizedSourceCategory) ||
+          normalizedSourceCategory.includes(categoryToken)
+        );
+      })?.id || '';
+
+    return {
+      ...emptyDraft,
+      name: item.name,
+      brand: item.brand || '',
+      brandCode: toDigits(item.code || item.sku || item.id),
+      barcode: item.barcode || '',
+      category: categoryId,
+      price:
+        item.price !== undefined && item.price !== null && `${item.price}` !== ''
+          ? formatCurrency(toNumber(item.price))
+          : '',
+      imageUrl: getCatalogSuggestionThumb(item)
+    };
+  };
+
   const syncCatalogProductsNow = async () => {
     setCatalogSyncing(true);
     setCatalogError(null);
@@ -860,6 +1078,10 @@ export default function InventoryPanel({
   useEffect(() => {
     setLocalProducts(products);
   }, [products]);
+
+  useEffect(() => {
+    setAllInventoryProducts(allProducts);
+  }, [allProducts]);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -919,7 +1141,7 @@ export default function InventoryPanel({
     setCatalogLoaded(false);
 
     const timer = setTimeout(async () => {
-      await loadCatalogProducts(controller.signal);
+      await loadCatalogProducts({ signal: controller.signal });
     }, 320);
 
     return () => {
@@ -927,6 +1149,120 @@ export default function InventoryPanel({
       clearTimeout(timer);
     };
   }, [createStep, formMode, openCreate]);
+
+  useEffect(() => {
+    if (!barcodeScannerOpen) return;
+
+    let cancelled = false;
+    scannerResolvedRef.current = false;
+    scannerDetectingRef.current = false;
+
+    const startScanner = async () => {
+      if (typeof window === 'undefined') return;
+      if (!window.isSecureContext) {
+        setBarcodeScannerLoading(false);
+        setBarcodeScannerError('Para ler com camera, acesse por HTTPS (ou localhost).');
+        return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setBarcodeScannerLoading(false);
+        setBarcodeScannerError('Este dispositivo nao permite acesso a camera no navegador.');
+        return;
+      }
+
+      const detectorConstructor = (
+        window as Window & {
+          BarcodeDetector?: BarcodeDetectorConstructor;
+        }
+      ).BarcodeDetector;
+      if (!detectorConstructor) {
+        setBarcodeScannerLoading(false);
+        setBarcodeScannerError('Seu navegador ainda nao suporta leitura de codigo por camera.');
+        return;
+      }
+
+      try {
+        const detector = new detectorConstructor({ formats: barcodeFormats });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        scannerStreamRef.current = stream;
+        const video = scannerVideoRef.current;
+        if (!video) {
+          setBarcodeScannerLoading(false);
+          setBarcodeScannerError('Nao foi possivel abrir o preview da camera.');
+          stopBarcodeScanner();
+          return;
+        }
+
+        video.srcObject = stream;
+        video.setAttribute('playsinline', 'true');
+        await video.play().catch(() => null);
+        if (cancelled) return;
+
+        setBarcodeScannerLoading(false);
+
+        const detectLoop = async () => {
+          if (cancelled || scannerResolvedRef.current) return;
+
+          const currentVideo = scannerVideoRef.current;
+          if (!currentVideo) return;
+
+          if (currentVideo.readyState >= 2 && !scannerDetectingRef.current) {
+            scannerDetectingRef.current = true;
+            try {
+              const detections = await detector.detect(currentVideo);
+              const code =
+                detections.find((item) => typeof item.rawValue === 'string' && item.rawValue.trim().length > 0)
+                  ?.rawValue || '';
+
+              if (code.trim()) {
+                await handleDetectedBarcode(code);
+                return;
+              }
+            } catch {
+              // Ignore frame-level detection errors and keep scanning.
+            } finally {
+              scannerDetectingRef.current = false;
+            }
+          }
+
+          scannerFrameRef.current = window.requestAnimationFrame(detectLoop);
+        };
+
+        scannerFrameRef.current = window.requestAnimationFrame(detectLoop);
+      } catch (error) {
+        if (cancelled) return;
+        const errorName = (error as { name?: string })?.name || '';
+        if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
+          setBarcodeScannerError('Permissao da camera negada. Libere o acesso para continuar.');
+        } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+          setBarcodeScannerError('Nenhuma camera encontrada neste dispositivo.');
+        } else {
+          setBarcodeScannerError('Nao foi possivel iniciar a camera para leitura.');
+        }
+        setBarcodeScannerLoading(false);
+        stopBarcodeScanner();
+      }
+    };
+
+    void startScanner();
+
+    return () => {
+      cancelled = true;
+      stopBarcodeScanner();
+    };
+  }, [barcodeScannerOpen]);
 
   const displayProducts = localProducts;
 
@@ -1144,6 +1480,9 @@ export default function InventoryPanel({
   };
 
   const closeCreateModal = () => {
+    closeBarcodeScanner();
+    closeScannedProductConfirmation();
+    closeScanLinkModal();
     setOpenCreate(false);
     setCreateStep('search');
     setFormMode('create');
@@ -1155,10 +1494,12 @@ export default function InventoryPanel({
     setCatalogLoaded(false);
     setCatalogError(null);
     setCatalogSourceInfo(null);
-    setCatalogSyncing(false);
   };
 
   const openCreateSearch = () => {
+    closeBarcodeScanner();
+    closeScannedProductConfirmation();
+    closeScanLinkModal();
     setOpenCreate(true);
     setFormMode('create');
     setCreateStep('search');
@@ -1170,10 +1511,12 @@ export default function InventoryPanel({
     setCatalogLoaded(false);
     setCatalogError(null);
     setCatalogSourceInfo(null);
-    setCatalogSyncing(false);
   };
 
   const openForm = (draft: ProductDraft, mode: 'create' | 'edit', id?: string | null) => {
+    closeBarcodeScanner();
+    closeScannedProductConfirmation();
+    closeScanLinkModal();
     setOpenCreate(true);
     setFormMode(mode);
     setCreateStep('form');
@@ -1218,6 +1561,411 @@ export default function InventoryPanel({
   const clearProductImage = () => {
     setFormDraft((prev) => ({ ...prev, imageUrl: '' }));
   };
+
+  const stopBarcodeScanner = () => {
+    if (scannerFrameRef.current !== null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(scannerFrameRef.current);
+      scannerFrameRef.current = null;
+    }
+    if (scannerStreamRef.current) {
+      scannerStreamRef.current.getTracks().forEach((track) => track.stop());
+      scannerStreamRef.current = null;
+    }
+    if (scannerVideoRef.current) {
+      scannerVideoRef.current.pause();
+      scannerVideoRef.current.srcObject = null;
+    }
+    scannerDetectingRef.current = false;
+  };
+
+  const closeBarcodeScanner = () => {
+    scannerResolvedRef.current = true;
+    stopBarcodeScanner();
+    setBarcodeScannerOpen(false);
+    setBarcodeScannerLoading(false);
+    setBarcodeScannerError(null);
+    setLastScannedCode('');
+  };
+
+  const findProductByScannedCode = (rawCode: string) => {
+    const rawToken = rawCode.trim();
+    const normalizedCode = rawToken.toLowerCase();
+    const compactCode = normalizeCodeToken(rawToken);
+    const digitsCode = toDigits(rawToken);
+    const digitsNormalized = normalizeDigitsToken(rawToken);
+    if (!normalizedCode && !compactCode && !digitsCode) return null;
+
+    return (
+      allInventoryProducts.find((product) => {
+        const candidates = [
+          (product.barcode || '').trim(),
+          (product.sku || '').trim(),
+          getProductCode(product),
+          extractLeadingProductCode(product.name || '')?.code || ''
+        ].filter(Boolean);
+
+        return candidates.some((candidate) => {
+          const candidateNormalized = candidate.toLowerCase();
+          const candidateCompact = normalizeCodeToken(candidate);
+          const candidateDigits = toDigits(candidate);
+          const candidateDigitsNormalized = normalizeDigitsToken(candidate);
+
+          if (normalizedCode && candidateNormalized === normalizedCode) return true;
+          if (compactCode && candidateCompact && candidateCompact === compactCode) return true;
+          if (digitsCode && candidateDigits && candidateDigits === digitsCode) return true;
+          if (
+            digitsNormalized &&
+            candidateDigitsNormalized &&
+            candidateDigitsNormalized === digitsNormalized
+          ) {
+            return true;
+          }
+
+          const minCodeLength = 6;
+          if (
+            compactCode.length >= minCodeLength &&
+            candidateCompact.length >= minCodeLength &&
+            (candidateCompact.endsWith(compactCode) || compactCode.endsWith(candidateCompact))
+          ) {
+            return true;
+          }
+          if (
+            digitsNormalized.length >= minCodeLength &&
+            candidateDigitsNormalized.length >= minCodeLength &&
+            (candidateDigitsNormalized.endsWith(digitsNormalized) ||
+              digitsNormalized.endsWith(candidateDigitsNormalized))
+          ) {
+            return true;
+          }
+
+          return false;
+        });
+      }) || null
+    );
+  };
+
+  const findCatalogScanMatch = async (rawCode: string): Promise<CatalogScanMatch> => {
+    const queryValue = rawCode.trim();
+    if (!queryValue) {
+      return {
+        stockProduct: null,
+        catalogProduct: null
+      };
+    }
+    try {
+      const params = new URLSearchParams({
+        q: queryValue,
+        limit: '40'
+      });
+      const response = await fetch(`${API_BASE}/catalog/preloaded/products?${params.toString()}`, {
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        return {
+          stockProduct: null,
+          catalogProduct: null
+        };
+      }
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            data?: CatalogSuggestionProduct[];
+          }
+        | null;
+
+      const items = payload?.data || [];
+      if (!items.length) {
+        return {
+          stockProduct: null,
+          catalogProduct: null
+        };
+      }
+
+      const scanCode = queryValue.toLowerCase();
+      const scanCompact = normalizeCodeToken(queryValue);
+      const scanDigits = normalizeDigitsToken(queryValue);
+
+      const scored = items
+        .map((item) => {
+          const tokens = [item.barcode || '', item.sku || '', item.code || '', item.id || '']
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+          const score = tokens.reduce((best, token) => {
+            const tokenLower = token.toLowerCase();
+            const tokenCompact = normalizeCodeToken(token);
+            const tokenDigits = normalizeDigitsToken(token);
+            let current = best;
+            if (tokenLower === scanCode) current = Math.max(current, 100);
+            if (scanCompact && tokenCompact === scanCompact) current = Math.max(current, 90);
+            if (scanDigits && tokenDigits === scanDigits) current = Math.max(current, 80);
+            if (scanDigits && tokenDigits && tokenDigits.includes(scanDigits)) current = Math.max(current, 60);
+            return current;
+          }, 0);
+
+          return { item, score };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      const bestCatalogProduct = scored.find((entry) => entry.score > 0)?.item || null;
+
+      for (const entry of scored) {
+        const candidateTokens = [
+          entry.item.barcode || '',
+          entry.item.sku || '',
+          entry.item.code || '',
+          entry.item.id || ''
+        ]
+          .map((value) => value.trim())
+          .filter(Boolean);
+
+        for (const candidate of candidateTokens) {
+          const product = findProductByScannedCode(candidate);
+          if (product) {
+            return {
+              stockProduct: product,
+              catalogProduct: entry.item
+            };
+          }
+        }
+      }
+
+      return {
+        stockProduct: null,
+        catalogProduct: bestCatalogProduct
+      };
+    } catch {
+      return {
+        stockProduct: null,
+        catalogProduct: null
+      };
+    }
+  };
+
+  const handleDetectedBarcode = async (rawCode: string) => {
+    const normalizedCode = rawCode.trim();
+    if (!normalizedCode) return;
+
+    scannerResolvedRef.current = true;
+    stopBarcodeScanner();
+    setBarcodeScannerOpen(false);
+    setBarcodeScannerLoading(false);
+    setBarcodeScannerError(null);
+    setLastScannedCode(normalizedCode);
+
+    if (barcodeScanEntryStep === 'inventory-search') {
+      applyInventorySearchQuery(normalizedCode);
+      setToast('Codigo lido. Mostrando produtos cadastrados com esse codigo.');
+      return;
+    }
+
+    const matchedProduct = findProductByScannedCode(normalizedCode);
+    if (matchedProduct) {
+      setScannedProduct(matchedProduct);
+      setScannedProductCode(normalizedCode);
+      return;
+    }
+
+    const catalogMatch = await findCatalogScanMatch(normalizedCode);
+    if (catalogMatch.stockProduct) {
+      setScannedProduct(catalogMatch.stockProduct);
+      setScannedProductCode(normalizedCode);
+      setToast('Produto encontrado pelo codigo de barras via catalogo da marca.');
+      return;
+    }
+
+    if (catalogMatch.catalogProduct) {
+      if (formMode === 'create') {
+        const draftFromCatalog = buildDraftFromCatalogSuggestion(catalogMatch.catalogProduct);
+        const nextDraft = {
+          ...draftFromCatalog,
+          barcode: draftFromCatalog.barcode || normalizedCode
+        };
+
+        if (barcodeScanEntryStep === 'search') {
+          openForm(nextDraft, 'create');
+        } else {
+          setFormDraft((prev) => ({
+            ...prev,
+            ...nextDraft
+          }));
+        }
+
+        setToast('Produto encontrado no catalogo. Confira os dados antes de salvar.');
+      } else {
+        setToast('Codigo encontrado no catalogo, mas nao existe produto igual no estoque.');
+      }
+      return;
+    }
+
+    setScanLinkCode(normalizedCode);
+    setScanLinkQuery('');
+    setScanLinkOpen(true);
+    setToast('Codigo lido. Vincule ao produto correto para facilitar os proximos bipes.');
+  };
+
+  const openBarcodeScanner = (entryStep: 'search' | 'form' | 'inventory-search') => {
+    setBarcodeScanEntryStep(entryStep);
+    setBarcodeScannerOpen(true);
+    setBarcodeScannerLoading(true);
+    setBarcodeScannerError(null);
+    setLastScannedCode('');
+  };
+
+  const closeScanLinkModal = () => {
+    setScanLinkOpen(false);
+    setScanLinkCode('');
+    setScanLinkQuery('');
+    setScanLinkSavingId(null);
+  };
+
+  const continueAsNewProductFromScan = () => {
+    const code = scanLinkCode.trim();
+    closeScanLinkModal();
+    if (!code) return;
+    if (barcodeScanEntryStep === 'search' && formMode === 'create') {
+      openForm({ ...emptyDraft, barcode: code }, 'create');
+    } else {
+      setFormDraft((prev) => ({ ...prev, barcode: code }));
+    }
+  };
+
+  const handleLinkScannedCodeToProduct = async (product: Product) => {
+    const code = scanLinkCode.trim();
+    if (!code) return;
+    setScanLinkSavingId(product.id);
+    try {
+      const response = await fetch(`${API_BASE}/inventory/products/${product.id}`, {
+        method: 'PATCH',
+        headers: buildMutationHeaders(),
+        body: JSON.stringify({ barcode: code })
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            data?: Product;
+            message?: string;
+          }
+        | null;
+
+      if (!response.ok || !payload?.data) {
+        setToast(payload?.message || 'Nao foi possivel vincular o codigo ao produto.');
+        setScanLinkSavingId(null);
+        return;
+      }
+
+      const updatedProduct = payload.data;
+      const mergedProduct = {
+        ...allInventoryProducts.find((item) => item.id === updatedProduct.id),
+        ...updatedProduct
+      };
+      setAllInventoryProducts((prev) =>
+        prev.map((item) => (item.id === updatedProduct.id ? { ...item, ...updatedProduct } : item))
+      );
+      setLocalProducts((prev) =>
+        prev.map((item) => (item.id === updatedProduct.id ? { ...item, ...updatedProduct } : item))
+      );
+      setScannedProduct(mergedProduct);
+      setScannedProductCode(code);
+      let toastMessage = 'Codigo vinculado com sucesso.';
+
+      const sourceBrand = resolveCatalogSourceBrandFromProduct(mergedProduct);
+      const catalogName = (getProductNameOnly(mergedProduct) || mergedProduct.name || '').trim();
+      const catalogCode = (getProductCode(mergedProduct) || mergedProduct.sku || mergedProduct.id).trim();
+      const catalogSku = (mergedProduct.sku || catalogCode).trim();
+      const catalogBrand = (mergedProduct.brand || '').trim();
+      const productPrice = toNumber(mergedProduct.price || 0);
+
+      if (catalogName && catalogSku) {
+        try {
+          const catalogResponse = await fetch(`${API_BASE}/catalog/preloaded/manual/import`, {
+            method: 'POST',
+            headers: buildMutationHeaders(),
+            body: JSON.stringify({
+              clearMissing: false,
+              products: [
+                {
+                  sourceBrand: sourceBrand || undefined,
+                  code: catalogCode || undefined,
+                  sku: catalogSku,
+                  barcode: code,
+                  name: catalogName,
+                  brand: catalogBrand || undefined,
+                  sourceLineBrand: catalogBrand || undefined,
+                  price: productPrice > 0 ? productPrice : undefined,
+                  purchasePrice: productPrice > 0 ? productPrice : undefined,
+                  inStock: true,
+                  imageUrl: getProductImage(mergedProduct) || undefined,
+                  sourceCategory: 'manual-link'
+                } satisfies CatalogManualImportProduct
+              ]
+            })
+          });
+
+          const catalogPayload = (await catalogResponse.json().catch(() => null)) as
+            | {
+                message?: string;
+                meta?: {
+                  invalidRows?: Array<{ row?: number; reason?: string }>;
+                };
+              }
+            | null;
+
+          if (catalogResponse.ok) {
+            toastMessage = 'Codigo vinculado com sucesso e salvo no catalogo.';
+            if (catalogLoaded) {
+              await loadCatalogProducts();
+            }
+          } else {
+            const invalidReason = catalogPayload?.meta?.invalidRows?.[0]?.reason;
+            if (invalidReason === 'source_brand_not_mapped') {
+              toastMessage =
+                'Codigo vinculado no estoque, mas a marca nao foi mapeada para salvar no catalogo.';
+            } else {
+              toastMessage =
+                catalogPayload?.message ||
+                'Codigo vinculado no estoque, mas nao foi possivel salvar no catalogo.';
+            }
+          }
+        } catch {
+          toastMessage = 'Codigo vinculado no estoque, mas nao foi possivel salvar no catalogo.';
+        }
+      } else {
+        toastMessage = 'Codigo vinculado no estoque, mas faltaram dados para salvar no catalogo.';
+      }
+
+      closeScanLinkModal();
+      setToast(toastMessage);
+    } catch {
+      setToast('Nao foi possivel vincular o codigo ao produto.');
+      setScanLinkSavingId(null);
+    }
+  };
+
+  const closeScannedProductConfirmation = () => {
+    setScannedProduct(null);
+    setScannedProductCode('');
+  };
+
+  const openScannedProductDetails = () => {
+    if (!scannedProduct) return;
+    const targetProduct = scannedProduct;
+    closeScannedProductConfirmation();
+    closeCreateModal();
+    setSelectedProduct(targetProduct);
+    setProductTab('estoque');
+  };
+
+  const editScannedProduct = () => {
+    if (!scannedProduct) return;
+    const targetProduct = scannedProduct;
+    closeScannedProductConfirmation();
+    openEditForm(targetProduct);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopBarcodeScanner();
+    };
+  }, []);
 
   const parseMoney = (value: string) => {
     const cleaned = value.replace(/[^\d,.-]/g, '');
@@ -1855,6 +2603,12 @@ export default function InventoryPanel({
 
       const savedProduct = responsePayload?.data;
       if (savedProduct) {
+        setAllInventoryProducts((prev) => {
+          if (formMode === 'edit') {
+            return prev.map((item) => (item.id === savedProduct.id ? { ...item, ...savedProduct } : item));
+          }
+          return [{ ...savedProduct, quantity: savedProduct.quantity ?? 0 }, ...prev];
+        });
         setLocalProducts((prev) => {
           if (formMode === 'edit') {
             return prev.map((item) => (item.id === savedProduct.id ? { ...item, ...savedProduct } : item));
@@ -1977,6 +2731,9 @@ export default function InventoryPanel({
         setToast('Erro ao excluir produto');
         return;
       }
+      setAllInventoryProducts((prev) => prev.filter((item) => item.id !== product.id));
+      setLocalProducts((prev) => prev.filter((item) => item.id !== product.id));
+      setSelectedProduct((prev) => (prev?.id === product.id ? null : prev));
       setDeleteProduct(null);
       router.refresh();
       setToast('Produto removido');
@@ -2062,6 +2819,10 @@ export default function InventoryPanel({
     return () => clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    setToast(null);
+  }, [pathname]);
+
   const availableUnits = productUnits.filter((unit) => unit.status === 'available');
   const selectedUnitsCount = selectedUnitIds.length;
   const allUnitsSelected = availableUnits.length > 0 && selectedUnitsCount === availableUnits.length;
@@ -2143,6 +2904,20 @@ export default function InventoryPanel({
               <div className="search-inline">
                 <span aria-hidden="true">🔍</span>
                 <input aria-label="Buscar produto" name="q" placeholder="Buscar produto" defaultValue={query} />
+                {query ? (
+                  <Link className="button ghost small" href={buildSearchHref('')}>
+                    Limpar
+                  </Link>
+                ) : null}
+                <button
+                  className="button icon small"
+                  type="button"
+                  onClick={() => openBarcodeScanner('inventory-search')}
+                  title="Ler codigo de barras para buscar"
+                  aria-label="Ler codigo de barras para buscar produto"
+                >
+                  <IconScan />
+                </button>
               </div>
               {stockFilter !== 'all' ? <input type="hidden" name="stock" value={stockFilter} /> : null}
               {categoryFilter !== 'all' ? <input type="hidden" name="category" value={categoryFilter} /> : null}
@@ -2429,6 +3204,17 @@ export default function InventoryPanel({
                     onChange={(event) => setCatalogQuery(event.target.value)}
                   />
                 </label>
+                <div className="inventory-scan-actions">
+                  <button
+                    className="button icon small"
+                    type="button"
+                    onClick={() => openBarcodeScanner('search')}
+                    title="Ler codigo de barras"
+                    aria-label="Ler codigo de barras"
+                  >
+                    <IconScan />
+                  </button>
+                </div>
                 <div className="modal-suggestions">
                   <div className="modal-suggestions-title">Produtos do catalogo</div>
                   {catalogSourceInfo ? <div className="meta">{catalogSourceInfo}</div> : null}
@@ -2462,39 +3248,7 @@ export default function InventoryPanel({
                               className="modal-suggestion store-checkbox-row"
                               type="button"
                               onClick={() => {
-                                const normalizedSourceCategory = normalizeSearchText(
-                                  (item.sourceCategory || '').replace(/[-_]+/g, ' ')
-                                );
-                                const categoryId =
-                                  categories.find(
-                                    (category) => {
-                                      const categoryToken = normalizeSearchText(category.name);
-                                      return (
-                                        categoryToken === normalizedSourceCategory ||
-                                        categoryToken.includes(normalizedSourceCategory) ||
-                                        normalizedSourceCategory.includes(categoryToken)
-                                      );
-                                    }
-                                  )?.id || '';
-
-                                openForm(
-                                  {
-                                    ...emptyDraft,
-                                    name: item.name,
-                                    brand: item.brand || '',
-                                    brandCode: toDigits(item.code || item.sku || item.id),
-                                    barcode: item.barcode || item.code || item.sku || '',
-                                    category: categoryId,
-                                    price:
-                                      item.price !== undefined &&
-                                      item.price !== null &&
-                                      `${item.price}` !== ''
-                                        ? formatCurrency(toNumber(item.price))
-                                        : '',
-                                    imageUrl: getCatalogSuggestionThumb(item)
-                                  },
-                                  'create'
-                                );
+                                openForm(buildDraftFromCatalogSuggestion(item), 'create');
                               }}
                             >
                               <span className="modal-suggestion-main store-checkbox-main">
@@ -2594,7 +3348,7 @@ export default function InventoryPanel({
                         </select>
                       </label>
                       <label className="modal-field">
-                        <span>Codigo da marca</span>
+                        <span>Codigo do produto</span>
                         <input
                           value={formDraft.brandCode}
                           inputMode="numeric"
@@ -2649,6 +3403,17 @@ export default function InventoryPanel({
                         />
                       </label>
                     </div>
+                    <div className="inventory-scan-actions compact">
+                      <button
+                        className="button icon small"
+                        type="button"
+                        onClick={() => openBarcodeScanner('form')}
+                        title="Ler codigo de barras"
+                        aria-label="Ler codigo de barras"
+                      >
+                        <IconScan />
+                      </button>
+                    </div>
                     <div className="toggle-row">
                       <label className="switch">
                         <input
@@ -2687,6 +3452,139 @@ export default function InventoryPanel({
                 </div>
               </>
             )}
+          </div>
+        </div>
+      ) : null}
+
+      {barcodeScannerOpen ? (
+        <div className="modal-backdrop modal-scanner-backdrop" onClick={closeBarcodeScanner}>
+          <div className="modal modal-scanner" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3>Ler codigo com camera</h3>
+                <span className="meta">Aponte a camera para o codigo de barras do produto.</span>
+              </div>
+              <button className="modal-close" type="button" onClick={closeBarcodeScanner}>
+                ✕
+              </button>
+            </div>
+            <div className="scan-preview">
+              <video ref={scannerVideoRef} autoPlay muted playsInline />
+              <div className="scan-overlay">
+                <span />
+              </div>
+            </div>
+            <div className="scan-status">
+              {barcodeScannerLoading ? <span>Iniciando camera...</span> : null}
+              {!barcodeScannerLoading && !barcodeScannerError ? (
+                <span>Posicione o codigo dentro da area destacada.</span>
+              ) : null}
+              {barcodeScannerError ? <span className="error">{barcodeScannerError}</span> : null}
+              {lastScannedCode ? <span className="success">Ultimo codigo lido: {lastScannedCode}</span> : null}
+            </div>
+            <div className="modal-footer">
+              <button className="button ghost" type="button" onClick={closeBarcodeScanner}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {scannedProduct ? (
+        <div className="modal-backdrop modal-scan-confirm-backdrop" onClick={closeScannedProductConfirmation}>
+          <div className="modal modal-scan-confirm" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3>Produto encontrado</h3>
+                <span className="meta">Codigo bipado: {scannedProductCode || '-'}</span>
+              </div>
+              <button className="modal-close" type="button" onClick={closeScannedProductConfirmation}>
+                ✕
+              </button>
+            </div>
+            <div className="scan-confirm-card">
+              <div className="scan-confirm-thumb">
+                {getProductImage(scannedProduct) ? (
+                  <img src={getProductImage(scannedProduct)} alt={scannedProduct.name} />
+                ) : (
+                  <div className="product-thumb-placeholder">
+                    <IconBox />
+                  </div>
+                )}
+              </div>
+              <div className="scan-confirm-copy">
+                <strong>{getProductHeadline(scannedProduct)}</strong>
+                <span>{getProductMetaLine(scannedProduct)}</span>
+                <span>Estoque: {toNumber(scannedProduct.quantity ?? 0)} un.</span>
+                <span>Preco: {formatCurrency(Math.max(0, toNumber(scannedProduct.price || 0)))}</span>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="button ghost" type="button" onClick={closeScannedProductConfirmation}>
+                Fechar
+              </button>
+              <button className="button ghost" type="button" onClick={openScannedProductDetails}>
+                Abrir no estoque
+              </button>
+              <button className="button primary" type="button" onClick={editScannedProduct}>
+                Editar produto
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {scanLinkOpen ? (
+        <div className="modal-backdrop modal-scan-link-backdrop" onClick={closeScanLinkModal}>
+          <div className="modal modal-scan-link" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3>Vincular codigo lido</h3>
+                <span className="meta">Codigo: {scanLinkCode || '-'}</span>
+              </div>
+              <button className="modal-close" type="button" onClick={closeScanLinkModal}>
+                ✕
+              </button>
+            </div>
+            <label className="modal-field">
+              <span>Buscar produto em estoque</span>
+              <input
+                value={scanLinkQuery}
+                placeholder="Nome, SKU, codigo de barras ou marca"
+                onChange={(event) => setScanLinkQuery(event.target.value)}
+              />
+            </label>
+            <div className="scan-link-list">
+              {scanLinkCandidates.length === 0 ? (
+                <div className="scan-link-empty">Nenhum produto encontrado para vincular este codigo.</div>
+              ) : (
+                scanLinkCandidates.map((product) => (
+                  <div key={product.id} className="scan-link-row">
+                    <div className="scan-link-copy">
+                      <strong>{getProductHeadline(product)}</strong>
+                      <span>{getProductMetaLine(product)}</span>
+                    </div>
+                    <button
+                      className="button primary small"
+                      type="button"
+                      disabled={scanLinkSavingId === product.id}
+                      onClick={() => handleLinkScannedCodeToProduct(product)}
+                    >
+                      {scanLinkSavingId === product.id ? 'Vinculando...' : 'Vincular'}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="button ghost" type="button" onClick={closeScanLinkModal}>
+                Fechar
+              </button>
+              <button className="button ghost" type="button" onClick={continueAsNewProductFromScan}>
+                Cadastrar como novo
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

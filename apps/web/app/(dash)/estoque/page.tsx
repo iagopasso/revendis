@@ -55,6 +55,16 @@ const uniqueBrands = (values: Array<string | null | undefined>) =>
     )
   ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
+const normalizeCodeToken = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+
+const normalizeDigitsToken = (value: string) => value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+
 export default async function EstoquePage({
   searchParams
 }: {
@@ -73,15 +83,34 @@ export default async function EstoquePage({
   const brandFilter = getStringParam(resolvedParams.brand) || 'all';
 
   const normalizedQuery = query.toLowerCase();
+  const compactQuery = normalizeCodeToken(query);
+  const digitsQuery = query.replace(/\D/g, '');
+  const digitsNormalizedQuery = normalizeDigitsToken(query);
 
   const filteredProducts = products.filter((product) => {
     const quantity = toNumber(product.quantity ?? 0);
     const expiring = isExpiring(product.expires_at);
     const matchesQuery =
-      !normalizedQuery ||
-      product.name.toLowerCase().includes(normalizedQuery) ||
-      product.sku.toLowerCase().includes(normalizedQuery) ||
-      (product.barcode || '').toLowerCase().includes(normalizedQuery);
+      !query ||
+      [product.name || '', product.brand || '', product.sku || '', product.barcode || ''].some((candidate) => {
+        const normalizedCandidate = candidate.toLowerCase();
+        const compactCandidate = normalizeCodeToken(candidate);
+        const digitsCandidate = candidate.replace(/\D/g, '');
+        const digitsNormalizedCandidate = normalizeDigitsToken(candidate);
+
+        if (normalizedQuery && normalizedCandidate.includes(normalizedQuery)) return true;
+        if (compactQuery && compactCandidate.includes(compactQuery)) return true;
+        if (digitsQuery && digitsCandidate.includes(digitsQuery)) return true;
+        if (
+          digitsNormalizedQuery &&
+          digitsNormalizedCandidate &&
+          (digitsNormalizedCandidate.includes(digitsNormalizedQuery) ||
+            digitsNormalizedQuery.includes(digitsNormalizedCandidate))
+        ) {
+          return true;
+        }
+        return false;
+      });
     const isActive = product.active !== false;
     const matchesStock =
       stockFilter === 'all' ||
@@ -122,6 +151,7 @@ export default async function EstoquePage({
     <main className="page-content inventory-scope">
       <InventoryPanel
         products={filteredProducts}
+        allProducts={products}
         productCount={productCount}
         totalUnits={totalUnits}
         productsLength={products.length}
