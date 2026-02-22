@@ -5100,8 +5100,8 @@ button.dashboard-reminder-card {
 }
 
 .inventory-row-thumb {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
   background: var(--panel-3);
   border: 1px solid rgba(148, 163, 184, 0.28);
@@ -7107,6 +7107,183 @@ button.dashboard-reminder-card {
   width: 100%;
   max-width: 160px;
   justify-content: center;
+}
+
+.inventory-scan-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.inventory-scan-actions.compact {
+  margin-top: -2px;
+}
+
+.inventory-scan-actions .meta {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.modal-scanner-backdrop {
+  z-index: 132;
+}
+
+.modal-scan-confirm-backdrop {
+  z-index: 131;
+}
+
+.modal-scan-link-backdrop {
+  z-index: 131;
+}
+
+.modal-scanner,
+.modal-scan-confirm,
+.modal-scan-link {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 12px;
+}
+
+.scan-preview {
+  position: relative;
+  width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #1f2937;
+  background: #0f172a;
+  aspect-ratio: 4 / 3;
+}
+
+.scan-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.scan-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.scan-overlay span {
+  width: min(72%, 320px);
+  height: min(36%, 138px);
+  border: 2px solid rgba(148, 163, 184, 0.95);
+  border-radius: 12px;
+  box-shadow: 0 0 0 999px rgba(2, 6, 23, 0.28);
+}
+
+.scan-status {
+  display: grid;
+  gap: 5px;
+  color: #64748b;
+  font-size: 0.86rem;
+}
+
+.scan-status .error {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.scan-status .success {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.scan-confirm-card {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #dbe3f0;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.scan-confirm-thumb {
+  width: 84px;
+  height: 84px;
+  border-radius: 10px;
+  border: 1px solid #d6deee;
+  background: #ffffff;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.scan-confirm-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-confirm-thumb .product-thumb-placeholder {
+  width: 100%;
+  height: 100%;
+}
+
+.scan-confirm-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.scan-confirm-copy strong {
+  color: #0f172a;
+}
+
+.scan-confirm-copy span {
+  color: #475569;
+  font-size: 0.84rem;
+}
+
+.scan-link-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(44vh, 360px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.scan-link-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #dbe3f0;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 10px;
+}
+
+.scan-link-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.scan-link-copy strong {
+  color: #0f172a;
+}
+
+.scan-link-copy span {
+  color: #475569;
+  font-size: 0.82rem;
+}
+
+.scan-link-empty {
+  color: #64748b;
+  font-size: 0.86rem;
+  padding: 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  text-align: center;
 }
 
 .sample-images {
@@ -9171,6 +9348,38 @@ button.dashboard-reminder-card {
     justify-content: flex-start;
   }
 
+  .customers-grid-view {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+    gap: 8px;
+  }
+
+  .customer-grid-card {
+    min-height: 160px;
+    padding: 10px 8px;
+    gap: 4px;
+  }
+
+  .customer-grid-avatar {
+    width: 56px;
+    height: 56px;
+    font-size: 1.2rem;
+    margin-bottom: 4px;
+  }
+
+  .customer-grid-card strong {
+    font-size: 0.82rem;
+    line-height: 1.2;
+  }
+
+  .customer-grid-contact {
+    font-size: 0.76rem;
+  }
+
+  .customer-grid-location {
+    font-size: 0.74rem;
+  }
+
   .modal {
     width: min(100%, calc(100vw - 12px));
     max-width: 100%;
@@ -9200,7 +9409,10 @@ button.dashboard-reminder-card {
   .modal-receipt,
   .modal-payment,
   .modal-small,
-  .modal-customer-picker {
+  .modal-customer-picker,
+  .modal-scanner,
+  .modal-scan-confirm,
+  .modal-scan-link {
     width: 100%;
     max-height: calc(100dvh - 16px);
   }
@@ -9220,7 +9432,10 @@ button.dashboard-reminder-card {
   .modal.modal-settings-member,
   .modal.modal-finance-expense,
   .modal.modal-customer-profile,
-  .modal.modal-payment {
+  .modal.modal-payment,
+  .modal.modal-scanner,
+  .modal.modal-scan-confirm,
+  .modal.modal-scan-link {
     max-height: calc(100dvh - (var(--mobile-tabbar-height) + 16px + env(safe-area-inset-bottom)));
   }
 
@@ -9291,6 +9506,41 @@ button.dashboard-reminder-card {
 
   .modal-create .modal-footer .button,
   .modal-edit .modal-footer .button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .inventory-scan-actions {
+    flex-wrap: wrap;
+  }
+
+  .inventory-scan-actions .button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .scan-overlay span {
+    width: min(78%, 300px);
+    height: min(34%, 120px);
+  }
+
+  .scan-confirm-card {
+    grid-template-columns: 62px 1fr;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .scan-confirm-thumb {
+    width: 62px;
+    height: 62px;
+  }
+
+  .scan-link-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .scan-link-row .button {
     width: 100%;
     justify-content: center;
   }
@@ -9677,7 +9927,7 @@ button.dashboard-reminder-card {
   }
 
   .inventory-thumb .product-thumb-image {
-    object-fit: cover;
+    object-fit: contain;
     object-position: center;
   }
 
@@ -9708,6 +9958,11 @@ button.dashboard-reminder-card {
 
   .inventory-row-main {
     width: 100%;
+  }
+
+  .inventory-row-thumb {
+    width: 36px;
+    height: 36px;
   }
 
   .inventory-row-price,
@@ -14228,6 +14483,12 @@ button.dashboard-reminder-card {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .store-preview-thumb img,
+  .public-stock-product-image img {
+    object-fit: contain;
+    object-position: center;
+  }
+
   .public-stock-topbar {
     padding: 10px 12px;
     grid-template-columns: 1fr;
@@ -14776,7 +15037,7 @@ button.dashboard-reminder-card {
   }
 
   .inventory-scope .inventory-thumb .product-thumb-image {
-    object-fit: cover;
+    object-fit: contain;
     object-position: center;
   }
 

@@ -195,6 +195,7 @@ type ZxingReaderInstance = {
     preview: HTMLVideoElement,
     callback: (result: ZxingDecodeResult | null | undefined) => void
   ) => Promise<BarcodeScannerControls>;
+  decodeFromImageElement: (source: string | HTMLImageElement) => Promise<ZxingDecodeResult>;
 };
 
 const paymentMethods = [
@@ -716,6 +717,7 @@ export default function InventoryPanel({
   const scannerStreamRef = useRef<MediaStream | null>(null);
   const scannerFrameRef = useRef<number | null>(null);
   const scannerControlsRef = useRef<BarcodeScannerControls | null>(null);
+  const scannerPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const scannerDetectingRef = useRef(false);
   const scannerResolvedRef = useRef(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -781,6 +783,7 @@ export default function InventoryPanel({
   const [importResult, setImportResult] = useState<string | null>(null);
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [barcodeScannerLoading, setBarcodeScannerLoading] = useState(false);
+  const [barcodeScannerPhotoLoading, setBarcodeScannerPhotoLoading] = useState(false);
   const [barcodeScannerError, setBarcodeScannerError] = useState<string | null>(null);
   const [barcodeScanEntryStep, setBarcodeScanEntryStep] = useState<
     'search' | 'form' | 'inventory-search'
@@ -1647,6 +1650,7 @@ export default function InventoryPanel({
     stopBarcodeScanner();
     setBarcodeScannerOpen(false);
     setBarcodeScannerLoading(false);
+    setBarcodeScannerPhotoLoading(false);
     setBarcodeScannerError(null);
     setLastScannedCode('');
   };
@@ -1871,8 +1875,54 @@ export default function InventoryPanel({
     setBarcodeScanEntryStep(entryStep);
     setBarcodeScannerOpen(true);
     setBarcodeScannerLoading(true);
+    setBarcodeScannerPhotoLoading(false);
     setBarcodeScannerError(null);
     setLastScannedCode('');
+  };
+
+  const openBarcodePhotoPicker = () => {
+    scannerPhotoInputRef.current?.click();
+  };
+
+  const handleBarcodePhotoSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setBarcodeScannerPhotoLoading(true);
+    setBarcodeScannerError(null);
+
+    try {
+      const { BrowserMultiFormatReader } = await import('@zxing/browser');
+      const reader = new BrowserMultiFormatReader() as unknown as ZxingReaderInstance;
+      const objectUrl = URL.createObjectURL(file);
+
+      try {
+        const imageElement = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error('image-load-failed'));
+          image.src = objectUrl;
+        });
+
+        const result = await reader.decodeFromImageElement(imageElement);
+        const code = result?.getText?.().trim() || '';
+
+        if (!code) {
+          setBarcodeScannerError('Nao foi possivel ler o codigo nesta foto. Tente outra imagem.');
+          return;
+        }
+
+        await handleDetectedBarcode(code);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    } catch {
+      setBarcodeScannerError('Nao foi possivel ler o codigo nesta foto. Tente outra imagem.');
+    } finally {
+      input.value = '';
+      setBarcodeScannerPhotoLoading(false);
+    }
   };
 
   const closeScanLinkModal = () => {
@@ -3540,12 +3590,31 @@ export default function InventoryPanel({
             </div>
             <div className="scan-status">
               {barcodeScannerLoading ? <span>Iniciando camera...</span> : null}
+              {barcodeScannerPhotoLoading ? <span>Lendo foto do codigo...</span> : null}
               {!barcodeScannerLoading && !barcodeScannerError ? (
                 <span>Posicione o codigo dentro da area destacada.</span>
               ) : null}
               {barcodeScannerError ? <span className="error">{barcodeScannerError}</span> : null}
+              <div className="inventory-scan-actions compact">
+                <button
+                  className="button ghost small"
+                  type="button"
+                  onClick={openBarcodePhotoPicker}
+                  disabled={barcodeScannerPhotoLoading}
+                >
+                  {barcodeScannerPhotoLoading ? 'Lendo foto...' : 'Ler por foto'}
+                </button>
+              </div>
               {lastScannedCode ? <span className="success">Ultimo codigo lido: {lastScannedCode}</span> : null}
             </div>
+            <input
+              ref={scannerPhotoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleBarcodePhotoSelected}
+              style={{ display: 'none' }}
+            />
             <div className="modal-footer">
               <button className="button ghost" type="button" onClick={closeBarcodeScanner}>
                 Fechar
