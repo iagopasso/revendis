@@ -9,7 +9,7 @@
     "dev": "__NEXT_DEVTOOL_SEGMENT_EXPLORER=0 next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "echo 'web lint placeholder'",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --cache --cache-location .eslintcache",
     "test": "echo 'web tests placeholder'",
     "e2e": "playwright test -c playwright.config.ts"
   },
@@ -21,11 +21,12 @@
     "@revendis/api-types": "0.1.0",
     "@revendis/tokens": "0.1.0",
     "@revendis/ui": "0.1.0",
+    "@zxing/browser": "^0.1.5",
     "framer-motion": "^12.29.2",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.0.0",
-    "next-auth": "^5.0.0-beta.25",
     "next": "15.5.9",
+    "next-auth": "^5.0.0-beta.25",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },
