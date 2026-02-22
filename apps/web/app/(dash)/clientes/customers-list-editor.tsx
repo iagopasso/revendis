@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { IconEdit, IconTrash } from '../icons';
-import { API_BASE } from '../lib';
+import { API_BASE, buildMutationHeaders } from '../lib';
 
 type Customer = {
   id: string;
@@ -23,7 +24,16 @@ type Customer = {
   tags?: string[] | null;
 };
 
+type CustomerSale = {
+  id: string;
+  status: string;
+  total: number | string;
+  created_at: string;
+  items_count?: number | string;
+};
+
 type CustomerForm = {
+  photoUrl: string;
   name: string;
   phone: string;
   email: string;
@@ -89,7 +99,51 @@ const toInputDate = (value?: string | null) => {
   return `${year}-${month}-${day}`;
 };
 
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('invalid_file_data'));
+    };
+    reader.onerror = () => reject(new Error('invalid_file_data'));
+    reader.readAsDataURL(file);
+  });
+
+const shrinkImageToDataUrl = (file: File, maxSize = 520, quality = 0.72) =>
+  new Promise<string>((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
+      const width = Math.max(1, Math.round(img.width * ratio));
+      const height = Math.max(1, Math.round(img.height * ratio));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('canvas_unavailable'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      URL.revokeObjectURL(objectUrl);
+      resolve(dataUrl);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('invalid_image'));
+    };
+    img.src = objectUrl;
+  });
+
 const createFormFromCustomer = (customer: Customer): CustomerForm => ({
+  photoUrl: customer.photo_url || '',
   name: customer.name || '',
   phone: customer.phone || '',
   email: customer.email || '',
@@ -122,7 +176,32 @@ const toWhatsAppHref = (phone?: string | null) => {
   return `https://wa.me/${digits}`;
 };
 
+const toNumber = (value: number | string | null | undefined) => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') return Number(value) || 0;
+  return 0;
+};
+
+const formatCurrency = (value: number) =>
+  value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const formatSaleDate = (value?: string | null) => {
+  if (!value) return '--';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return date.toLocaleDateString('pt-BR');
+};
+
+const saleStatusLabel = (value: string) => {
+  const status = value.trim().toLowerCase();
+  if (status === 'pending') return 'A entregar';
+  if (status === 'delivered') return 'Entregue';
+  if (status === 'cancelled') return 'Cancelada';
+  return 'Confirmada';
+};
+
 export default function CustomersListEditor({ customers, viewMode }: CustomersListEditorProps) {
+  const router = useRouter();
   const [localCustomers, setLocalCustomers] = useState<Customer[]>(customers);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -132,6 +211,9 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
   const [additionalOpen, setAdditionalOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [customerSalesById, setCustomerSalesById] = useState<Record<string, CustomerSale[]>>({});
+  const [salesLoading, setSalesLoading] = useState(false);
+  const [salesError, setSalesError] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalCustomers(customers);
@@ -147,11 +229,18 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
     [editingId, localCustomers]
   );
 
+  const selectedCustomerSales = useMemo(
+    () => (selectedCustomer ? customerSalesById[selectedCustomer.id] || [] : []),
+    [customerSalesById, selectedCustomer]
+  );
+
   useEffect(() => {
     if (!selectedId) return;
     if (!selectedCustomer) {
       setSelectedId(null);
       setDetailsError(null);
+      setSalesError(null);
+      setSalesLoading(false);
     }
   }, [selectedCustomer, selectedId]);
 
@@ -169,12 +258,15 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
   const openDetails = (customer: Customer) => {
     setSelectedId(customer.id);
     setDetailsError(null);
+    setSalesError(null);
   };
 
   const closeDetails = () => {
     setSelectedId(null);
     setDeleting(false);
     setDetailsError(null);
+    setSalesError(null);
+    setSalesLoading(false);
   };
 
   const openEditor = (customer: Customer) => {
@@ -221,15 +313,28 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
       )
     );
 
+    const MAX_CUSTOMER_PHOTO_LENGTH = 3900;
+    const initialPhotoUrl = (editingCustomer.photo_url || '').trim();
+    const nextPhotoUrl = form.photoUrl.trim();
+    let photoPayload: string | undefined;
+    if (nextPhotoUrl !== initialPhotoUrl) {
+      if (nextPhotoUrl && nextPhotoUrl.length > MAX_CUSTOMER_PHOTO_LENGTH) {
+        setError('A foto e muito grande para enviar. Tente uma imagem menor.');
+        return;
+      }
+      photoPayload = nextPhotoUrl;
+    }
+
     setSaving(true);
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/customers/${editingCustomer.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           name,
           phone,
+          photoUrl: photoPayload,
           email: form.email.trim() || undefined,
           birthDate: form.birthDate || undefined,
           description: form.description.trim() || undefined,
@@ -275,7 +380,10 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
     setDetailsError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/customers/${selectedCustomer.id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/customers/${selectedCustomer.id}`, {
+        method: 'DELETE',
+        headers: buildMutationHeaders()
+      });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { message?: string } | null;
         setDetailsError(payload?.message || 'Erro ao excluir cliente');
@@ -289,6 +397,45 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
       setDeleting(false);
     }
   };
+
+  useEffect(() => {
+    if (!selectedCustomer) return;
+    if (customerSalesById[selectedCustomer.id]) return;
+
+    const controller = new AbortController();
+
+    const loadSales = async () => {
+      setSalesLoading(true);
+      setSalesError(null);
+      try {
+        const response = await fetch(`${API_BASE}/customers/${selectedCustomer.id}/sales`, {
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          setSalesError('Nao foi possivel carregar as vendas deste cliente.');
+          return;
+        }
+        const payload = (await response.json().catch(() => null)) as { data?: CustomerSale[] } | null;
+        if (controller.signal.aborted) return;
+        setCustomerSalesById((prev) => ({
+          ...prev,
+          [selectedCustomer.id]: Array.isArray(payload?.data) ? payload.data : []
+        }));
+      } catch {
+        if (!controller.signal.aborted) {
+          setSalesError('Nao foi possivel carregar as vendas deste cliente.');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setSalesLoading(false);
+        }
+      }
+    };
+
+    void loadSales();
+    return () => controller.abort();
+  }, [customerSalesById, selectedCustomer]);
 
   return (
     <>
@@ -405,7 +552,41 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
 
                 <div className="customer-profile-sales-section">
                   <h4>Vendas</h4>
-                  <div className="customer-profile-sales-empty">Nenhum registro</div>
+                  {salesLoading ? (
+                    <div className="customer-profile-sales-empty">Carregando vendas...</div>
+                  ) : salesError ? (
+                    <div className="customer-profile-sales-empty">{salesError}</div>
+                  ) : selectedCustomerSales.length === 0 ? (
+                    <div className="customer-profile-sales-empty">Nenhum registro</div>
+                  ) : (
+                    <div className="customer-profile-sales-list">
+                      {selectedCustomerSales.map((sale) => {
+                        const saleTotal = toNumber(sale.total);
+                        const itemsCount = Math.max(0, Math.trunc(toNumber(sale.items_count)));
+                        return (
+                          <button
+                            key={sale.id}
+                            type="button"
+                            className="customer-profile-sales-item"
+                            onClick={() => {
+                              closeDetails();
+                              router.push(`/vendas?saleId=${encodeURIComponent(sale.id)}`);
+                            }}
+                          >
+                            <div className="customer-profile-sales-item-head">
+                              <strong>Venda #{sale.id.slice(0, 6)}</strong>
+                              <span className="customer-profile-sales-item-value">{formatCurrency(saleTotal)}</span>
+                            </div>
+                            <div className="customer-profile-sales-item-meta">
+                              <span>{saleStatusLabel(sale.status)}</span>
+                              <span>{itemsCount} {itemsCount === 1 ? 'item' : 'itens'}</span>
+                              <span>{formatSaleDate(sale.created_at)}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </section>
             </div>
@@ -424,6 +605,61 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
             </div>
 
             <div className="customer-edit-grid">
+              <div className="customer-edit-photo-section">
+                <span className="customer-field-title">Foto do cliente</span>
+                <div className="customer-photo-card">
+                  <div className="customer-photo-preview">
+                    {form.photoUrl ? (
+                      <img src={form.photoUrl} alt={form.name || editingCustomer.name} />
+                    ) : (
+                      <span>{getInitials(form.name || editingCustomer.name)}</span>
+                    )}
+                  </div>
+                  <label className="customer-upload-button">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (event) => {
+                        const input = event.currentTarget;
+                        const file = input.files?.[0];
+                        if (!file) return;
+                        try {
+                          const base = await fileToDataUrl(file);
+                          const fitSize = 3800;
+                          if (base.length > fitSize) {
+                            const shrunk = await shrinkImageToDataUrl(file, 520, 0.72);
+                            if (shrunk.length > fitSize) {
+                              setError('A foto e muito grande. Use uma imagem menor (ate ~3KB).');
+                              updateForm('photoUrl', '');
+                            } else {
+                              updateForm('photoUrl', shrunk);
+                              setError(null);
+                            }
+                          } else {
+                            updateForm('photoUrl', base);
+                            setError(null);
+                          }
+                        } catch {
+                          setError('Nao foi possivel carregar a imagem do cliente');
+                        } finally {
+                          input.value = '';
+                        }
+                      }}
+                    />
+                    <span>⤴ Carregar</span>
+                  </label>
+                  {form.photoUrl ? (
+                    <button
+                      className="button ghost small customer-edit-photo-remove"
+                      type="button"
+                      onClick={() => updateForm('photoUrl', '')}
+                    >
+                      Remover foto
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
               <div className="form-row">
                 <label className="modal-field">
                   <span>Nome</span>

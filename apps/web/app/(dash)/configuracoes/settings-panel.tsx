@@ -15,7 +15,7 @@ import {
   IconUpload,
   IconUser
 } from '../icons';
-import { API_BASE, toNumber } from '../lib';
+import { API_BASE, buildMutationHeaders, toNumber } from '../lib';
 import { resolveBrandLogo } from '../brand-logos';
 
 type BrandSource = 'existing' | 'catalog' | 'manual';
@@ -499,7 +499,7 @@ export default function SettingsPanel({
     try {
       const res = await fetch(`${API_BASE}/settings/brands`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           name,
           source: mode,
@@ -533,7 +533,10 @@ export default function SettingsPanel({
 
   const handleDeleteBrand = async (brandId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/settings/brands/${brandId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/settings/brands/${brandId}`, {
+        method: 'DELETE',
+        headers: buildMutationHeaders()
+      });
       if (!res.ok) {
         const payload = await res.json().catch(() => null);
         setToast(normalizeApiMessage(payload, 'Erro ao remover marca'));
@@ -606,7 +609,7 @@ export default function SettingsPanel({
     try {
       const res = await fetch(`${API_BASE}/settings/brands/${brandEditForm.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           name,
           profitability: parsed,
@@ -654,7 +657,7 @@ export default function SettingsPanel({
     try {
       const res = await fetch(`${API_BASE}/settings/account`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify(payload)
       });
       const body = (await res.json().catch(() => null)) as { data?: AccountSettings; message?: string } | null;
@@ -686,7 +689,7 @@ export default function SettingsPanel({
     try {
       const res = await fetch(`${API_BASE}/settings/subscription`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           plan,
           status: subscriptionForm.status,
@@ -730,7 +733,7 @@ export default function SettingsPanel({
     try {
       const res = await fetch(`${API_BASE}/settings/pix`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           keyType: pixForm.keyType || undefined,
           keyValue: keyValue || undefined,
@@ -762,7 +765,7 @@ export default function SettingsPanel({
     try {
       const res = await fetch(`${API_BASE}/settings/alerts`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           enabled: alertsForm.enabled,
           daysBeforeDue: days
@@ -841,7 +844,7 @@ export default function SettingsPanel({
 
       const res = await fetch(endpoint, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           name,
           email,
@@ -877,7 +880,7 @@ export default function SettingsPanel({
     try {
       const res = await fetch(`${API_BASE}/settings/access/${member.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({ active: !member.active })
       });
       const body = (await res.json().catch(() => null)) as { data?: AccessMember; message?: string } | null;
@@ -1361,7 +1364,8 @@ export default function SettingsPanel({
                         type="file"
                         accept="image/*"
                         onChange={(event) => {
-                          const file = event.target.files?.[0];
+                          const input = event.currentTarget;
+                          const file = input.files?.[0];
                           if (!file) return;
                           void readFileAsDataUrl(file)
                             .then((nextUrl) => {
@@ -1371,7 +1375,7 @@ export default function SettingsPanel({
                             .catch(() => {
                               setCreateError('Nao foi possivel carregar a imagem.');
                             });
-                          event.currentTarget.value = '';
+                          input.value = '';
                         }}
                       />
                       <IconUpload />
@@ -1500,9 +1504,10 @@ export default function SettingsPanel({
                       type="file"
                       accept="image/*"
                       onChange={(event) => {
-                        const file = event.target.files?.[0];
+                        const input = event.currentTarget;
+                        const file = input.files?.[0];
                         void handleBrandLogoUpload(file);
-                        event.currentTarget.value = '';
+                        input.value = '';
                       }}
                     />
                     Alterar

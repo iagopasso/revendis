@@ -16,7 +16,7 @@ import {
   IconUpload
 } from '../icons';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
-import { API_BASE, formatCurrency, toNumber } from '../lib';
+import { API_BASE, buildMutationHeaders, formatCurrency, toNumber } from '../lib';
 
 type Product = {
   id: string;
@@ -379,6 +379,35 @@ const fileToDataUrl = (file: File) =>
     };
     reader.onerror = () => reject(new Error('invalid_file_data'));
     reader.readAsDataURL(file);
+  });
+
+const shrinkImageToDataUrl = (file: File, maxSize = 520, quality = 0.72) =>
+  new Promise<string>((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
+      const width = Math.max(1, Math.round(img.width * ratio));
+      const height = Math.max(1, Math.round(img.height * ratio));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('canvas_unavailable'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      URL.revokeObjectURL(objectUrl);
+      resolve(dataUrl);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('invalid_image'));
+    };
+    img.src = objectUrl;
   });
 
 const csvHeaderToken = (value: string) =>
@@ -758,8 +787,7 @@ export default function InventoryPanel({
     setCatalogError(null);
     try {
       const params = new URLSearchParams({
-        limit: '10000',
-        allBrands: 'true'
+        limit: '10000'
       });
       const endpoint = `${API_BASE}/catalog/preloaded/products?${params.toString()}`;
       const res = await fetch(endpoint, {
@@ -779,10 +807,21 @@ export default function InventoryPanel({
         data?: CatalogSuggestionProduct[];
         meta?: {
           total?: number;
+          brands?: string[];
           brandsWithProducts?: string[];
           sources?: CatalogPreloadedSourceMeta[];
         };
       };
+
+      const configuredBrands = Array.isArray(payload.meta?.brands) ? payload.meta?.brands : [];
+      if (configuredBrands.length === 0) {
+        setCatalogProducts([]);
+        setCatalogSourceInfo(null);
+        setCatalogError(
+          'Cadastre ao menos uma marca em Configuracoes > Gerenciar marcas para liberar o catalogo.'
+        );
+        return;
+      }
 
       setCatalogProducts(payload.data || []);
       const total = Number(payload.meta?.total ?? payload.data?.length ?? 0) || 0;
@@ -792,6 +831,7 @@ export default function InventoryPanel({
       const sampleBrands = sources.filter((source) => source.source === 'sample').length;
 
       const info = [
+        `Marcas configuradas: ${configuredBrands.length}`,
         `Produtos prontos: ${total}`,
         `Marcas com catalogo: ${brandsWithProducts}`,
         sources.length > 0 ? `Fontes reais: ${upstreamBrands}/${sources.length}` : null,
@@ -817,10 +857,9 @@ export default function InventoryPanel({
     try {
       const response = await fetch(`${API_BASE}/catalog/preloaded/sync`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         cache: 'no-store',
         body: JSON.stringify({
-          allBrands: true,
           inStockOnly: false,
           clearMissing: true,
           allowSampleFallback: true,
@@ -830,9 +869,23 @@ export default function InventoryPanel({
         })
       });
 
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            message?: string;
+            meta?: {
+              selectedBrands?: string[];
+            };
+          }
+        | null;
+
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
         setToast(payload?.message || 'Nao foi possivel sincronizar o catalogo.');
+        return;
+      }
+
+      if ((payload?.meta?.selectedBrands || []).length === 0) {
+        await loadCatalogProducts();
+        setToast('Cadastre marcas em Configuracoes > Gerenciar marcas para sincronizar o catalogo.');
         return;
       }
 
@@ -1088,18 +1141,25 @@ export default function InventoryPanel({
       return;
     }
 
+    const MAX_CUSTOMER_PHOTO_LENGTH = 3900;
+    const nextPhotoUrl = customerDraft.photoUrl.trim();
+    if (nextPhotoUrl && nextPhotoUrl.length > MAX_CUSTOMER_PHOTO_LENGTH) {
+      setCustomerFormError('A foto e muito grande para enviar. Tente uma imagem menor.');
+      return;
+    }
+
     setCustomerSaving(true);
     setCustomerFormError(null);
     try {
       const res = await fetch(`${API_BASE}/customers`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           name,
           phone,
           birthDate: customerDraft.birthDate || undefined,
           description: customerDraft.description.trim() || undefined,
-          photoUrl: customerDraft.photoUrl || undefined,
+          photoUrl: nextPhotoUrl || undefined,
           cpfCnpj: customerDraft.cpfCnpj.trim() || undefined,
           cep: customerDraft.cep.trim() || undefined,
           street: customerDraft.street.trim() || undefined,
@@ -1183,6 +1243,24 @@ export default function InventoryPanel({
       'edit',
       product.id
     );
+  };
+
+  const handleProductImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const imageUrl = await fileToDataUrl(file);
+      setFormDraft((prev) => ({ ...prev, imageUrl }));
+    } catch {
+      setToast('Nao foi possivel carregar a imagem do produto');
+    } finally {
+      input.value = '';
+    }
+  };
+
+  const clearProductImage = () => {
+    setFormDraft((prev) => ({ ...prev, imageUrl: '' }));
   };
 
   const parseMoney = (value: string) => {
@@ -1342,11 +1420,11 @@ export default function InventoryPanel({
     try {
       const saleRes = await fetch(`${API_BASE}/sales/checkout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           customerId: sellCustomerId || undefined,
           customerName: sellCustomerId ? undefined : customerNameValue,
-          createdAt: sellDate ? `${sellDate}T00:00:00` : undefined,
+          createdAt: sellDate || undefined,
           items: [
             {
               sku: selectedProduct.sku,
@@ -1382,7 +1460,7 @@ export default function InventoryPanel({
             if (!amount || !installment.dueDate) continue;
             await fetch(`${API_BASE}/finance/receivables`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: buildMutationHeaders(),
               body: JSON.stringify({
                 saleId,
                 amount,
@@ -1394,7 +1472,7 @@ export default function InventoryPanel({
         }
       }
 
-      const saleDateValue = payload.data?.created_at || `${sellDate}T00:00:00`;
+      const saleDateValue = payload.data?.created_at || (sellDate ? `${sellDate}T12:00:00.000Z` : new Date().toISOString());
       if (!sellPaid && saleId) {
         const selectedCustomerData = customers.find((customer) => customer.id === sellCustomerId);
         setSaleModal({
@@ -1452,7 +1530,7 @@ export default function InventoryPanel({
     try {
       const res = await fetch(`${API_BASE}/inventory/units/${editUnit.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify(payload)
       });
       if (!res.ok) {
@@ -1475,7 +1553,8 @@ export default function InventoryPanel({
     if (!deleteUnit) return;
     try {
       const res = await fetch(`${API_BASE}/inventory/units/${deleteUnit.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: buildMutationHeaders()
       });
       if (res.status === 409) {
         setToast('Unidade ja vendida');
@@ -1578,7 +1657,8 @@ export default function InventoryPanel({
         for (const unit of targetUnits) {
           try {
             const res = await fetch(`${API_BASE}/inventory/units/${unit.id}`, {
-              method: 'DELETE'
+              method: 'DELETE',
+              headers: buildMutationHeaders()
             });
             if (res.status === 409) {
               conflictCount += 1;
@@ -1604,7 +1684,7 @@ export default function InventoryPanel({
           try {
             const res = await fetch(`${API_BASE}/inventory/units/${unit.id}`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
+              headers: buildMutationHeaders(),
               body: JSON.stringify(payload)
             });
             if (!res.ok) {
@@ -1722,7 +1802,7 @@ export default function InventoryPanel({
 
       const res = await fetch(`${API_BASE}/catalog/preloaded/manual/import`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           clearMissing: false,
           products: productsToImport
@@ -1801,7 +1881,7 @@ export default function InventoryPanel({
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify(payload)
       });
 
@@ -1874,7 +1954,7 @@ export default function InventoryPanel({
     try {
       const res = await fetch(`${API_BASE}/inventory/categories`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({ name: newCategoryName.trim(), color: newCategoryColor })
       });
       if (!res.ok) {
@@ -1898,7 +1978,7 @@ export default function InventoryPanel({
     try {
       const res = await fetch(`${API_BASE}/inventory/categories/${editingCategory.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({ name: newCategoryName.trim(), color: newCategoryColor })
       });
       if (!res.ok) {
@@ -1916,7 +1996,8 @@ export default function InventoryPanel({
   const handleDeleteCategory = async (category: Category) => {
     try {
       const res = await fetch(`${API_BASE}/inventory/categories/${category.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: buildMutationHeaders()
       });
       if (!res.ok) {
         setToast('Erro ao excluir categoria');
@@ -1933,7 +2014,8 @@ export default function InventoryPanel({
   const handleDeleteProduct = async (product: Product) => {
     try {
       const res = await fetch(`${API_BASE}/inventory/products/${product.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: buildMutationHeaders()
       });
       if (!res.ok) {
         setToast('Erro ao excluir produto');
@@ -1953,7 +2035,7 @@ export default function InventoryPanel({
     try {
       const res = await fetch(`${API_BASE}/inventory/adjustments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           sku: adjustProduct.sku,
           quantity,
@@ -2502,16 +2584,31 @@ export default function InventoryPanel({
               <>
                 <div className="product-form">
                   <div className="product-image">
-                    {formDraft.imageUrl ? (
-                      <div className="product-image-preview">
-                        <img src={formDraft.imageUrl} alt={formDraft.name || 'Produto'} />
-                      </div>
-                    ) : (
-                      <div className="product-upload">
-                        <span>⬆</span>
-                        <p>Arraste a imagem ou clique para enviar</p>
-                      </div>
-                    )}
+                    <div className="product-image-card">
+                      {formDraft.imageUrl ? (
+                        <div className="product-image-preview">
+                          <img src={formDraft.imageUrl} alt={formDraft.name || 'Produto'} />
+                        </div>
+                      ) : (
+                        <div className="product-upload">
+                          <span>⬆</span>
+                          <p>Clique para enviar uma imagem</p>
+                        </div>
+                      )}
+                      <label className="product-upload-button">
+                        <input type="file" accept="image/*" onChange={handleProductImageUpload} />
+                        <span>⤴ {formDraft.imageUrl ? 'Trocar imagem' : 'Carregar imagem'}</span>
+                      </label>
+                      {formDraft.imageUrl ? (
+                        <button
+                          className="button ghost small product-remove-image"
+                          type="button"
+                          onClick={clearProductImage}
+                        >
+                          Remover imagem
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="product-fields">
                     <label className="modal-field">
@@ -3225,15 +3322,29 @@ export default function InventoryPanel({
                       type="file"
                       accept="image/*"
                       onChange={async (event) => {
-                        const file = event.target.files?.[0];
+                        const input = event.currentTarget;
+                        const file = input.files?.[0];
                         if (!file) return;
                         try {
-                          const nextUrl = await fileToDataUrl(file);
-                          updateCustomerPhoto(nextUrl);
+                          const base = await fileToDataUrl(file);
+                          const fitSize = 3800;
+                          if (base.length > fitSize) {
+                            const shrunk = await shrinkImageToDataUrl(file, 520, 0.72);
+                            if (shrunk.length > fitSize) {
+                              setCustomerFormError('A foto e muito grande. Use uma imagem menor (ate ~3KB).');
+                              updateCustomerPhoto('');
+                            } else {
+                              updateCustomerPhoto(shrunk);
+                              setCustomerFormError(null);
+                            }
+                          } else {
+                            updateCustomerPhoto(base);
+                            setCustomerFormError(null);
+                          }
                         } catch {
                           setCustomerFormError('Nao foi possivel carregar a imagem do cliente');
                         }
-                        event.currentTarget.value = '';
+                        input.value = '';
                       }}
                     />
                     <span>⤴ Carregar</span>

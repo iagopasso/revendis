@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { API_BASE, SALES_SYNC_STORAGE_KEY, digitsOnly, formatCurrency, toNumber } from '../lib';
+import { API_BASE, SALES_SYNC_STORAGE_KEY, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from '../lib';
 import { IconChart, IconCreditCard, IconDollar, IconPercent, IconSearch } from '../icons';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
 
@@ -20,6 +20,17 @@ type Sale = {
   cost_total?: number | string;
   profit?: number | string;
   payment_status?: PaymentStatus;
+};
+
+type SaleDetailsSeed = {
+  id: string;
+  status: string;
+  total: number | string;
+  created_at: string;
+  customer_name?: string | null;
+  customer_photo_url?: string | null;
+  items_count?: number | string;
+  item_name?: string | null;
 };
 
 type Customer = {
@@ -431,6 +442,9 @@ export default function SalesPanel({
   const [customerReturnTarget, setCustomerReturnTarget] = useState<string | null>(null);
   const customerSearchRef = useRef<HTMLDivElement>(null);
   const customerTagsRef = useRef<HTMLLabelElement>(null);
+  const saleCartColumnRef = useRef<HTMLElement>(null);
+  const openedSaleFromQueryRef = useRef<string | null>(null);
+  const saleIdFromQuery = (searchParams.get('saleId') || '').trim();
 
   const saleProducts = useMemo(
     () => localProducts.filter((product) => product.active !== false),
@@ -505,6 +519,32 @@ export default function SalesPanel({
   const saleRegisterTotal = parseMoney(saleRegisterAmount);
   const saleDownPaymentTotal = parseMoney(saleDownPayment);
   const salePendingTotal = Math.max(0, saleRegisterTotal - saleDownPaymentTotal);
+
+  const openSaleDetails = useCallback((sale: SaleDetailsSeed) => {
+    const mappedStatus: SaleDetail['status'] =
+      sale.status === 'cancelled' ? 'cancelled' : sale.status === 'pending' ? 'pending' : 'delivered';
+    const itemsCount = Math.max(0, toNumber(sale.items_count ?? 0));
+    setSelectedSale({
+      id: sale.id,
+      customer: sale.customer_name || 'Cliente nao informado',
+      customerPhotoUrl: sale.customer_photo_url || undefined,
+      date: sale.created_at,
+      status: mappedStatus,
+      total: Number(sale.total),
+      paid: 0,
+      itemName: sale.item_name || '',
+      itemQty: itemsCount || 1,
+      dueDate: sale.created_at
+    });
+  }, []);
+
+  const clearSaleIdFromUrl = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (!params.has('saleId')) return;
+    params.delete('saleId');
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  }, [pathname, router, searchParams]);
 
   const clearCreateParams = () => {
     const params = new URLSearchParams(searchParams.toString());
@@ -619,6 +659,16 @@ export default function SalesPanel({
 
   const handleRemoveSaleItem = (itemId: string) => {
     setSaleItems((prev) => prev.filter((item) => item.id !== itemId));
+    if (createSaleError) setCreateSaleError(null);
+  };
+
+  const toggleSaleProductSelection = (product: Product, checked: boolean) => {
+    if (checked) {
+      openAddProductModal(product);
+      return;
+    }
+
+    setSaleItems((prev) => prev.filter((item) => item.productId !== product.id));
     if (createSaleError) setCreateSaleError(null);
   };
 
@@ -771,6 +821,72 @@ export default function SalesPanel({
   }, [products]);
 
   useEffect(() => {
+    if (!saleIdFromQuery) {
+      openedSaleFromQueryRef.current = null;
+      return;
+    }
+    if (openedSaleFromQueryRef.current === saleIdFromQuery) return;
+
+    const localMatch = localSales.find((sale) => sale.id === saleIdFromQuery);
+    if (localMatch) {
+      openSaleDetails(localMatch);
+      openedSaleFromQueryRef.current = saleIdFromQuery;
+      return;
+    }
+
+    let active = true;
+    const loadSaleById = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/sales/orders/${saleIdFromQuery}`, {
+          cache: 'no-store'
+        });
+        if (!response.ok) {
+          openedSaleFromQueryRef.current = saleIdFromQuery;
+          return;
+        }
+        const payload = (await response.json().catch(() => null)) as {
+          data?: {
+            id: string;
+            status: string;
+            total: number | string;
+            created_at: string;
+            customer_name?: string | null;
+            customer_photo_url?: string | null;
+            items?: Array<{ quantity?: number | string; product_name?: string | null }>;
+          };
+        } | null;
+        if (!active) return;
+        const remoteSale = payload?.data;
+        if (!remoteSale) {
+          openedSaleFromQueryRef.current = saleIdFromQuery;
+          return;
+        }
+        const totalItems =
+          Array.isArray(remoteSale.items) && remoteSale.items.length
+            ? remoteSale.items.reduce(
+                (sum, item) => sum + Math.max(0, Math.trunc(toNumber(item.quantity ?? 0))),
+                0
+              )
+            : 1;
+        const firstItemName =
+          remoteSale.items?.find((item) => (item.product_name || '').trim())?.product_name || '';
+        openSaleDetails({
+          ...remoteSale,
+          items_count: totalItems,
+          item_name: firstItemName
+        });
+      } finally {
+        openedSaleFromQueryRef.current = saleIdFromQuery;
+      }
+    };
+
+    void loadSaleById();
+    return () => {
+      active = false;
+    };
+  }, [localSales, openSaleDetails, saleIdFromQuery]);
+
+  useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(timer);
@@ -887,21 +1003,7 @@ export default function SalesPanel({
   };
 
   const openModal = (sale: Sale) => {
-    const mappedStatus: SaleDetail['status'] =
-      sale.status === 'cancelled' ? 'cancelled' : sale.status === 'pending' ? 'pending' : 'delivered';
-    const itemsCount = Math.max(0, toNumber(sale.items_count ?? 0));
-    setSelectedSale({
-      id: sale.id,
-      customer: sale.customer_name || 'Cliente nao informado',
-      customerPhotoUrl: sale.customer_photo_url || undefined,
-      date: sale.created_at,
-      status: mappedStatus,
-      total: Number(sale.total),
-      paid: 0,
-      itemName: '',
-      itemQty: itemsCount || 1,
-      dueDate: sale.created_at
-    });
+    openSaleDetails(sale);
   };
 
   const handleSaleUpdated = (update: SaleUpdate) => {
@@ -954,7 +1056,7 @@ export default function SalesPanel({
 
       const res = await fetch(`${API_BASE}/customers`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           name,
           phone,
@@ -1136,11 +1238,11 @@ export default function SalesPanel({
 
       const saleRes = await fetch(`${API_BASE}/sales/checkout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           customerId: saleCustomerId || undefined,
           customerName: saleCustomerId ? undefined : customerNameValue,
-          createdAt: `${saleDateValue}T00:00:00`,
+          createdAt: saleDateValue,
           items: adjustedItems.flatMap((item) =>
             item.product
               ? [
@@ -1187,7 +1289,7 @@ export default function SalesPanel({
 
           const receivableRes = await fetch(`${API_BASE}/finance/receivables`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildMutationHeaders(),
             body: JSON.stringify({
               saleId,
               amount,
@@ -1413,7 +1515,9 @@ export default function SalesPanel({
                   </span>
                 </label>
 
-                <div className="sale-product-grid store-modal-list">
+                <strong className="store-modal-subtitle">Selecione os produtos</strong>
+
+                <div className="sale-product-grid store-modal-list promotion-products">
                   {filteredProducts.length === 0 ? (
                     <div className="sale-grid-empty">Nenhum produto encontrado.</div>
                   ) : (
@@ -1422,43 +1526,52 @@ export default function SalesPanel({
                       const priceLabel = product.price ? formatCurrency(toNumber(product.price)) : 'Sem preco';
                       const inCart = saleItems.some((item) => item.productId === product.id);
                       const numericCode = getProductNumericCode(product);
+                      const subtitle = [product.brand || '', numericCode || '']
+                        .map((value) => value.trim())
+                        .filter(Boolean);
+                      const stockLabel = stock > 0 ? `${stock} em estoque` : 'Sem estoque';
                       return (
-                        <button
-                          key={product.id}
-                          type="button"
-                          className={`sale-product-card store-checkbox-row${inCart ? ' selected' : ''}${stock <= 0 ? ' out' : ''}`}
-                          onClick={() => openAddProductModal(product)}
-                        >
-                          <div className="sale-product-main store-checkbox-main">
-                            <div className="sale-product-thumb store-checkbox-thumb">
-                              {product.image_url ? (
-                                <img src={product.image_url} alt={product.name} />
-                              ) : (
-                                <span className="sale-product-placeholder">📦</span>
-                              )}
-                            </div>
-                            <div className="sale-product-meta store-checkbox-copy">
-                              <strong>
-                                {numericCode ? `${numericCode} - ${product.name}` : product.name}
-                              </strong>
-                              <span>{product.brand || 'Sem marca'}</span>
+                        <label key={product.id} className="store-checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={inCart}
+                            onChange={(event) => toggleSaleProductSelection(product, event.target.checked)}
+                          />
+                          <div className="store-checkbox-main">
+                            <span className="store-checkbox-thumb">
+                              {product.image_url ? <img src={product.image_url} alt={product.name} loading="lazy" /> : null}
+                            </span>
+                            <div className="store-checkbox-copy">
+                              <strong>{product.name}</strong>
+                              <span>{[subtitle.join(' • ') || 'Sem codigo', stockLabel].join(' • ')}</span>
                             </div>
                           </div>
-                          <span className={`sale-product-badge ${stock > 0 ? 'stock' : 'nostock'}`}>
-                            {stock > 0 ? `${stock} un.` : 'Sem estoque'}
-                          </span>
-                          <div className="sale-product-price store-checkbox-price">{priceLabel}</div>
-                        </button>
+                          <strong className="store-checkbox-price">{priceLabel}</strong>
+                        </label>
                       );
                     })
                   )}
                 </div>
+
+                <footer className="store-modal-footer sale-products-footer">
+                  <span>{saleItems.length} selecionado(s)</span>
+                  <button
+                    type="button"
+                    className="store-btn primary"
+                    disabled={saleItems.length === 0}
+                    onClick={() => {
+                      saleCartColumnRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                  >
+                    Prosseguir
+                  </button>
+                </footer>
               </section>
 
-              <aside className="sale-cart-column">
+              <aside ref={saleCartColumnRef} className="sale-cart-column">
                 <div className="sale-cart-header">
                   <div className="sale-cart-customer">
-                    <span className="sale-cart-label">Vendendo para</span>
+                    <span className="sale-cart-label">Vendido para</span>
                     {saleCustomerName ? (
                       <button
                         type="button"
@@ -1896,7 +2009,8 @@ export default function SalesPanel({
                       type="file"
                       accept="image/*"
                       onChange={async (event) => {
-                        const file = event.target.files?.[0];
+                        const input = event.currentTarget;
+                        const file = input.files?.[0];
                         if (!file) return;
                         try {
                           const base = await fileToDataUrl(file);
@@ -1917,7 +2031,7 @@ export default function SalesPanel({
                         } catch {
                           setCustomerFormError('Nao foi possivel carregar a imagem do cliente');
                         }
-                        event.currentTarget.value = '';
+                        input.value = '';
                       }}
                     />
                     <span>⤴ Carregar</span>
@@ -2178,7 +2292,10 @@ export default function SalesPanel({
 
       <SalesDetailModal
         open={Boolean(selectedSale)}
-        onClose={() => setSelectedSale(null)}
+        onClose={() => {
+          setSelectedSale(null);
+          clearSaleIdFromUrl();
+        }}
         sale={selectedSale}
         onUpdated={handleSaleUpdated}
       />
