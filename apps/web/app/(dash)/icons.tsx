@@ -258,6 +258,18 @@ export const IconSearch = ({ className }: IconProps) => (
   </IconBase>
 );
 
+export const IconScan = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M7 4H5a1 1 0 0 0-1 1v2" />
+    <path d="M17 4h2a1 1 0 0 1 1 1v2" />
+    <path d="M7 20H5a1 1 0 0 1-1-1v-2" />
+    <path d="M17 20h2a1 1 0 0 0 1-1v-2" />
+    <path d="M6 9h12" />
+    <path d="M6 12h12" />
+    <path d="M6 15h12" />
+  </IconBase>
+);
+
 export const IconShare = ({ className }: IconProps) => (
   <IconBase className={className}>
     <circle cx="18" cy="5" r="2" />
