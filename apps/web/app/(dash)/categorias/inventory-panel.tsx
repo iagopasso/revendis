@@ -183,6 +183,19 @@ type BarcodeDetectorInstance = {
   detect: (source: HTMLVideoElement) => Promise<BarcodeDetectorResult[]>;
 };
 type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => BarcodeDetectorInstance;
+type BarcodeScannerControls = {
+  stop: () => void;
+};
+type ZxingDecodeResult = {
+  getText: () => string;
+};
+type ZxingReaderInstance = {
+  decodeFromStream: (
+    stream: MediaStream,
+    preview: HTMLVideoElement,
+    callback: (result: ZxingDecodeResult | null | undefined) => void
+  ) => Promise<BarcodeScannerControls>;
+};
 
 const paymentMethods = [
   'Dinheiro',
@@ -702,6 +715,7 @@ export default function InventoryPanel({
   const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
   const scannerStreamRef = useRef<MediaStream | null>(null);
   const scannerFrameRef = useRef<number | null>(null);
+  const scannerControlsRef = useRef<BarcodeScannerControls | null>(null);
   const scannerDetectingRef = useRef(false);
   const scannerResolvedRef = useRef(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -1175,14 +1189,22 @@ export default function InventoryPanel({
           BarcodeDetector?: BarcodeDetectorConstructor;
         }
       ).BarcodeDetector;
-      if (!detectorConstructor) {
-        setBarcodeScannerLoading(false);
-        setBarcodeScannerError('Seu navegador ainda nao suporta leitura de codigo por camera.');
-        return;
+      const supportsNativeDetector = Boolean(detectorConstructor);
+      let zxingReader: ZxingReaderInstance | null = null;
+
+      if (!supportsNativeDetector) {
+        try {
+          const { BrowserMultiFormatReader } = await import('@zxing/browser');
+          zxingReader = new BrowserMultiFormatReader() as unknown as ZxingReaderInstance;
+        } catch {
+          setBarcodeScannerLoading(false);
+          setBarcodeScannerError('Seu navegador ainda nao suporta leitura de codigo por camera.');
+          return;
+        }
       }
 
       try {
-        const detector = new detectorConstructor({ formats: barcodeFormats });
+        const detector = detectorConstructor ? new detectorConstructor({ formats: barcodeFormats }) : null;
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
@@ -1212,35 +1234,73 @@ export default function InventoryPanel({
 
         setBarcodeScannerLoading(false);
 
-        const detectLoop = async () => {
-          if (cancelled || scannerResolvedRef.current) return;
+        if (supportsNativeDetector && detector) {
+          const detectLoop = async () => {
+            if (cancelled || scannerResolvedRef.current) return;
 
-          const currentVideo = scannerVideoRef.current;
-          if (!currentVideo) return;
+            const currentVideo = scannerVideoRef.current;
+            if (!currentVideo) return;
 
-          if (currentVideo.readyState >= 2 && !scannerDetectingRef.current) {
-            scannerDetectingRef.current = true;
-            try {
-              const detections = await detector.detect(currentVideo);
-              const code =
-                detections.find((item) => typeof item.rawValue === 'string' && item.rawValue.trim().length > 0)
-                  ?.rawValue || '';
+            if (currentVideo.readyState >= 2 && !scannerDetectingRef.current) {
+              scannerDetectingRef.current = true;
+              try {
+                const detections = await detector.detect(currentVideo);
+                const code =
+                  detections.find(
+                    (item) => typeof item.rawValue === 'string' && item.rawValue.trim().length > 0
+                  )?.rawValue || '';
 
-              if (code.trim()) {
-                await handleDetectedBarcode(code);
-                return;
+                if (code.trim()) {
+                  await handleDetectedBarcode(code);
+                  return;
+                }
+              } catch {
+                // Ignore frame-level detection errors and keep scanning.
+              } finally {
+                scannerDetectingRef.current = false;
               }
-            } catch {
-              // Ignore frame-level detection errors and keep scanning.
-            } finally {
-              scannerDetectingRef.current = false;
             }
-          }
+
+            scannerFrameRef.current = window.requestAnimationFrame(detectLoop);
+          };
 
           scannerFrameRef.current = window.requestAnimationFrame(detectLoop);
+          return;
+        }
+
+        if (!zxingReader) {
+          setBarcodeScannerError('Seu navegador ainda nao suporta leitura de codigo por camera.');
+          stopBarcodeScanner();
+          return;
+        }
+
+        const detectLoop = async () => {
+          try {
+            const controls = await zxingReader.decodeFromStream(
+              stream,
+              video,
+              (result: ZxingDecodeResult | null | undefined) => {
+                if (cancelled || scannerResolvedRef.current) return;
+                const code = result?.getText?.().trim() || '';
+                if (!code) return;
+                void handleDetectedBarcode(code);
+              }
+            );
+
+            if (cancelled) {
+              controls.stop();
+              return;
+            }
+
+            scannerControlsRef.current = controls as BarcodeScannerControls;
+          } catch {
+            if (cancelled) return;
+            setBarcodeScannerError('Nao foi possivel iniciar a camera para leitura.');
+            stopBarcodeScanner();
+          }
         };
 
-        scannerFrameRef.current = window.requestAnimationFrame(detectLoop);
+        void detectLoop();
       } catch (error) {
         if (cancelled) return;
         const errorName = (error as { name?: string })?.name || '';
@@ -1566,6 +1626,10 @@ export default function InventoryPanel({
     if (scannerFrameRef.current !== null && typeof window !== 'undefined') {
       window.cancelAnimationFrame(scannerFrameRef.current);
       scannerFrameRef.current = null;
+    }
+    if (scannerControlsRef.current) {
+      scannerControlsRef.current.stop();
+      scannerControlsRef.current = null;
     }
     if (scannerStreamRef.current) {
       scannerStreamRef.current.getTracks().forEach((track) => track.stop());
