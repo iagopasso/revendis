@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { IconArrowLeft, IconCart, IconSearch, IconUpload, IconWhatsapp } from '../(dash)/icons';
-import { API_BASE } from '../(dash)/lib';
+import { API_BASE, buildMutationHeaders } from '../(dash)/lib';
 import {
   buildPublicStoreUrl,
   DEFAULT_STOREFRONT_SETTINGS,
@@ -247,7 +247,7 @@ export default function LojaConfiguracoesPage() {
     try {
       const response = await fetch(`${API_BASE}/settings/storefront`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify(storefrontSettingsToPayload(settings))
       });
 

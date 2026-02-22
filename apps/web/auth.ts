@@ -20,6 +20,8 @@ const resellerEmail = (process.env.AUTH_RESELLER_EMAIL || 'revenda@revendis.loca
 const resellerPassword = process.env.AUTH_RESELLER_PASSWORD || 'Revenda@123456';
 const resellerName = (process.env.AUTH_RESELLER_NAME || 'Revenda').trim() || 'Revenda';
 const defaultOrgId = process.env.NEXT_PUBLIC_ORG_ID || '00000000-0000-0000-0000-000000000001';
+const mutationAuthToken =
+  process.env.MUTATION_AUTH_TOKEN || process.env.NEXT_PUBLIC_MUTATION_AUTH_TOKEN || '';
 
 const credentialUsers: CredentialUser[] = [];
 const pushCredentialUser = (user: CredentialUser) => {
@@ -59,10 +61,13 @@ const syncSocialUserAsReseller = async (email: string, name: string) => {
   const normalizedEmail = email.trim().toLowerCase();
   if (!normalizedEmail) return;
 
-  const headers = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-org-id': defaultOrgId
   };
+  if (mutationAuthToken) {
+    headers['x-mutation-token'] = mutationAuthToken;
+  }
 
   try {
     const createResponse = await fetch(`${AUTH_API_BASE}/settings/access`, {

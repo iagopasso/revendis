@@ -38,7 +38,7 @@ const resolveReachableBaseUrl = (value: string) => {
 };
 
 const expoExtra = Constants.expoConfig?.extra as
-  | { apiUrl?: string; orgId?: string; storeId?: string }
+  | { apiUrl?: string; orgId?: string; storeId?: string; mutationAuthToken?: string }
   | undefined;
 
 const resolvedApiUrl =
@@ -53,6 +53,10 @@ const resolvedStoreId =
   asNonEmptyString(expoExtra?.storeId) ||
   asNonEmptyString(process.env.EXPO_PUBLIC_STORE_ID) ||
   fallbackStoreId;
+const resolvedMutationAuthToken =
+  asNonEmptyString(expoExtra?.mutationAuthToken) ||
+  asNonEmptyString(process.env.EXPO_PUBLIC_MUTATION_AUTH_TOKEN) ||
+  '';
 
 const apiBaseUrl = trimTrailingSlash(resolveReachableBaseUrl(resolvedApiUrl)) || fallbackBaseUrl;
 
@@ -61,6 +65,10 @@ const defaultHeaders: Record<string, string> = {
   'x-org-id': resolvedOrgId,
   'x-store-id': resolvedStoreId
 };
+
+if (resolvedMutationAuthToken) {
+  defaultHeaders['x-mutation-token'] = resolvedMutationAuthToken;
+}
 
 const buildUrl = (path: string) => {
   if (path.startsWith('http://') || path.startsWith('https://')) return path;

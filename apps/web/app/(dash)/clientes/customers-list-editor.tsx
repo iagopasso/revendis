@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { IconEdit, IconTrash } from '../icons';
+import { resizeImageToDataUrl } from '../image-upload';
 import { API_BASE, buildMutationHeaders } from '../lib';
 
 type Customer = {
@@ -57,6 +58,8 @@ type CustomersListEditorProps = {
   viewMode: ViewMode;
 };
 
+const UPLOAD_IMAGE_MAX_SIZE_PX = 520;
+
 const formatPhoneInput = (value: string) => {
   const digits = value.replace(/\D/g, '').slice(0, 11);
   if (digits.length <= 2) return digits;
@@ -98,49 +101,6 @@ const toInputDate = (value?: string | null) => {
   const day = String(parsed.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
-
-const fileToDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result);
-        return;
-      }
-      reject(new Error('invalid_file_data'));
-    };
-    reader.onerror = () => reject(new Error('invalid_file_data'));
-    reader.readAsDataURL(file);
-  });
-
-const shrinkImageToDataUrl = (file: File, maxSize = 520, quality = 0.72) =>
-  new Promise<string>((resolve, reject) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
-      const width = Math.max(1, Math.round(img.width * ratio));
-      const height = Math.max(1, Math.round(img.height * ratio));
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        URL.revokeObjectURL(objectUrl);
-        reject(new Error('canvas_unavailable'));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, width, height);
-      const dataUrl = canvas.toDataURL('image/jpeg', quality);
-      URL.revokeObjectURL(objectUrl);
-      resolve(dataUrl);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('invalid_image'));
-    };
-    img.src = objectUrl;
-  });
 
 const createFormFromCustomer = (customer: Customer): CustomerForm => ({
   photoUrl: customer.photo_url || '',
@@ -313,15 +273,10 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
       )
     );
 
-    const MAX_CUSTOMER_PHOTO_LENGTH = 3900;
     const initialPhotoUrl = (editingCustomer.photo_url || '').trim();
     const nextPhotoUrl = form.photoUrl.trim();
     let photoPayload: string | undefined;
     if (nextPhotoUrl !== initialPhotoUrl) {
-      if (nextPhotoUrl && nextPhotoUrl.length > MAX_CUSTOMER_PHOTO_LENGTH) {
-        setError('A foto e muito grande para enviar. Tente uma imagem menor.');
-        return;
-      }
       photoPayload = nextPhotoUrl;
     }
 
@@ -624,21 +579,11 @@ export default function CustomersListEditor({ customers, viewMode }: CustomersLi
                         const file = input.files?.[0];
                         if (!file) return;
                         try {
-                          const base = await fileToDataUrl(file);
-                          const fitSize = 3800;
-                          if (base.length > fitSize) {
-                            const shrunk = await shrinkImageToDataUrl(file, 520, 0.72);
-                            if (shrunk.length > fitSize) {
-                              setError('A foto e muito grande. Use uma imagem menor (ate ~3KB).');
-                              updateForm('photoUrl', '');
-                            } else {
-                              updateForm('photoUrl', shrunk);
-                              setError(null);
-                            }
-                          } else {
-                            updateForm('photoUrl', base);
-                            setError(null);
-                          }
+                          const resized = await resizeImageToDataUrl(file, {
+                            maxSize: UPLOAD_IMAGE_MAX_SIZE_PX
+                          });
+                          updateForm('photoUrl', resized);
+                          setError(null);
                         } catch {
                           setError('Nao foi possivel carregar a imagem do cliente');
                         } finally {

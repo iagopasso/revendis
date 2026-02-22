@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { API_BASE, SALES_SYNC_STORAGE_KEY, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from '../lib';
+import { resizeImageToDataUrl } from '../image-upload';
 import { IconChart, IconCreditCard, IconDollar, IconPercent, IconSearch } from '../icons';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
 
@@ -109,6 +110,7 @@ type SalesPanelProps = {
 
 const PAGE_SIZE = 6;
 const LOW_STOCK_THRESHOLD = 3;
+const UPLOAD_IMAGE_MAX_SIZE_PX = 520;
 const customerTagSuggestions = ['VIP', 'Frequente', 'Atacado', 'Recompra', 'Indicacao'];
 const paymentMethods = [
   'Dinheiro',
@@ -209,44 +211,6 @@ const getProductNumericCode = (product?: Product | null) => {
   if (skuDigits) return skuDigits;
   return digitsOnly(product?.barcode);
 };
-
-const fileToDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result === 'string') {
-        resolve(result);
-        return;
-      }
-      reject(new Error('invalid_file_data'));
-    };
-    reader.onerror = () => reject(new Error('invalid_file_data'));
-    reader.readAsDataURL(file);
-  });
-
-const shrinkImageToDataUrl = (file: File, maxSize = 520, quality = 0.7) =>
-  new Promise<string>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const width = Math.max(1, Math.round(img.width * scale));
-      const height = Math.max(1, Math.round(img.height * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('invalid_canvas'));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, width, height);
-      const dataUrl = canvas.toDataURL('image/jpeg', quality);
-      resolve(dataUrl);
-    };
-    img.onerror = () => reject(new Error('invalid_image'));
-    img.src = URL.createObjectURL(file);
-  });
 
 const formatPhoneInput = (value: string) => {
   const digits = value.replace(/\D/g, '').slice(0, 11);
@@ -1046,13 +1010,7 @@ export default function SalesPanel({
     setCustomerSaving(true);
     setCustomerFormError(null);
     try {
-      const safePhotoUrl =
-        customerDraft.photoUrl && customerDraft.photoUrl.length <= 3900 ? customerDraft.photoUrl : undefined;
-      if (customerDraft.photoUrl && !safePhotoUrl) {
-        setCustomerFormError('A foto é muito grande para enviar. Tente uma imagem menor.');
-        setCustomerSaving(false);
-        return;
-      }
+      const photoUrl = customerDraft.photoUrl.trim() || undefined;
 
       const res = await fetch(`${API_BASE}/customers`, {
         method: 'POST',
@@ -1062,7 +1020,7 @@ export default function SalesPanel({
           phone,
           birthDate: customerDraft.birthDate || undefined,
           description: customerDraft.description.trim() || undefined,
-          photoUrl: safePhotoUrl,
+          photoUrl,
           cpfCnpj: customerDraft.cpfCnpj.trim() || undefined,
           cep: customerDraft.cep.trim() || undefined,
           street: customerDraft.street.trim() || undefined,
@@ -2013,21 +1971,11 @@ export default function SalesPanel({
                         const file = input.files?.[0];
                         if (!file) return;
                         try {
-                          const base = await fileToDataUrl(file);
-                          const fitSize = 3800;
-                          if (base.length > fitSize) {
-                            const shrunk = await shrinkImageToDataUrl(file, 520, 0.72);
-                            if (shrunk.length > fitSize) {
-                              setCustomerFormError('A foto é muito grande. Use uma imagem menor (até ~3KB).');
-                              updateCustomerPhoto('');
-                            } else {
-                              updateCustomerPhoto(shrunk);
-                              setCustomerFormError(null);
-                            }
-                          } else {
-                            updateCustomerPhoto(base);
-                            setCustomerFormError(null);
-                          }
+                          const resized = await resizeImageToDataUrl(file, {
+                            maxSize: UPLOAD_IMAGE_MAX_SIZE_PX
+                          });
+                          updateCustomerPhoto(resized);
+                          setCustomerFormError(null);
                         } catch {
                           setCustomerFormError('Nao foi possivel carregar a imagem do cliente');
                         }

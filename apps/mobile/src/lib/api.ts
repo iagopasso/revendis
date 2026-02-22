@@ -39,7 +39,7 @@ const resolveReachableBaseUrl = (value: string) => {
 };
 
 const expoExtra = Constants.expoConfig?.extra as
-  | { apiUrl?: string; orgId?: string; storeId?: string }
+  | { apiUrl?: string; orgId?: string; storeId?: string; mutationAuthToken?: string }
   | undefined;
 
 const baseUrl = trimTrailingSlash(
@@ -57,11 +57,16 @@ const storeId =
   asNonEmptyString(expoExtra?.storeId) ||
   asNonEmptyString(process.env.EXPO_PUBLIC_STORE_ID) ||
   fallbackStoreId;
+const mutationAuthToken =
+  asNonEmptyString(expoExtra?.mutationAuthToken) ||
+  asNonEmptyString(process.env.EXPO_PUBLIC_MUTATION_AUTH_TOKEN) ||
+  '';
 
 export const api = createApiClient({
   baseUrl,
   headers: {
     'x-org-id': orgId,
-    'x-store-id': storeId
+    'x-store-id': storeId,
+    ...(mutationAuthToken ? { 'x-mutation-token': mutationAuthToken } : {})
   }
 });

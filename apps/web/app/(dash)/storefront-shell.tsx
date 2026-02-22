@@ -16,7 +16,7 @@ import {
   IconTagPercent,
   IconTrash
 } from './icons';
-import { API_BASE, SALES_SYNC_STORAGE_KEY } from './lib';
+import { API_BASE, SALES_SYNC_STORAGE_KEY, buildMutationHeaders } from './lib';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from './sales-detail-modal';
 import {
   buildPublicStoreUrl,
@@ -442,7 +442,7 @@ export default function StorefrontShell({
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
-  const [orderActionLoading, setOrderActionLoading] = useState<'' | 'accept' | 'cancel'>('');
+  const [orderActionLoading, setOrderActionLoading] = useState<'' | 'accept' | 'cancel' | 'delete'>('');
   const [acceptSaleOpen, setAcceptSaleOpen] = useState(false);
   const [acceptSaleLoading, setAcceptSaleLoading] = useState(false);
   const [acceptSaleError, setAcceptSaleError] = useState('');
@@ -1470,7 +1470,7 @@ export default function StorefrontShell({
     try {
       const response = await fetch(`${API_BASE}/storefront/orders/${selectedOrderId}/accept`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           customerId: acceptCustomerId || undefined,
           customerName: acceptCustomerId ? undefined : customerName,
@@ -1502,7 +1502,10 @@ export default function StorefrontShell({
     if (!selectedOrderId) return;
     setOrderActionLoading('cancel');
     try {
-      const response = await fetch(`${API_BASE}/storefront/orders/${selectedOrderId}/cancel`, { method: 'POST' });
+      const response = await fetch(`${API_BASE}/storefront/orders/${selectedOrderId}/cancel`, {
+        method: 'POST',
+        headers: buildMutationHeaders()
+      });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
         throw new Error(payload?.message || 'Nao foi possivel cancelar este pedido.');
@@ -1511,6 +1514,27 @@ export default function StorefrontShell({
       closeOrderModal();
     } catch (error) {
       setOrdersMessage(error instanceof Error ? error.message : 'Nao foi possivel cancelar este pedido.');
+    } finally {
+      setOrderActionLoading('');
+    }
+  };
+
+  const deleteCancelledOrder = async () => {
+    if (!selectedOrderId) return;
+    setOrderActionLoading('delete');
+    try {
+      const response = await fetch(`${API_BASE}/storefront/orders/${selectedOrderId}`, {
+        method: 'DELETE',
+        headers: buildMutationHeaders()
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message || 'Nao foi possivel excluir este pedido.');
+      }
+      await Promise.all([refreshOrders(), refreshCatalog()]);
+      closeOrderModal();
+    } catch (error) {
+      setOrdersMessage(error instanceof Error ? error.message : 'Nao foi possivel excluir este pedido.');
     } finally {
       setOrderActionLoading('');
     }
@@ -2410,9 +2434,24 @@ export default function StorefrontShell({
                     </button>
                   </>
                 ) : (
-                  <button type="button" className="store-btn" onClick={closeOrderModal}>
-                    Fechar
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="store-btn"
+                      onClick={closeOrderModal}
+                      disabled={orderActionLoading !== ''}
+                    >
+                      Fechar
+                    </button>
+                    <button
+                      type="button"
+                      className="store-btn danger"
+                      onClick={deleteCancelledOrder}
+                      disabled={orderActionLoading !== ''}
+                    >
+                      {orderActionLoading === 'delete' ? 'Excluindo...' : 'Excluir pedido'}
+                    </button>
+                  </>
                 )}
               </div>
             </footer>

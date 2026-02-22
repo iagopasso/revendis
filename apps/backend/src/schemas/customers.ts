@@ -7,7 +7,7 @@ export const customerInputSchema = z
     email: z.string().email().optional(),
     birthDate: z.string().optional(),
     description: z.string().max(4000).optional(),
-    photoUrl: z.string().max(4000).optional(),
+    photoUrl: z.string().max(1900000).optional(),
     cpfCnpj: z.string().max(18).optional(),
     cep: z.string().max(9).optional(),
     street: z.string().max(255).optional(),

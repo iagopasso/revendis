@@ -6,3 +6,5 @@ export const DEFAULT_STORE_ID =
 
 export const DATABASE_URL =
   process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/revendis';
+
+export const MUTATION_AUTH_TOKEN = process.env.MUTATION_AUTH_TOKEN || '';

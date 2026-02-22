@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { IconBox, IconDots, IconEdit, IconPlus, IconSearch, IconTrash } from '../icons';
-import { API_BASE, formatCurrency, toNumber, digitsOnly } from '../lib';
+import { API_BASE, buildMutationHeaders, formatCurrency, toNumber, digitsOnly } from '../lib';
 import { resolveBrandLogo } from '../brand-logos';
 import DateRangePicker from '../date-range';
 
@@ -953,7 +953,7 @@ export default function PurchasesPanel({
     try {
       const res = await fetch(`${API_BASE}/purchases`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           supplier,
           items,
@@ -1047,7 +1047,7 @@ export default function PurchasesPanel({
     try {
       const res = await fetch(`${API_BASE}/purchases/${purchase.id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({ status })
       });
 
@@ -1074,7 +1074,8 @@ export default function PurchasesPanel({
 
     try {
       const res = await fetch(`${API_BASE}/purchases/${purchase.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: buildMutationHeaders()
       });
 
       if (!res.ok) {

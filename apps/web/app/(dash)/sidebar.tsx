@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { API_BASE } from './lib';
+import { API_BASE, buildMutationHeaders } from './lib';
 import {
   formatRelativeTime,
   getNotificationHref,
@@ -13,7 +13,8 @@ import {
   markNotificationIdsAsRead,
   mergeLegacyReadState,
   type NotificationItem,
-  saveReadNotificationIds
+  saveReadNotificationIds,
+  subscribeReadNotificationIds
 } from './notifications-utils';
 import {
   IconBox,
@@ -34,16 +35,17 @@ import {
 } from './icons';
 
 const primaryNavItems = [
-  { href: '/dashboard', label: 'Painel', icon: IconDashboard },
-  { href: '/estoque', label: 'Estoque', icon: IconBox },
-  { href: '/vendas', label: 'Vendas', icon: IconTag },
-  { href: '/compras', label: 'Compras', icon: IconCart },
-  { href: '/clientes', label: 'Clientes', icon: IconUsers },
-  { href: '/financeiro', label: 'Financeiro', icon: IconDollar },
-  { href: '/loja', label: 'Loja online', icon: IconGlobe },
-  { href: '/relatorios', label: 'Relatórios', icon: IconPieChart },
-  { href: '/configuracoes', label: 'Configurações', icon: IconMessage }
-];
+  { href: '/dashboard', label: 'Painel', mobileLabel: 'Painel', icon: IconDashboard },
+  { href: '/estoque', label: 'Estoque', mobileLabel: 'Estoque', icon: IconBox },
+  { href: '/vendas', label: 'Vendas', mobileLabel: 'Vendas', icon: IconTag },
+  { href: '/compras', label: 'Compras', mobileLabel: 'Compras', icon: IconCart },
+  { href: '/clientes', label: 'Clientes', mobileLabel: 'Clientes', icon: IconUsers },
+  { href: '/financeiro', label: 'Financeiro', mobileLabel: 'Financeiro', icon: IconDollar },
+  { href: '/loja', label: 'Loja online', mobileLabel: 'Loja', icon: IconGlobe },
+  { href: '/relatorios', label: 'Relatórios', mobileLabel: 'Relatorios', icon: IconPieChart },
+  { href: '/notificacoes', label: 'Notificações', mobileLabel: 'Alertas', icon: IconBell },
+  { href: '/configuracoes', label: 'Configurações', mobileLabel: 'Ajustes', icon: IconMessage }
+] as const;
 
 const utilityNavItems = [
   { label: 'Avisos', icon: IconMegaphone },
@@ -94,6 +96,9 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
 
   useEffect(() => {
     setReadNotificationIds(loadReadNotificationIds());
+    return subscribeReadNotificationIds((ids) => {
+      setReadNotificationIds(ids);
+    });
   }, []);
 
   useEffect(() => {
@@ -227,10 +232,10 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
     try {
       const response = await fetch(`${API_BASE}/settings/access/self`, {
         method: 'DELETE',
-        headers: {
+        headers: buildMutationHeaders({
           'x-org-id': DEFAULT_ORG_ID,
           'x-user-email': email
-        }
+        })
       });
 
       if (!response.ok) {
@@ -258,7 +263,7 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
 
       <nav className="nav sidebar-main-nav" aria-label="Navegação principal">
         {primaryNavItems.map((item) => {
-          const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
           return (
             <Link
@@ -267,6 +272,7 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
               className={isActive ? 'sidebar-icon-link active' : 'sidebar-icon-link'}
               aria-current={isActive ? 'page' : undefined}
               aria-label={item.label}
+              data-label={item.mobileLabel}
               title={item.label}
             >
               <span className="nav-icon">

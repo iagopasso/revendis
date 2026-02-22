@@ -21,7 +21,8 @@ import {
   mergeLegacyReadState,
   type NotificationCategory,
   type NotificationItem,
-  saveReadNotificationIds
+  saveReadNotificationIds,
+  subscribeReadNotificationIds
 } from '../notifications-utils';
 
 const NOTIFICATIONS_FETCH_TIMEOUT_MS = 8000;
@@ -66,6 +67,9 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     setReadNotificationIds(loadReadNotificationIds());
+    return subscribeReadNotificationIds((ids) => {
+      setReadNotificationIds(ids);
+    });
   }, []);
 
   useEffect(() => {

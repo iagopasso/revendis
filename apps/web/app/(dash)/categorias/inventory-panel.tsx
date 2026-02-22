@@ -17,6 +17,7 @@ import {
 } from '../icons';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
 import { API_BASE, buildMutationHeaders, formatCurrency, toNumber } from '../lib';
+import { resizeImageToDataUrl } from '../image-upload';
 
 type Product = {
   id: string;
@@ -180,6 +181,8 @@ const paymentMethods = [
   'TED/DOC',
   'App de Pagamento'
 ];
+
+const UPLOAD_IMAGE_MAX_SIZE_PX = 520;
 
 const emptyDraft: ProductDraft = {
   name: '',
@@ -365,50 +368,6 @@ const formatCepInput = (value: string) => {
 };
 
 const toIsoDate = (value: Date) => value.toISOString().split('T')[0];
-
-const fileToDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result === 'string') {
-        resolve(result);
-        return;
-      }
-      reject(new Error('invalid_file_data'));
-    };
-    reader.onerror = () => reject(new Error('invalid_file_data'));
-    reader.readAsDataURL(file);
-  });
-
-const shrinkImageToDataUrl = (file: File, maxSize = 520, quality = 0.72) =>
-  new Promise<string>((resolve, reject) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
-      const width = Math.max(1, Math.round(img.width * ratio));
-      const height = Math.max(1, Math.round(img.height * ratio));
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        URL.revokeObjectURL(objectUrl);
-        reject(new Error('canvas_unavailable'));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, width, height);
-      const dataUrl = canvas.toDataURL('image/jpeg', quality);
-      URL.revokeObjectURL(objectUrl);
-      resolve(dataUrl);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('invalid_image'));
-    };
-    img.src = objectUrl;
-  });
 
 const csvHeaderToken = (value: string) =>
   value
@@ -1141,12 +1100,7 @@ export default function InventoryPanel({
       return;
     }
 
-    const MAX_CUSTOMER_PHOTO_LENGTH = 3900;
     const nextPhotoUrl = customerDraft.photoUrl.trim();
-    if (nextPhotoUrl && nextPhotoUrl.length > MAX_CUSTOMER_PHOTO_LENGTH) {
-      setCustomerFormError('A foto e muito grande para enviar. Tente uma imagem menor.');
-      return;
-    }
 
     setCustomerSaving(true);
     setCustomerFormError(null);
@@ -1250,7 +1204,9 @@ export default function InventoryPanel({
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const imageUrl = await fileToDataUrl(file);
+      const imageUrl = await resizeImageToDataUrl(file, {
+        maxSize: UPLOAD_IMAGE_MAX_SIZE_PX
+      });
       setFormDraft((prev) => ({ ...prev, imageUrl }));
     } catch {
       setToast('Nao foi possivel carregar a imagem do produto');
@@ -3326,21 +3282,11 @@ export default function InventoryPanel({
                         const file = input.files?.[0];
                         if (!file) return;
                         try {
-                          const base = await fileToDataUrl(file);
-                          const fitSize = 3800;
-                          if (base.length > fitSize) {
-                            const shrunk = await shrinkImageToDataUrl(file, 520, 0.72);
-                            if (shrunk.length > fitSize) {
-                              setCustomerFormError('A foto e muito grande. Use uma imagem menor (ate ~3KB).');
-                              updateCustomerPhoto('');
-                            } else {
-                              updateCustomerPhoto(shrunk);
-                              setCustomerFormError(null);
-                            }
-                          } else {
-                            updateCustomerPhoto(base);
-                            setCustomerFormError(null);
-                          }
+                          const resized = await resizeImageToDataUrl(file, {
+                            maxSize: UPLOAD_IMAGE_MAX_SIZE_PX
+                          });
+                          updateCustomerPhoto(resized);
+                          setCustomerFormError(null);
                         } catch {
                           setCustomerFormError('Nao foi possivel carregar a imagem do cliente');
                         }

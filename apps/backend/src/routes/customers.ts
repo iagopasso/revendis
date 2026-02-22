@@ -47,6 +47,75 @@ router.get(
   })
 );
 
+router.get(
+  '/customers/:id/sales',
+  validateRequest({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const customerId = req.params.id;
+
+    const customerRes = await query<{ id: string; name: string }>(
+      `SELECT id, name
+       FROM customers
+       WHERE id = $1 AND organization_id = $2
+       LIMIT 1`,
+      [customerId, orgId]
+    );
+
+    const customer = customerRes.rows[0];
+    if (!customer) {
+      return res.status(404).json({
+        code: 'not_found',
+        message: 'Cliente nao encontrado.'
+      });
+    }
+
+    const salesRes = await query(
+      `WITH base_sales AS (
+         SELECT s.id,
+                s.customer_id,
+                s.customer_name,
+                s.status,
+                s.total,
+                s.created_at
+         FROM sales s
+         INNER JOIN stores st ON st.id = s.store_id
+         WHERE st.organization_id = $1
+           AND (
+             s.customer_id = $2
+             OR (
+               s.customer_id IS NULL
+               AND NULLIF(TRIM(s.customer_name), '') IS NOT NULL
+               AND lower(TRIM(s.customer_name)) = lower(TRIM($3))
+             )
+           )
+         ORDER BY s.created_at DESC
+         LIMIT 100
+       ),
+       item_totals AS (
+         SELECT si.sale_id,
+                COALESCE(SUM(si.quantity), 0) AS items_count
+         FROM sale_items si
+         INNER JOIN base_sales bs ON bs.id = si.sale_id
+         GROUP BY si.sale_id
+       )
+       SELECT bs.id,
+              bs.customer_id,
+              bs.customer_name,
+              bs.status,
+              bs.total,
+              bs.created_at,
+              COALESCE(items.items_count, 0) AS items_count
+       FROM base_sales bs
+       LEFT JOIN item_totals items ON items.sale_id = bs.id
+       ORDER BY bs.created_at DESC`,
+      [orgId, customerId, customer.name]
+    );
+
+    return res.json({ data: salesRes.rows });
+  })
+);
+
 router.post(
   '/customers',
   validateRequest({ body: customerInputSchema }),

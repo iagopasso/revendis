@@ -458,15 +458,22 @@ const resolveRequestedCatalogBrands = async ({
   requestedBrands: CatalogBrandSlug[] | null;
   allBrands: boolean;
 }): Promise<CatalogBrandSlug[]> => {
-  if (requestedBrands) {
-    return requestedBrands;
-  }
-  if (allBrands) {
-    return [...CATALOG_BRANDS];
+  const configured = await resolveConfiguredCatalogBrands(orgId);
+  if (configured.length === 0) {
+    return [];
   }
 
-  const configured = await resolveConfiguredCatalogBrands(orgId);
-  return configured.length > 0 ? configured : [...CATALOG_BRANDS];
+  const configuredSet = new Set(configured);
+
+  if (requestedBrands && requestedBrands.length > 0) {
+    return requestedBrands.filter((brand) => configuredSet.has(brand));
+  }
+
+  if (allBrands) {
+    return configured;
+  }
+
+  return configured;
 };
 
 const resolveManualSourceBrand = ({
@@ -1928,7 +1935,7 @@ router.post(
       allBrands
     });
     const inStockOnly = payload.inStockOnly === true;
-    const deactivateMissing = payload.deactivateMissing !== false;
+    const deactivateMissing = payload.deactivateMissing === true;
     const allowSampleFallback = payload.allowSampleFallback === true;
     const perBrandLimit = parseBodyLimit(payload.limit, 2000, 2000);
 
@@ -2237,7 +2244,7 @@ router.post(
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     const categories = parseCategoryList(payload.categories);
     const inStockOnly = payload.inStockOnly === true;
-    const deactivateMissing = payload.deactivateMissing !== false;
+    const deactivateMissing = payload.deactivateMissing === true;
     const limit = parseBodyLimit(payload.limit, 1000, 1000);
     const classifyBrand = payload.classifyBrand?.trim() || null;
 

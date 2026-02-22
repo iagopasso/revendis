@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { IconArrowLeft, IconCart, IconSearch, IconTrash, IconWhatsapp } from '../../(dash)/icons';
-import { API_BASE } from '../../(dash)/lib';
+import { API_BASE, buildMutationHeaders } from '../../(dash)/lib';
 import {
   DEFAULT_STOREFRONT_SETTINGS,
   loadStorefrontRuntimeState,
@@ -547,7 +547,7 @@ export default function PublicStorefront({
     try {
       const response = await fetch(`${API_BASE}/storefront/orders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           subdomain: viewStateSubdomain,
           items: cartDisplayItems.map((item) => ({
