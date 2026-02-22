@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { API_BASE, digitsOnly, formatCurrency, toNumber } from './lib';
+import { API_BASE, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from './lib';
 import { IconBox } from './icons';
 import { buildPdfBlobUrl, downloadPdf } from '../lib/pdf';
 
@@ -623,7 +623,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
         if (!amount || !installment.dueDate) continue;
         const res = await fetch(`${API_BASE}/finance/receivables`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildMutationHeaders(),
           body: JSON.stringify({
             saleId: sale.id,
             amount,
@@ -684,7 +684,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     try {
       const res = await fetch(`${API_BASE}/finance/receivables/${editTarget.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           amount: amountValue,
           dueDate: editDueDate,
@@ -724,7 +724,8 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     if (!removeTarget || isCancelled) return;
     try {
       const res = await fetch(`${API_BASE}/finance/receivables/${removeTarget.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: buildMutationHeaders()
       });
       if (!res.ok && res.status !== 204) {
         const payload = (await res.json().catch(() => null)) as { message?: string } | null;
@@ -750,7 +751,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     try {
       const res = await fetch(`${API_BASE}/finance/receivables/${settleTarget.id}/settle`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           amount: toNumber(settleTarget.amount),
           settledAt: settleDate ? `${settleDate}T00:00:00` : new Date().toISOString()
@@ -781,7 +782,8 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     if (!unsettleTarget || isCancelled) return;
     try {
       const res = await fetch(`${API_BASE}/finance/receivables/${unsettleTarget.id}/unsettle`, {
-        method: 'POST'
+        method: 'POST',
+        headers: buildMutationHeaders()
       });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { message?: string } | null;
@@ -810,7 +812,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     try {
       const res = await fetch(`${API_BASE}/sales/orders/${sale.id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({ status: nextStatus })
       });
       if (!res.ok) {
@@ -896,7 +898,10 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     if (!sale) return;
     setUndoing(true);
     try {
-      const res = await fetch(`${API_BASE}/sales/orders/${sale.id}/cancel`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/sales/orders/${sale.id}/cancel`, {
+        method: 'POST',
+        headers: buildMutationHeaders()
+      });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { message?: string } | null;
         setToast(payload?.message || 'Erro ao desfazer venda');

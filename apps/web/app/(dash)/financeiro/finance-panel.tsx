@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { IconDots, IconPlus } from '../icons';
-import { API_BASE, formatCurrency, toNumber } from '../lib';
+import { API_BASE, buildMutationHeaders, formatCurrency, toNumber } from '../lib';
 
 type Receivable = {
   id: string;
@@ -459,7 +459,7 @@ export default function FinancePanel({
     try {
       const res = await fetch(`${API_BASE}/finance/expenses`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           description,
           amount,
@@ -531,7 +531,7 @@ export default function FinancePanel({
       if (entry.kind === 'expense') {
         const res = await fetch(`${API_BASE}/finance/expenses/${entry.sourceId}/pay`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildMutationHeaders(),
           body: JSON.stringify({})
         });
 
@@ -553,7 +553,7 @@ export default function FinancePanel({
 
       const res = await fetch(`${API_BASE}/finance/receivables/${entry.sourceId}/settle`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({ amount: entry.amount, settledAt: new Date().toISOString() })
       });
 
@@ -579,7 +579,8 @@ export default function FinancePanel({
     try {
       if (entry.kind === 'expense') {
         const res = await fetch(`${API_BASE}/finance/expenses/${entry.sourceId}/unpay`, {
-          method: 'POST'
+          method: 'POST',
+          headers: buildMutationHeaders()
         });
 
         if (!res.ok) {
@@ -593,7 +594,8 @@ export default function FinancePanel({
       }
 
       const res = await fetch(`${API_BASE}/finance/receivables/${entry.sourceId}/unsettle`, {
-        method: 'POST'
+        method: 'POST',
+        headers: buildMutationHeaders()
       });
 
       if (!res.ok) {
@@ -619,7 +621,8 @@ export default function FinancePanel({
 
     try {
       const res = await fetch(`${API_BASE}/finance/expenses/${entry.sourceId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: buildMutationHeaders()
       });
 
       if (!res.ok) {

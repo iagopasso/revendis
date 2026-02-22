@@ -12,6 +12,7 @@ export type NotificationItem = {
 };
 
 export const NOTIFICATIONS_READ_IDS_KEY = 'revendis:notifications:read-ids';
+export const NOTIFICATIONS_READ_IDS_UPDATED_EVENT = 'revendis:notifications:read-ids-updated';
 const NOTIFICATIONS_LEGACY_LAST_SEEN_KEY = 'revendis:notifications:last-seen-at';
 const MAX_STORED_READ_IDS = 1200;
 
@@ -113,6 +114,34 @@ export const saveReadNotificationIds = (ids: Set<string>) => {
   if (typeof window === 'undefined') return;
   const serialized = Array.from(ids).slice(-MAX_STORED_READ_IDS);
   window.localStorage.setItem(NOTIFICATIONS_READ_IDS_KEY, JSON.stringify(serialized));
+  window.dispatchEvent(new Event(NOTIFICATIONS_READ_IDS_UPDATED_EVENT));
+};
+
+export const subscribeReadNotificationIds = (onChange: (ids: Set<string>) => void) => {
+  if (typeof window === 'undefined') {
+    return () => undefined;
+  }
+
+  const notifyChange = () => {
+    onChange(readIdsFromStorage());
+  };
+
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key && event.key !== NOTIFICATIONS_READ_IDS_KEY) return;
+    notifyChange();
+  };
+
+  const handleCustomEvent = () => {
+    notifyChange();
+  };
+
+  window.addEventListener('storage', handleStorage);
+  window.addEventListener(NOTIFICATIONS_READ_IDS_UPDATED_EVENT, handleCustomEvent);
+
+  return () => {
+    window.removeEventListener('storage', handleStorage);
+    window.removeEventListener(NOTIFICATIONS_READ_IDS_UPDATED_EVENT, handleCustomEvent);
+  };
 };
 
 export const markNotificationIdsAsRead = (current: Set<string>, ids: string[]) => {

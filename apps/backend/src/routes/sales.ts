@@ -7,6 +7,7 @@ import { idParamSchema } from '../schemas/common';
 import { saleInputSchema, salePaymentInputSchema, saleStatusUpdateSchema } from '../schemas/sales';
 import { asyncHandler } from '../utils/async-handler';
 import { writeAudit } from '../utils/audit';
+import { parseSaleCreatedAt } from '../utils/sale-date';
 
 const router = Router();
 
@@ -84,8 +85,7 @@ router.post(
     }, 0);
     const discountTotal = 0;
     const total = subtotal - discountTotal;
-    const saleDate = createdAt ? new Date(createdAt) : new Date();
-    const createdAtValue = Number.isNaN(saleDate.getTime()) ? new Date() : saleDate;
+    const createdAtValue = parseSaleCreatedAt(createdAt);
 
     const buildError = (status: number, code: string, message: string) => {
       const error = new Error(message) as Error & { status?: number; code?: string };

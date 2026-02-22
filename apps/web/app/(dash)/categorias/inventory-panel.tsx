@@ -16,7 +16,8 @@ import {
   IconUpload
 } from '../icons';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
-import { API_BASE, formatCurrency, toNumber } from '../lib';
+import { API_BASE, buildMutationHeaders, formatCurrency, toNumber } from '../lib';
+import { resizeImageToDataUrl } from '../image-upload';
 
 type Product = {
   id: string;
@@ -180,6 +181,8 @@ const paymentMethods = [
   'TED/DOC',
   'App de Pagamento'
 ];
+
+const UPLOAD_IMAGE_MAX_SIZE_PX = 520;
 
 const emptyDraft: ProductDraft = {
   name: '',
@@ -365,21 +368,6 @@ const formatCepInput = (value: string) => {
 };
 
 const toIsoDate = (value: Date) => value.toISOString().split('T')[0];
-
-const fileToDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result === 'string') {
-        resolve(result);
-        return;
-      }
-      reject(new Error('invalid_file_data'));
-    };
-    reader.onerror = () => reject(new Error('invalid_file_data'));
-    reader.readAsDataURL(file);
-  });
 
 const csvHeaderToken = (value: string) =>
   value
@@ -758,8 +746,7 @@ export default function InventoryPanel({
     setCatalogError(null);
     try {
       const params = new URLSearchParams({
-        limit: '10000',
-        allBrands: 'true'
+        limit: '10000'
       });
       const endpoint = `${API_BASE}/catalog/preloaded/products?${params.toString()}`;
       const res = await fetch(endpoint, {
@@ -779,10 +766,21 @@ export default function InventoryPanel({
         data?: CatalogSuggestionProduct[];
         meta?: {
           total?: number;
+          brands?: string[];
           brandsWithProducts?: string[];
           sources?: CatalogPreloadedSourceMeta[];
         };
       };
+
+      const configuredBrands = Array.isArray(payload.meta?.brands) ? payload.meta?.brands : [];
+      if (configuredBrands.length === 0) {
+        setCatalogProducts([]);
+        setCatalogSourceInfo(null);
+        setCatalogError(
+          'Cadastre ao menos uma marca em Configuracoes > Gerenciar marcas para liberar o catalogo.'
+        );
+        return;
+      }
 
       setCatalogProducts(payload.data || []);
       const total = Number(payload.meta?.total ?? payload.data?.length ?? 0) || 0;
@@ -792,6 +790,7 @@ export default function InventoryPanel({
       const sampleBrands = sources.filter((source) => source.source === 'sample').length;
 
       const info = [
+        `Marcas configuradas: ${configuredBrands.length}`,
         `Produtos prontos: ${total}`,
         `Marcas com catalogo: ${brandsWithProducts}`,
         sources.length > 0 ? `Fontes reais: ${upstreamBrands}/${sources.length}` : null,
@@ -817,10 +816,9 @@ export default function InventoryPanel({
     try {
       const response = await fetch(`${API_BASE}/catalog/preloaded/sync`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         cache: 'no-store',
         body: JSON.stringify({
-          allBrands: true,
           inStockOnly: false,
           clearMissing: true,
           allowSampleFallback: true,
@@ -830,9 +828,23 @@ export default function InventoryPanel({
         })
       });
 
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            message?: string;
+            meta?: {
+              selectedBrands?: string[];
+            };
+          }
+        | null;
+
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
         setToast(payload?.message || 'Nao foi possivel sincronizar o catalogo.');
+        return;
+      }
+
+      if ((payload?.meta?.selectedBrands || []).length === 0) {
+        await loadCatalogProducts();
+        setToast('Cadastre marcas em Configuracoes > Gerenciar marcas para sincronizar o catalogo.');
         return;
       }
 
@@ -1088,18 +1100,20 @@ export default function InventoryPanel({
       return;
     }
 
+    const nextPhotoUrl = customerDraft.photoUrl.trim();
+
     setCustomerSaving(true);
     setCustomerFormError(null);
     try {
       const res = await fetch(`${API_BASE}/customers`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           name,
           phone,
           birthDate: customerDraft.birthDate || undefined,
           description: customerDraft.description.trim() || undefined,
-          photoUrl: customerDraft.photoUrl || undefined,
+          photoUrl: nextPhotoUrl || undefined,
           cpfCnpj: customerDraft.cpfCnpj.trim() || undefined,
           cep: customerDraft.cep.trim() || undefined,
           street: customerDraft.street.trim() || undefined,
@@ -1183,6 +1197,26 @@ export default function InventoryPanel({
       'edit',
       product.id
     );
+  };
+
+  const handleProductImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const imageUrl = await resizeImageToDataUrl(file, {
+        maxSize: UPLOAD_IMAGE_MAX_SIZE_PX
+      });
+      setFormDraft((prev) => ({ ...prev, imageUrl }));
+    } catch {
+      setToast('Nao foi possivel carregar a imagem do produto');
+    } finally {
+      input.value = '';
+    }
+  };
+
+  const clearProductImage = () => {
+    setFormDraft((prev) => ({ ...prev, imageUrl: '' }));
   };
 
   const parseMoney = (value: string) => {
@@ -1342,11 +1376,11 @@ export default function InventoryPanel({
     try {
       const saleRes = await fetch(`${API_BASE}/sales/checkout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           customerId: sellCustomerId || undefined,
           customerName: sellCustomerId ? undefined : customerNameValue,
-          createdAt: sellDate ? `${sellDate}T00:00:00` : undefined,
+          createdAt: sellDate || undefined,
           items: [
             {
               sku: selectedProduct.sku,
@@ -1382,7 +1416,7 @@ export default function InventoryPanel({
             if (!amount || !installment.dueDate) continue;
             await fetch(`${API_BASE}/finance/receivables`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: buildMutationHeaders(),
               body: JSON.stringify({
                 saleId,
                 amount,
@@ -1394,7 +1428,7 @@ export default function InventoryPanel({
         }
       }
 
-      const saleDateValue = payload.data?.created_at || `${sellDate}T00:00:00`;
+      const saleDateValue = payload.data?.created_at || (sellDate ? `${sellDate}T12:00:00.000Z` : new Date().toISOString());
       if (!sellPaid && saleId) {
         const selectedCustomerData = customers.find((customer) => customer.id === sellCustomerId);
         setSaleModal({
@@ -1452,7 +1486,7 @@ export default function InventoryPanel({
     try {
       const res = await fetch(`${API_BASE}/inventory/units/${editUnit.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify(payload)
       });
       if (!res.ok) {
@@ -1475,7 +1509,8 @@ export default function InventoryPanel({
     if (!deleteUnit) return;
     try {
       const res = await fetch(`${API_BASE}/inventory/units/${deleteUnit.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: buildMutationHeaders()
       });
       if (res.status === 409) {
         setToast('Unidade ja vendida');
@@ -1578,7 +1613,8 @@ export default function InventoryPanel({
         for (const unit of targetUnits) {
           try {
             const res = await fetch(`${API_BASE}/inventory/units/${unit.id}`, {
-              method: 'DELETE'
+              method: 'DELETE',
+              headers: buildMutationHeaders()
             });
             if (res.status === 409) {
               conflictCount += 1;
@@ -1604,7 +1640,7 @@ export default function InventoryPanel({
           try {
             const res = await fetch(`${API_BASE}/inventory/units/${unit.id}`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
+              headers: buildMutationHeaders(),
               body: JSON.stringify(payload)
             });
             if (!res.ok) {
@@ -1722,7 +1758,7 @@ export default function InventoryPanel({
 
       const res = await fetch(`${API_BASE}/catalog/preloaded/manual/import`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           clearMissing: false,
           products: productsToImport
@@ -1801,7 +1837,7 @@ export default function InventoryPanel({
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify(payload)
       });
 
@@ -1874,7 +1910,7 @@ export default function InventoryPanel({
     try {
       const res = await fetch(`${API_BASE}/inventory/categories`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({ name: newCategoryName.trim(), color: newCategoryColor })
       });
       if (!res.ok) {
@@ -1898,7 +1934,7 @@ export default function InventoryPanel({
     try {
       const res = await fetch(`${API_BASE}/inventory/categories/${editingCategory.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({ name: newCategoryName.trim(), color: newCategoryColor })
       });
       if (!res.ok) {
@@ -1916,7 +1952,8 @@ export default function InventoryPanel({
   const handleDeleteCategory = async (category: Category) => {
     try {
       const res = await fetch(`${API_BASE}/inventory/categories/${category.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: buildMutationHeaders()
       });
       if (!res.ok) {
         setToast('Erro ao excluir categoria');
@@ -1933,7 +1970,8 @@ export default function InventoryPanel({
   const handleDeleteProduct = async (product: Product) => {
     try {
       const res = await fetch(`${API_BASE}/inventory/products/${product.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: buildMutationHeaders()
       });
       if (!res.ok) {
         setToast('Erro ao excluir produto');
@@ -1953,7 +1991,7 @@ export default function InventoryPanel({
     try {
       const res = await fetch(`${API_BASE}/inventory/adjustments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildMutationHeaders(),
         body: JSON.stringify({
           sku: adjustProduct.sku,
           quantity,
@@ -2502,16 +2540,31 @@ export default function InventoryPanel({
               <>
                 <div className="product-form">
                   <div className="product-image">
-                    {formDraft.imageUrl ? (
-                      <div className="product-image-preview">
-                        <img src={formDraft.imageUrl} alt={formDraft.name || 'Produto'} />
-                      </div>
-                    ) : (
-                      <div className="product-upload">
-                        <span>⬆</span>
-                        <p>Arraste a imagem ou clique para enviar</p>
-                      </div>
-                    )}
+                    <div className="product-image-card">
+                      {formDraft.imageUrl ? (
+                        <div className="product-image-preview">
+                          <img src={formDraft.imageUrl} alt={formDraft.name || 'Produto'} />
+                        </div>
+                      ) : (
+                        <div className="product-upload">
+                          <span>⬆</span>
+                          <p>Clique para enviar uma imagem</p>
+                        </div>
+                      )}
+                      <label className="product-upload-button">
+                        <input type="file" accept="image/*" onChange={handleProductImageUpload} />
+                        <span>⤴ {formDraft.imageUrl ? 'Trocar imagem' : 'Carregar imagem'}</span>
+                      </label>
+                      {formDraft.imageUrl ? (
+                        <button
+                          className="button ghost small product-remove-image"
+                          type="button"
+                          onClick={clearProductImage}
+                        >
+                          Remover imagem
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="product-fields">
                     <label className="modal-field">
@@ -3225,15 +3278,19 @@ export default function InventoryPanel({
                       type="file"
                       accept="image/*"
                       onChange={async (event) => {
-                        const file = event.target.files?.[0];
+                        const input = event.currentTarget;
+                        const file = input.files?.[0];
                         if (!file) return;
                         try {
-                          const nextUrl = await fileToDataUrl(file);
-                          updateCustomerPhoto(nextUrl);
+                          const resized = await resizeImageToDataUrl(file, {
+                            maxSize: UPLOAD_IMAGE_MAX_SIZE_PX
+                          });
+                          updateCustomerPhoto(resized);
+                          setCustomerFormError(null);
                         } catch {
                           setCustomerFormError('Nao foi possivel carregar a imagem do cliente');
                         }
-                        event.currentTarget.value = '';
+                        input.value = '';
                       }}
                     />
                     <span>⤴ Carregar</span>

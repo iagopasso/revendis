@@ -7,6 +7,7 @@ import { idParamSchema } from '../schemas/common';
 import { storefrontOrderAcceptSchema, storefrontOrderSchema } from '../schemas/storefront';
 import { asyncHandler } from '../utils/async-handler';
 import { writeAudit } from '../utils/audit';
+import { parseSaleCreatedAt } from '../utils/sale-date';
 
 const router = Router();
 const DEFAULT_STOREFRONT_COLOR = '#7D58D4';
@@ -1096,14 +1097,8 @@ router.post(
           customerName = customer.name || customerName;
         }
 
-        const saleDateRaw = (payload.saleDate || '').trim();
-        const saleDateNormalized = saleDateRaw
-          ? saleDateRaw.includes('T')
-            ? saleDateRaw
-            : `${saleDateRaw}T00:00:00`
-          : '';
-        const saleDateParsed = saleDateNormalized ? new Date(saleDateNormalized) : new Date();
-        const saleCreatedAt = Number.isNaN(saleDateParsed.getTime()) ? new Date() : saleDateParsed;
+        const saleDateRaw = normalizeOptional(payload.saleDate);
+        const saleCreatedAt = parseSaleCreatedAt(saleDateRaw);
 
         const subtotal = preparedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
         const saleRes = await client.query<{ id: string; status: string; customer_name: string }>(
@@ -1281,6 +1276,93 @@ router.post(
       data: {
         id,
         status: 'cancelled'
+      }
+    });
+  })
+);
+
+router.delete(
+  '/storefront/orders/:id',
+  validateRequest({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    await ensureStorefrontOrderColumns();
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
+    const userId = req.header('x-user-id') || null;
+    const { id } = req.params;
+
+    const result = await withTransaction(async (client) => {
+      const orderRes = await client.query<StorefrontOrderRow>(
+        `SELECT id,
+                store_id,
+                customer_name,
+                customer_phone,
+                customer_email,
+                status,
+                total,
+                created_at,
+                0::int AS items_count,
+                sale_id,
+                accepted_at,
+                cancelled_at
+         FROM storefront_orders
+         WHERE id = $1 AND store_id = $2
+         FOR UPDATE`,
+        [id, storeId]
+      );
+
+      const order = orderRes.rows[0];
+      if (!order) {
+        return { type: 'not_found' as const };
+      }
+
+      const status = normalizeOrderStatus(order.status);
+      if (status !== 'cancelled') {
+        return { type: 'invalid_status' as const, status };
+      }
+
+      await client.query(
+        `DELETE FROM storefront_order_items
+         WHERE storefront_order_id = $1`,
+        [id]
+      );
+
+      await client.query(
+        `DELETE FROM storefront_orders
+         WHERE id = $1
+           AND store_id = $2`,
+        [id, storeId]
+      );
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        storeId,
+        userId,
+        entityType: 'storefront_order',
+        entityId: id,
+        action: 'deleted',
+        payload: {
+          status: 'cancelled'
+        }
+      });
+
+      return { type: 'deleted' as const };
+    });
+
+    if (result.type === 'not_found') {
+      return res.status(404).json({ code: 'not_found', message: 'Pedido nao encontrado.' });
+    }
+    if (result.type === 'invalid_status') {
+      return res.status(409).json({
+        code: 'invalid_status',
+        message: 'Apenas pedidos cancelados podem ser excluidos.'
+      });
+    }
+
+    return res.json({
+      data: {
+        id,
+        deleted: true
       }
     });
   })

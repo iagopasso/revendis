@@ -3,6 +3,7 @@ import type { ExpoConfig, ConfigContext } from 'expo/config';
 const DEFAULT_API_URL = 'http://localhost:3001/api';
 const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000001';
 const DEFAULT_STORE_ID = '00000000-0000-0000-0000-000000000101';
+const DEFAULT_MUTATION_AUTH_TOKEN = '';
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
 const getEnvValue = (value: unknown) => {
@@ -15,6 +16,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const apiUrl = trimTrailingSlash(getEnvValue(process.env.EXPO_PUBLIC_API_URL) || DEFAULT_API_URL);
   const orgId = getEnvValue(process.env.EXPO_PUBLIC_ORG_ID) || DEFAULT_ORG_ID;
   const storeId = getEnvValue(process.env.EXPO_PUBLIC_STORE_ID) || DEFAULT_STORE_ID;
+  const mutationAuthToken =
+    getEnvValue(process.env.EXPO_PUBLIC_MUTATION_AUTH_TOKEN) || DEFAULT_MUTATION_AUTH_TOKEN;
 
   return {
     ...config,
@@ -28,7 +31,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...(config.extra ?? {}),
       apiUrl,
       orgId,
-      storeId
+      storeId,
+      mutationAuthToken
     }
   };
 };

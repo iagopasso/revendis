@@ -12,7 +12,19 @@ const resolveApiBase = () => {
 
 export const API_BASE = resolveApiBase();
 export const SALES_SYNC_STORAGE_KEY = 'revendis:sales-sync-at';
+const MUTATION_AUTH_TOKEN = process.env.NEXT_PUBLIC_MUTATION_AUTH_TOKEN || '';
 const API_TIMEOUT_MS = Math.max(2000, Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 10000));
+
+export const buildMutationHeaders = (extra?: HeadersInit) => {
+  const headers = new Headers(extra || {});
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  if (MUTATION_AUTH_TOKEN && !headers.has('x-mutation-token')) {
+    headers.set('x-mutation-token', MUTATION_AUTH_TOKEN);
+  }
+  return headers;
+};
 
 export const fetchList = async <T,>(path: string): Promise<ListResponse<T> | null> => {
   const controller = new AbortController();
