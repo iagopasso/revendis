@@ -92,6 +92,24 @@ AUTH_ADMIN_NAME=Administrador
 1. [ ] Garantir deploy anterior preservado no Railway (rollback rapido).
 2. [ ] Manter backup/branch no Neon para restauracao.
 
+## 10) Fallback para erro do railpack/GHCR
+
+Se o deploy falhar com erro de autorizacao no `ghcr.io/railwayapp/railpack-frontend`,
+troque o builder para Dockerfile em cada servico:
+
+1. [ ] `backend` -> Build -> Builder: `Dockerfile`
+2. [ ] `backend` -> Dockerfile path: `Dockerfile.backend`
+3. [ ] `web` -> Build -> Builder: `Dockerfile`
+4. [ ] `web` -> Dockerfile path: `Dockerfile.web`
+5. [ ] Re-run deploy nos dois servicos
+
+Se a opcao de Builder nao aparecer no painel:
+
+1. [ ] Usar o `Dockerfile` na raiz do repositorio (auto-detect do Railway)
+2. [ ] Definir variavel `APP_ROLE=backend` no servico backend
+3. [ ] Definir variavel `APP_ROLE=web` no servico web
+4. [ ] Re-run deploy nos dois servicos
+
 ## Modo guiado (eu te acompanho passo a passo)
 
 Me envie estes 4 itens e eu te guio clicando etapa por etapa:
