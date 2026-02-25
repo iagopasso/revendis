@@ -4,6 +4,7 @@ import { query, withTransaction } from '../db';
 import { validateRequest } from '../middleware/validate';
 import {
   catalogPreloadedCollectSchema,
+  catalogPreloadedInventorySyncSchema,
   catalogPreloadedManualImportSchema,
   catalogBrandsPreloadSchema,
   catalogBrandsSyncSchema,
@@ -258,6 +259,14 @@ type CatalogBrandsPreloadInput = {
   allowSampleFallback?: boolean;
   maxAgeHours?: number;
   force?: boolean;
+};
+
+type CatalogPreloadedInventorySyncInput = {
+  brands?: string[];
+  allBrands?: boolean;
+  limit?: number;
+  inStockOnly?: boolean;
+  preserveExistingActive?: boolean;
 };
 
 type ManualPreloadedImportProductInput = {
@@ -633,6 +642,26 @@ const mapCachedRowToPreloadItem = (row: PreloadedCatalogProductRow): CatalogPrel
   sourceUrl: row.sourceUrl
 });
 
+const mapPreloadedRowToCatalogSyncItem = (row: PreloadedCatalogProductRow): BrandCatalogSyncItem => {
+  const code = row.code || row.sku || row.id;
+  const sku = row.sku || row.code || row.id;
+  const price = row.price ?? 0;
+  const purchasePrice = row.purchasePrice ?? row.price ?? 0;
+  return {
+    code,
+    sku: toCatalogSyncSku(row.sourceBrand, sku, code),
+    barcode: parseOptionalBarcode(row.barcode || row.code || row.sku || row.id),
+    name: row.name,
+    brand: CATALOG_BRAND_LABELS[row.sourceBrand],
+    sourceBrand: row.sourceBrand,
+    price,
+    purchasePrice,
+    inStock: row.inStock,
+    imageUrl: resolveCatalogProductImageUrl(row.sourceBrand, row.imageUrl),
+    sourceCategory: row.sourceCategory || 'catalogo'
+  };
+};
+
 const buildNaturaMagazineCatalogProducts = async ({
   payload
 }: {
@@ -888,7 +917,7 @@ router.post(
       allBrands
     });
     const inStockOnly = payload.inStockOnly === true;
-    const clearMissing = payload.clearMissing !== false;
+    const clearMissing = payload.clearMissing === true;
     const allowSampleFallback = payload.allowSampleFallback === true;
     const perBrandLimit = parsePreloadBodyLimit(payload.limit, MAX_CACHE_LIMIT);
     const maxAgeHours = parsePreloadMaxAgeHours(payload.maxAgeHours);
@@ -1189,6 +1218,167 @@ router.post(
           failedDetails: entry.failedDetails,
           count: entry.products.length
         })),
+        brands: summarizeBrands(normalized),
+        syncedAt: new Date().toISOString()
+      }
+    });
+  })
+);
+
+router.post(
+  '/catalog/preloaded/sync-to-inventory',
+  validateRequest({ body: catalogPreloadedInventorySyncSchema }),
+  asyncHandler(async (req, res) => {
+    const payload = req.body as CatalogPreloadedInventorySyncInput;
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const requestedBrands = parseBodyBrands(payload.brands);
+    const allBrands = payload.allBrands === true;
+    const selectedBrands = await resolveRequestedCatalogBrands({
+      orgId,
+      requestedBrands: requestedBrands.length > 0 ? requestedBrands : null,
+      allBrands
+    });
+    const inStockOnly = payload.inStockOnly === true;
+    const preserveExistingActive = payload.preserveExistingActive !== false;
+    const perBrandLimit = parsePreloadBodyLimit(payload.limit, MAX_CACHE_LIMIT);
+
+    if (selectedBrands.length === 0) {
+      return res.json({
+        data: [],
+        meta: {
+          selectedBrands,
+          allBrands,
+          total: 0,
+          upsertedProducts: 0,
+          inStockOnly,
+          preserveExistingActive,
+          perBrandLimit,
+          sources: [],
+          brands: [],
+          syncedAt: new Date().toISOString()
+        }
+      });
+    }
+
+    const cached = await query<PreloadedCatalogProductRow>(
+      `SELECT id,
+              code,
+              sku,
+              barcode,
+              name,
+              brand,
+              source_brand AS "sourceBrand",
+              source_line_brand AS "sourceLineBrand",
+              price::float8 AS price,
+              purchase_price::float8 AS "purchasePrice",
+              in_stock AS "inStock",
+              image_url AS "imageUrl",
+              source_category AS "sourceCategory",
+              source_url AS "sourceUrl",
+              fetched_source AS "fetchedSource",
+              updated_at AS "updatedAt"
+       FROM catalog_preloaded_products
+       WHERE organization_id = $1
+         AND source_brand = ANY($2::text[])
+         ${inStockOnly ? 'AND in_stock = true' : ''}
+       ORDER BY source_brand, lower(name)`,
+      [orgId, selectedBrands]
+    );
+
+    const sourceStatsByBrand = new Map<CatalogBrandSlug, { upstream: number; sample: number }>();
+    const rowsPerBrand = new Map<CatalogBrandSlug, number>();
+    const limitedRows: PreloadedCatalogProductRow[] = [];
+
+    cached.rows.forEach((row) => {
+      const stats = sourceStatsByBrand.get(row.sourceBrand) || { upstream: 0, sample: 0 };
+      if (row.fetchedSource === 'sample') {
+        stats.sample += 1;
+      } else {
+        stats.upstream += 1;
+      }
+      sourceStatsByBrand.set(row.sourceBrand, stats);
+
+      const count = rowsPerBrand.get(row.sourceBrand) || 0;
+      if (count >= perBrandLimit) {
+        return;
+      }
+      rowsPerBrand.set(row.sourceBrand, count + 1);
+      limitedRows.push(row);
+    });
+
+    const normalized = limitedRows.map(mapPreloadedRowToCatalogSyncItem);
+
+    const sync = await withTransaction(async (client) => {
+      let upsertedProducts = 0;
+
+      for (const item of normalized) {
+        await client.query(
+          `INSERT INTO products (organization_id, sku, name, brand, barcode, image_url, price, cost, active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (organization_id, sku)
+           DO UPDATE SET
+             name = EXCLUDED.name,
+             brand = EXCLUDED.brand,
+             barcode = EXCLUDED.barcode,
+             image_url = EXCLUDED.image_url,
+             price = EXCLUDED.price,
+             cost = EXCLUDED.cost,
+             active = CASE WHEN $10 THEN products.active ELSE EXCLUDED.active END`,
+          [
+            orgId,
+            item.sku,
+            item.name,
+            item.brand,
+            item.barcode || item.code,
+            item.imageUrl,
+            item.price,
+            item.purchasePrice,
+            item.inStock,
+            preserveExistingActive
+          ]
+        );
+        upsertedProducts += 1;
+      }
+
+      const brandsWithProducts = Array.from(new Set(normalized.map((item) => item.sourceBrand)));
+
+      for (const sourceBrand of brandsWithProducts) {
+        await client.query(
+          `INSERT INTO reseller_brands (organization_id, name, source, source_brand, profitability)
+           VALUES ($1, $2, 'catalog', $3, 0)
+           ON CONFLICT (organization_id, (lower(name)))
+           DO UPDATE SET
+             source = EXCLUDED.source,
+             source_brand = EXCLUDED.source_brand`,
+          [orgId, CATALOG_BRAND_LABELS[sourceBrand], sourceBrand]
+        );
+      }
+
+      return {
+        upsertedProducts
+      };
+    });
+
+    return res.json({
+      data: normalized,
+      meta: {
+        selectedBrands,
+        allBrands,
+        total: normalized.length,
+        upsertedProducts: sync.upsertedProducts,
+        inStockOnly,
+        preserveExistingActive,
+        perBrandLimit,
+        sources: selectedBrands.map((brand) => {
+          const stats = sourceStatsByBrand.get(brand) || { upstream: 0, sample: 0 };
+          return {
+            brand,
+            source: stats.sample > stats.upstream ? 'sample' : 'upstream',
+            count: rowsPerBrand.get(brand) || 0,
+            upstreamCount: stats.upstream,
+            sampleCount: stats.sample
+          };
+        }),
         brands: summarizeBrands(normalized),
         syncedAt: new Date().toISOString()
       }
@@ -1716,7 +1906,7 @@ router.post(
   validateRequest({ body: naturaMagazineCatalogSchema }),
   asyncHandler(async (req, res) => {
     const payload = req.body as NaturaMagazineCatalogInput;
-    const clearMissing = payload.clearMissing !== false;
+    const clearMissing = payload.clearMissing === true;
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
 
     const result = await buildNaturaMagazineCatalogProducts({

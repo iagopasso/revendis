@@ -39,6 +39,16 @@ export const catalogBrandsPreloadSchema = z
   })
   .strict();
 
+export const catalogPreloadedInventorySyncSchema = z
+  .object({
+    brands: z.array(brandSchema).optional(),
+    allBrands: z.boolean().optional(),
+    limit: z.number().int().positive().max(10000).optional(),
+    inStockOnly: z.boolean().optional(),
+    preserveExistingActive: z.boolean().optional()
+  })
+  .strict();
+
 const manualPreloadedProductSchema = z
   .object({
     sourceBrand: z.string().min(1).optional(),

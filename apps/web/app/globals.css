@@ -3563,6 +3563,21 @@ button.dashboard-reminder-card {
   gap: 10px;
 }
 
+.finance-entry-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: #111827;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.finance-entry-link:hover {
+  text-decoration: underline;
+}
+
 .finance-entry-dot {
   width: 22px;
   height: 22px;

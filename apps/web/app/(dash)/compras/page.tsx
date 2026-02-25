@@ -40,6 +40,7 @@ type SearchParams = {
   from?: string | string[];
   to?: string | string[];
   newPurchase?: string | string[];
+  purchaseId?: string | string[];
 };
 
 const uniqueBrands = (values: Array<string | null | undefined>) =>
@@ -65,11 +66,12 @@ export default async function ComprasPage({
 
   const purchases = purchasesResponse?.data ?? [];
   const products = productsResponse?.data ?? [];
-  const dateRange = getDateRangeFromSearchParams(resolvedParams);
+  const dateRange = getDateRangeFromSearchParams(resolvedParams, '28d');
   const purchasesInRange = purchases.filter((purchase) =>
     isInDateRange(purchase.purchase_date || purchase.created_at, dateRange)
   );
   const initialCreateOpen = getStringParam(resolvedParams.newPurchase) === '1';
+  const initialOpenPurchaseId = getStringParam(resolvedParams.purchaseId) || '';
   const resellerBrands = resellerBrandsResponse?.data ?? [];
 
   const availableBrands = uniqueBrands([
@@ -107,6 +109,7 @@ export default async function ComprasPage({
         availableBrands={availableBrands}
         products={products}
         initialCreateOpen={initialCreateOpen}
+        initialOpenPurchaseId={initialOpenPurchaseId}
       />
     </main>
   );

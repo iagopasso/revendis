@@ -41,6 +41,7 @@ const ensureFinanceExpensesTable = async () => {
          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
          store_id uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
          customer_id uuid REFERENCES customers(id) ON DELETE SET NULL,
+         purchase_id uuid,
          description text NOT NULL,
          amount numeric(12,2) NOT NULL,
          due_date date NOT NULL,
@@ -49,6 +50,11 @@ const ensureFinanceExpensesTable = async () => {
          method text,
          created_at timestamptz NOT NULL DEFAULT now()
        )`
+    );
+
+    await query(
+      `ALTER TABLE finance_expenses
+       ADD COLUMN IF NOT EXISTS purchase_id uuid`
     );
 
     await query(
@@ -366,6 +372,7 @@ router.get(
       `SELECT e.id,
               e.store_id,
               e.customer_id,
+              e.purchase_id,
               c.name AS customer_name,
               e.description,
               e.amount,
@@ -412,6 +419,7 @@ router.post(
          RETURNING id,
                    store_id,
                    customer_id,
+                   purchase_id,
                    description,
                    amount,
                    due_date,
@@ -468,6 +476,7 @@ router.post(
          RETURNING id,
                    store_id,
                    customer_id,
+                   purchase_id,
                    description,
                    amount,
                    due_date,
@@ -518,6 +527,7 @@ router.post(
          RETURNING id,
                    store_id,
                    customer_id,
+                   purchase_id,
                    description,
                    amount,
                    due_date,

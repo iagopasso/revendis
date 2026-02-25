@@ -21,6 +21,25 @@ type Purchase = {
   created_at: string;
 };
 
+type PurchaseItemDetail = {
+  id: string;
+  purchase_id: string;
+  product_id: string;
+  sku: string;
+  quantity: number | string;
+  unit_cost: number | string;
+  expires_at?: string | null;
+  created_at: string;
+  product_name?: string | null;
+  product_brand?: string | null;
+  product_image_url?: string | null;
+  product_barcode?: string | null;
+};
+
+type PurchaseDetail = Purchase & {
+  purchase_items: PurchaseItemDetail[];
+};
+
 type Product = {
   id: string;
   sku: string;
@@ -37,6 +56,7 @@ type PurchasesPanelProps = {
   availableBrands: string[];
   products: Product[];
   initialCreateOpen?: boolean;
+  initialOpenPurchaseId?: string;
 };
 
 type PurchaseForm = {
@@ -170,6 +190,17 @@ const cloneItems = (items: PurchaseDraftItem[]): PurchaseDraftItem[] =>
   items.map((item) => ({ ...item }));
 
 const normalizeText = (value?: string | null) => value?.trim().toLowerCase() || '';
+const normalizeBrandToken = (value?: string | null) =>
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+
+const BOTICARIO_SELECTION_TOKENS = new Set(['boticario', 'oboticario']);
+const isBoticarioInvoiceBrandToken = (token: string) =>
+  BOTICARIO_SELECTION_TOKENS.has(token) || token.startsWith('oui') || token.startsWith('eudora');
 
 const getProductImage = (product?: Product | null) => {
   const value = product?.image_url?.trim();
@@ -437,7 +468,8 @@ export default function PurchasesPanel({
   initialPurchases,
   availableBrands,
   products,
-  initialCreateOpen = false
+  initialCreateOpen = false,
+  initialOpenPurchaseId = ''
 }: PurchasesPanelProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -472,8 +504,14 @@ export default function PurchasesPanel({
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [draftSnapshots, setDraftSnapshots] = useState<Record<string, DraftSnapshot>>({});
   const productSearchRef = useRef<HTMLDivElement>(null);
+  const handledInitialPurchaseIdRef = useRef<string | null>(null);
   const [viewPurchase, setViewPurchase] = useState<Purchase | null>(null);
-  const viewBrandLogo = resolveBrandLogo(viewPurchase?.brand || null);
+  const [viewPurchaseDetail, setViewPurchaseDetail] = useState<PurchaseDetail | null>(null);
+  const [viewPurchaseLoading, setViewPurchaseLoading] = useState(false);
+  const [viewPurchaseError, setViewPurchaseError] = useState<string | null>(null);
+  const viewBrandLogo = resolveBrandLogo(
+    (viewPurchaseDetail?.brand || viewPurchase?.brand || null) as string | null
+  );
 
   useEffect(() => {
     setPurchases((prev) => {
@@ -616,10 +654,17 @@ export default function PurchasesPanel({
   );
 
   const brandScopedProducts = useMemo(() => {
-    const normalizedBrand = normalizeText(form.brand);
-    if (!normalizedBrand) return availableProducts;
+    const selectedBrandToken = normalizeBrandToken(form.brand);
+    if (!selectedBrandToken) return availableProducts;
+
+    if (BOTICARIO_SELECTION_TOKENS.has(selectedBrandToken)) {
+      return availableProducts.filter((product) =>
+        isBoticarioInvoiceBrandToken(normalizeBrandToken(product.brand))
+      );
+    }
+
     return availableProducts.filter(
-      (product) => normalizeText(product.brand) === normalizedBrand
+      (product) => normalizeBrandToken(product.brand) === selectedBrandToken
     );
   }, [availableProducts, form.brand]);
 
@@ -1039,6 +1084,69 @@ export default function PurchasesPanel({
     }
   };
 
+  const openViewPurchaseById = async (purchaseId: string, preview?: Purchase | null) => {
+    if (preview) {
+      setViewPurchase(preview);
+    } else {
+      setViewPurchase(null);
+    }
+    setViewPurchaseDetail(null);
+    setViewPurchaseError(null);
+    setViewPurchaseLoading(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/purchases/${purchaseId}`, {
+        headers: buildMutationHeaders()
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        setViewPurchaseError(payload?.message || 'Nao foi possivel carregar os itens da compra.');
+        return;
+      }
+
+      const payload = (await res.json().catch(() => null)) as { data?: PurchaseDetail } | null;
+      if (!payload?.data) {
+        setViewPurchaseError('Nao foi possivel carregar os itens da compra.');
+        return;
+      }
+
+      setViewPurchaseDetail(payload.data);
+      setViewPurchase(payload.data);
+    } catch {
+      setViewPurchaseError('Nao foi possivel carregar os itens da compra.');
+    } finally {
+      setViewPurchaseLoading(false);
+    }
+  };
+
+  const openViewPurchase = async (purchase: Purchase) => {
+    await openViewPurchaseById(purchase.id, purchase);
+  };
+
+  const closeViewPurchase = () => {
+    setViewPurchase(null);
+    setViewPurchaseDetail(null);
+    setViewPurchaseError(null);
+    setViewPurchaseLoading(false);
+  };
+
+  useEffect(() => {
+    const purchaseId = initialOpenPurchaseId.trim();
+    if (!purchaseId) return;
+    if (handledInitialPurchaseIdRef.current === purchaseId) return;
+    handledInitialPurchaseIdRef.current = purchaseId;
+
+    const preview = purchases.find((item) => item.id === purchaseId) || null;
+    void openViewPurchaseById(purchaseId, preview);
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (params.has('purchaseId')) {
+      params.delete('purchaseId');
+      const nextQuery = params.toString();
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+    }
+  }, [initialOpenPurchaseId, pathname, purchases, router, searchParams]);
+
   const updateStatus = async (purchase: Purchase, status: Exclude<PurchaseStatus, 'draft'>) => {
     setActionError(null);
     setProcessingId(purchase.id);
@@ -1060,6 +1168,8 @@ export default function PurchasesPanel({
       setPurchases((prev) =>
         prev.map((item) => (item.id === purchase.id ? { ...item, status } : item))
       );
+      setViewPurchase((prev) => (prev && prev.id === purchase.id ? { ...prev, status } : prev));
+      setViewPurchaseDetail((prev) => (prev && prev.id === purchase.id ? { ...prev, status } : prev));
     } catch {
       setActionError('Erro ao atualizar status da compra.');
     } finally {
@@ -1209,7 +1319,7 @@ export default function PurchasesPanel({
                       <button
                         type="button"
                         className="button ghost small purchase-quick-view"
-                        onClick={() => setViewPurchase(purchase)}
+                        onClick={() => void openViewPurchase(purchase)}
                         disabled={processingId === purchase.id}
                       >
                         Visualizar
@@ -1242,9 +1352,14 @@ export default function PurchasesPanel({
                           </>
                         ) : (
                           <>
-                            <button type="button" onClick={() => setViewPurchase(purchase)}>
+                            <button type="button" onClick={() => void openViewPurchase(purchase)}>
                               Visualizar compra
                             </button>
+                            {purchase.status === 'pending' ? (
+                              <button type="button" onClick={() => void updateStatus(purchase, 'received')}>
+                                Marcar como recebido
+                              </button>
+                            ) : null}
                             <button type="button" className="danger" onClick={() => removePurchase(purchase)}>
                               <IconTrash /> Excluir pedido
                             </button>
@@ -1695,11 +1810,11 @@ export default function PurchasesPanel({
       </section>
 
       {viewPurchase ? (
-        <div className="modal-backdrop" onClick={() => setViewPurchase(null)}>
+        <div className="modal-backdrop" onClick={closeViewPurchase}>
           <div className="modal modal-purchase-view" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header purchase-view-header">
               <h3>Compra N.º {viewPurchase.order_number || viewPurchase.id.slice(0, 6)}</h3>
-              <button className="modal-close" type="button" onClick={() => setViewPurchase(null)}>
+              <button className="modal-close" type="button" onClick={closeViewPurchase}>
                 ✕
               </button>
             </div>
@@ -1733,7 +1848,45 @@ export default function PurchasesPanel({
                 <h4>Produtos</h4>
                 <div className="divider" />
                 <div className="purchase-view-products">
-                  {draftSnapshots[viewPurchase.id]?.items.length ? (
+                  {viewPurchaseLoading ? (
+                    <span className="muted">Carregando produtos...</span>
+                  ) : viewPurchaseDetail?.purchase_items?.length ? (
+                    viewPurchaseDetail.purchase_items.map((item) => {
+                      const product = productById.get(item.product_id) || null;
+                      const imageUrl = item.product_image_url || getProductImage(product);
+                      const code = digitsOnly(
+                        item.sku || item.product_barcode || product?.sku || product?.barcode || ''
+                      );
+                      const name = item.product_name?.trim() || product?.name || 'Produto nao identificado';
+                      const headline = code ? `${code} - ${name}` : name;
+                      const quantity = Math.max(1, Math.trunc(toNumber(item.quantity)));
+                      const unitCost = formatCurrency(Math.max(0, toNumber(item.unit_cost)));
+                      const expiryText = item.expires_at
+                        ? ` • Validade ${formatDateLabel(item.expires_at)}`
+                        : '';
+
+                      return (
+                        <div key={item.id} className="purchase-view-product">
+                          <div className="purchase-view-product-thumb">
+                            {imageUrl ? (
+                              <img className="product-thumb-image" src={imageUrl} alt={name} />
+                            ) : (
+                              <span className="product-thumb-placeholder" aria-hidden="true">
+                                <IconBox />
+                              </span>
+                            )}
+                          </div>
+                          <div className="purchase-view-product-info">
+                            <strong>{headline}</strong>
+                            <span className="muted">
+                              {quantity} un. - {unitCost}
+                              {expiryText}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : draftSnapshots[viewPurchase.id]?.items.length ? (
                     draftSnapshots[viewPurchase.id].items.map((item) => {
                       const product = productById.get(item.productId) || null;
                       return (
@@ -1757,7 +1910,7 @@ export default function PurchasesPanel({
                       );
                     })
                   ) : (
-                    <span className="muted">Produtos não disponiveis.</span>
+                    <span className="muted">{viewPurchaseError || 'Produtos nao disponiveis.'}</span>
                   )}
                 </div>
               </section>
@@ -1799,8 +1952,12 @@ export default function PurchasesPanel({
                   </div>
                   <div className="purchase-payment-right">
                     <strong>{formatCurrency(toNumber(viewPurchase.total))}</strong>
-                    <span className={`badge ${viewPurchase.status === 'pending' ? 'pending' : 'success'}`}>
-                      {viewPurchase.status === 'pending' ? 'PENDENTE' : 'RECEBIDO'}
+                    <span className={`badge ${statusBadge(viewPurchase.status)}`}>
+                      {viewPurchase.status === 'pending'
+                        ? 'PENDENTE'
+                        : viewPurchase.status === 'received'
+                          ? 'RECEBIDO'
+                          : 'CANCELADO'}
                     </span>
                   </div>
                 </div>
@@ -1808,14 +1965,24 @@ export default function PurchasesPanel({
             </div>
 
             <div className="modal-footer purchase-view-actions">
-              <button className="button ghost" type="button" onClick={() => setViewPurchase(null)}>
+              <button className="button ghost" type="button" onClick={closeViewPurchase}>
                 Fechar
               </button>
+              {viewPurchase.status === 'pending' ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => void updateStatus(viewPurchase, 'received')}
+                  disabled={processingId === viewPurchase.id}
+                >
+                  {processingId === viewPurchase.id ? 'Atualizando...' : 'Marcar como recebido'}
+                </button>
+              ) : null}
               <button
                 className="button danger"
                 type="button"
                 onClick={() => {
-                  setViewPurchase(null);
+                  closeViewPurchase();
                   removePurchase(viewPurchase);
                 }}
                 disabled={processingId === viewPurchase.id}

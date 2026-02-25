@@ -29,6 +29,17 @@ export const withTransaction = async <T>(
   }
 };
 
+export const withClient = async <T>(
+  handler: (client: PoolClient) => Promise<T>
+): Promise<T> => {
+  const client = await pool.connect();
+  try {
+    return await handler(client);
+  } finally {
+    client.release();
+  }
+};
+
 export const ping = async (): Promise<QueryResult> => {
   return query('SELECT 1');
 };

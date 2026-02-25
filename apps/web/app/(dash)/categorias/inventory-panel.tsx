@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type SyntheticEvent } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -318,8 +318,44 @@ const buildCatalogFallbackThumb = (name: string, brand?: string | null) => {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 };
 
+const normalizeProductImageUrl = (value?: string | null) => {
+  const trimmed = value?.trim();
+  if (!trimmed) return '';
+
+  if (/^data:image\//i.test(trimmed) || /^blob:/i.test(trimmed)) return trimmed;
+
+  const encodeIfPossible = (url: string) => {
+    try {
+      return encodeURI(url);
+    } catch {
+      return url;
+    }
+  };
+
+  if (/^https?:\/\//i.test(trimmed)) return encodeIfPossible(trimmed);
+  if (trimmed.startsWith('//')) return encodeIfPossible(`https:${trimmed}`);
+  if (trimmed.startsWith('/')) return encodeIfPossible(trimmed);
+
+  if (/^www\./i.test(trimmed) || /^[a-z0-9.-]+\.[a-z]{2,}(?:[/:?#]|$)/i.test(trimmed)) {
+    return encodeIfPossible(`https://${trimmed}`);
+  }
+
+  return '';
+};
+
+const applyProductImageFallback = (
+  event: SyntheticEvent<HTMLImageElement, Event>,
+  name: string,
+  brand?: string | null
+) => {
+  const element = event.currentTarget;
+  if (element.dataset.fallbackApplied === '1') return;
+  element.dataset.fallbackApplied = '1';
+  element.src = buildCatalogFallbackThumb(name || 'Produto', brand);
+};
+
 const getCatalogSuggestionThumb = (item: CatalogSuggestionProduct) => {
-  const imageUrl = item.imageUrl?.trim();
+  const imageUrl = normalizeProductImageUrl(item.imageUrl);
   if (imageUrl) return imageUrl;
   return buildCatalogFallbackThumb(item.name, item.brand);
 };
@@ -682,8 +718,7 @@ const getProductMetaLine = (product?: Product | null) => {
 };
 
 const getProductImage = (product?: Product | null) => {
-  const value = product?.image_url?.trim();
-  return value || '';
+  return normalizeProductImageUrl(product?.image_url);
 };
 
 export default function InventoryPanel({
@@ -728,6 +763,7 @@ export default function InventoryPanel({
   const [unitQuantity, setUnitQuantity] = useState('1');
   const [unitCost, setUnitCost] = useState('');
   const [unitExpiry, setUnitExpiry] = useState('');
+  const [addingUnits, setAddingUnits] = useState(false);
   const [productUnits, setProductUnits] = useState<InventoryUnit[]>([]);
   const [unitsLoading, setUnitsLoading] = useState(false);
   const [productSales, setProductSales] = useState<ProductSale[]>([]);
@@ -1049,21 +1085,21 @@ export default function InventoryPanel({
     setCatalogSyncing(true);
     setCatalogError(null);
     try {
-      const response = await fetch(`${API_BASE}/catalog/preloaded/sync`, {
+      const preloadResponse = await fetch(`${API_BASE}/catalog/preloaded/sync`, {
         method: 'POST',
         headers: buildMutationHeaders(),
         cache: 'no-store',
         body: JSON.stringify({
           inStockOnly: false,
-          clearMissing: true,
-          allowSampleFallback: true,
+          clearMissing: false,
+          allowSampleFallback: false,
           limit: 10000,
           maxAgeHours: 24,
           force: true
         })
       });
 
-      const payload = (await response.json().catch(() => null)) as
+      const preloadPayload = (await preloadResponse.json().catch(() => null)) as
         | {
             message?: string;
             meta?: {
@@ -1072,19 +1108,53 @@ export default function InventoryPanel({
           }
         | null;
 
-      if (!response.ok) {
-        setToast(payload?.message || 'Nao foi possivel sincronizar o catalogo.');
+      if (!preloadResponse.ok) {
+        setToast(preloadPayload?.message || 'Nao foi possivel sincronizar o catalogo.');
         return;
       }
 
-      if ((payload?.meta?.selectedBrands || []).length === 0) {
+      const selectedBrands = preloadPayload?.meta?.selectedBrands || [];
+
+      if (selectedBrands.length === 0) {
         await loadCatalogProducts();
         setToast('Cadastre marcas em Configuracoes > Gerenciar marcas para sincronizar o catalogo.');
         return;
       }
 
+      const inventoryResponse = await fetch(`${API_BASE}/catalog/preloaded/sync-to-inventory`, {
+        method: 'POST',
+        headers: buildMutationHeaders(),
+        cache: 'no-store',
+        body: JSON.stringify({
+          brands: selectedBrands,
+          inStockOnly: false,
+          preserveExistingActive: true,
+          limit: 10000
+        })
+      });
+
+      const inventoryPayload = (await inventoryResponse.json().catch(() => null)) as
+        | {
+            message?: string;
+            meta?: {
+              upsertedProducts?: number;
+            };
+          }
+        | null;
+
+      if (!inventoryResponse.ok) {
+        setToast(inventoryPayload?.message || 'Catalogo atualizado, mas falhou ao aplicar no estoque.');
+        return;
+      }
+
       await loadCatalogProducts();
-      setToast('Catalogo sincronizado com sucesso.');
+      router.refresh();
+      const upsertedProducts = Number(inventoryPayload?.meta?.upsertedProducts || 0);
+      setToast(
+        upsertedProducts > 0
+          ? `Catalogo sincronizado e aplicado ao estoque (${upsertedProducts} produtos).`
+          : 'Catalogo sincronizado com sucesso.'
+      );
     } catch {
       setToast('Nao foi possivel sincronizar o catalogo.');
     } finally {
@@ -1597,7 +1667,7 @@ export default function InventoryPanel({
         category: product.category_id || '',
         price: product.price ? formatCurrency(toNumber(product.price)) : '',
         barcode: product.barcode || '',
-        imageUrl: product.image_url || '',
+        imageUrl: getProductImage(product),
         available: product.active
       },
       'edit',
@@ -2674,7 +2744,7 @@ export default function InventoryPanel({
       sku: buildSku(),
       brand: formDraft.brand.trim() || undefined,
       barcode: formDraft.barcode.trim() || undefined,
-      imageUrl: formDraft.imageUrl.trim() || undefined,
+      imageUrl: normalizeProductImageUrl(formDraft.imageUrl) || undefined,
       price: parseMoney(formDraft.price),
       cost: 0,
       categoryId: formDraft.category || undefined,
@@ -2857,14 +2927,16 @@ export default function InventoryPanel({
   };
 
   const handleAddUnits = async () => {
-    if (!adjustProduct) return;
+    if (!adjustProduct || addingUnits) return;
+    const targetProduct = adjustProduct;
     const quantity = Math.max(1, Number(unitQuantity) || 0);
+    setAddingUnits(true);
     try {
       const res = await fetch(`${API_BASE}/inventory/adjustments`, {
         method: 'POST',
         headers: buildMutationHeaders(),
         body: JSON.stringify({
-          sku: adjustProduct.sku,
+          sku: targetProduct.sku,
           quantity,
           reason: 'manual_add',
           cost: parseMoney(unitCost),
@@ -2883,11 +2955,13 @@ export default function InventoryPanel({
       if (selectedProduct) {
         refreshProductDetails(selectedProduct.id);
       }
-      adjustLocalQuantity(adjustProduct.id, quantity);
+      adjustLocalQuantity(targetProduct.id, quantity);
       router.refresh();
       setToast('Unidades adicionadas');
     } catch {
       setToast('Erro ao adicionar unidades');
+    } finally {
+      setAddingUnits(false);
     }
   };
 
@@ -3135,6 +3209,9 @@ export default function InventoryPanel({
                           className="product-thumb-image"
                           src={getProductImage(product)}
                           alt={product.name}
+                          onError={(event) =>
+                            applyProductImageFallback(event, product.name, product.brand)
+                          }
                         />
                       ) : (
                         <span className="product-thumb-placeholder" aria-hidden="true">
@@ -3229,6 +3306,9 @@ export default function InventoryPanel({
                             className="product-thumb-image"
                             src={getProductImage(product)}
                             alt={product.name}
+                            onError={(event) =>
+                              applyProductImageFallback(event, product.name, product.brand)
+                            }
                           />
                         ) : (
                           <span className="product-thumb-placeholder" aria-hidden="true">
@@ -3409,9 +3489,15 @@ export default function InventoryPanel({
                 <div className="product-form">
                   <div className="product-image">
                     <div className="product-image-card">
-                      {formDraft.imageUrl ? (
+                      {normalizeProductImageUrl(formDraft.imageUrl) ? (
                         <div className="product-image-preview">
-                          <img src={formDraft.imageUrl} alt={formDraft.name || 'Produto'} />
+                          <img
+                            src={normalizeProductImageUrl(formDraft.imageUrl)}
+                            alt={formDraft.name || 'Produto'}
+                            onError={(event) =>
+                              applyProductImageFallback(event, formDraft.name, formDraft.brand)
+                            }
+                          />
                         </div>
                       ) : (
                         <div className="product-upload">
@@ -3421,9 +3507,11 @@ export default function InventoryPanel({
                       )}
                       <label className="product-upload-button">
                         <input type="file" accept="image/*" onChange={handleProductImageUpload} />
-                        <span>⤴ {formDraft.imageUrl ? 'Trocar imagem' : 'Carregar imagem'}</span>
+                        <span>
+                          ⤴ {normalizeProductImageUrl(formDraft.imageUrl) ? 'Trocar imagem' : 'Carregar imagem'}
+                        </span>
                       </label>
-                      {formDraft.imageUrl ? (
+                      {normalizeProductImageUrl(formDraft.imageUrl) ? (
                         <button
                           className="button ghost small product-remove-image"
                           type="button"
@@ -3639,7 +3727,13 @@ export default function InventoryPanel({
             <div className="scan-confirm-card">
               <div className="scan-confirm-thumb">
                 {getProductImage(scannedProduct) ? (
-                  <img src={getProductImage(scannedProduct)} alt={scannedProduct.name} />
+                  <img
+                    src={getProductImage(scannedProduct)}
+                    alt={scannedProduct.name}
+                    onError={(event) =>
+                      applyProductImageFallback(event, scannedProduct.name, scannedProduct.brand)
+                    }
+                  />
                 ) : (
                   <div className="product-thumb-placeholder">
                     <IconBox />
@@ -3780,6 +3874,13 @@ export default function InventoryPanel({
                       className="product-thumb-image"
                       src={getProductImage(selectedProduct)}
                       alt={selectedProduct.name}
+                      onError={(event) =>
+                        applyProductImageFallback(
+                          event,
+                          selectedProduct.name,
+                          selectedProduct.brand
+                        )
+                      }
                     />
                   ) : (
                     <span className="product-thumb-placeholder" aria-hidden="true">
@@ -4076,6 +4177,9 @@ export default function InventoryPanel({
                     className="product-thumb-image"
                     src={getProductImage(adjustProduct)}
                     alt={adjustProduct.name}
+                    onError={(event) =>
+                      applyProductImageFallback(event, adjustProduct.name, adjustProduct.brand)
+                    }
                   />
                 ) : (
                   <span className="product-thumb-placeholder" aria-hidden="true">
@@ -4116,11 +4220,11 @@ export default function InventoryPanel({
               />
             </label>
             <div className="modal-footer">
-              <button className="button ghost" type="button" onClick={() => setAdjustProduct(null)}>
+              <button className="button ghost" type="button" onClick={() => setAdjustProduct(null)} disabled={addingUnits}>
                 Cancelar
               </button>
-              <button className="button primary" type="button" onClick={handleAddUnits}>
-                Adicionar
+              <button className="button primary" type="button" onClick={handleAddUnits} disabled={addingUnits}>
+                {addingUnits ? 'Adicionando...' : 'Adicionar'}
               </button>
             </div>
           </div>
@@ -4156,6 +4260,13 @@ export default function InventoryPanel({
                     className="product-thumb-image"
                     src={getProductImage(selectedProduct)}
                     alt={selectedProduct.name}
+                    onError={(event) =>
+                      applyProductImageFallback(
+                        event,
+                        selectedProduct.name,
+                        selectedProduct.brand
+                      )
+                    }
                   />
                 ) : (
                   <span className="product-thumb-placeholder" aria-hidden="true">
@@ -4796,6 +4907,13 @@ export default function InventoryPanel({
                     className="product-thumb-image"
                     src={getProductImage(selectedProduct)}
                     alt={selectedProduct.name}
+                    onError={(event) =>
+                      applyProductImageFallback(
+                        event,
+                        selectedProduct.name,
+                        selectedProduct.brand
+                      )
+                    }
                   />
                 ) : (
                   <span className="product-thumb-placeholder" aria-hidden="true">

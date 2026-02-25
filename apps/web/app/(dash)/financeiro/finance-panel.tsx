@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { IconDots, IconPlus } from '../icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { IconBox, IconDots, IconPlus } from '../icons';
 import { API_BASE, buildMutationHeaders, formatCurrency, toNumber } from '../lib';
+import SalesDetailModal, { type SaleDetail } from '../sales-detail-modal';
 
 type Receivable = {
   id: string;
@@ -21,6 +22,7 @@ type Expense = {
   id: string;
   store_id?: string;
   customer_id?: string | null;
+  purchase_id?: string | null;
   customer_name?: string | null;
   description: string;
   amount: number | string;
@@ -72,6 +74,8 @@ type FinanceEntry = {
   customerName?: string | null;
   method?: string | null;
   sourceId: string;
+  saleId?: string | null;
+  purchaseId?: string | null;
   createdAt?: string;
   incomeSource?: 'receivable' | 'payment';
 };
@@ -89,6 +93,34 @@ type ExpenseForm = {
   dueDate: string;
   method: string;
   paid: boolean;
+};
+
+type PurchaseDetailItem = {
+  id: string;
+  purchase_id: string;
+  product_id: string;
+  sku: string;
+  quantity: number | string;
+  unit_cost: number | string;
+  expires_at?: string | null;
+  created_at: string;
+  product_name?: string | null;
+  product_brand?: string | null;
+  product_image_url?: string | null;
+  product_barcode?: string | null;
+};
+
+type PurchaseDetail = {
+  id: string;
+  supplier: string;
+  brand?: string | null;
+  status: 'pending' | 'received' | 'cancelled' | 'draft';
+  total: number | string;
+  items: number | string;
+  order_number?: string | null;
+  purchase_date: string;
+  created_at: string;
+  purchase_items: PurchaseDetailItem[];
 };
 
 const monthNames = [
@@ -220,6 +252,20 @@ const statusClass = (status: EntryStatus) => {
   return 'pending';
 };
 
+const purchaseStatusLabel = (status?: string) => {
+  if (status === 'received') return 'RECEBIDO';
+  if (status === 'cancelled') return 'CANCELADO';
+  if (status === 'draft') return 'RASCUNHO';
+  return 'PENDENTE';
+};
+
+const purchaseStatusClass = (status?: string) => {
+  if (status === 'received') return 'success';
+  if (status === 'cancelled') return 'danger';
+  if (status === 'draft') return 'draft';
+  return 'warn';
+};
+
 const shortSaleCode = (saleId: string) => saleId.slice(0, 8).toUpperCase();
 
 const sortByDateDesc = (entries: FinanceEntry[]) => {
@@ -250,6 +296,7 @@ export default function FinancePanel({
   initialPayments,
   customers
 }: FinancePanelProps) {
+  const purchaseRequestRef = useRef(0);
   const [receivables, setReceivables] = useState<Receivable[]>(initialReceivables);
   const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
   const [payments, setPayments] = useState<Payment[]>(initialPayments);
@@ -266,6 +313,11 @@ export default function FinancePanel({
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [selectedSale, setSelectedSale] = useState<SaleDetail | null>(null);
+  const [viewPurchaseId, setViewPurchaseId] = useState<string | null>(null);
+  const [viewPurchaseDetail, setViewPurchaseDetail] = useState<PurchaseDetail | null>(null);
+  const [viewPurchaseLoading, setViewPurchaseLoading] = useState(false);
+  const [viewPurchaseError, setViewPurchaseError] = useState<string | null>(null);
 
   useEffect(() => {
     setReceivables(initialReceivables);
@@ -311,6 +363,7 @@ export default function FinancePanel({
         customerName,
         method: item.method,
         sourceId: item.id,
+        saleId: item.sale_id || null,
         createdAt: item.created_at,
         incomeSource: 'receivable'
       };
@@ -332,6 +385,7 @@ export default function FinancePanel({
         customerName,
         method: item.method,
         sourceId: item.id,
+        saleId: item.sale_id || null,
         createdAt: item.created_at,
         incomeSource: 'payment'
       };
@@ -341,7 +395,9 @@ export default function FinancePanel({
       id: `expense-${item.id}`,
       kind: 'expense',
       description: item.description,
-      subtitle: `Despesa avulsa - ${paymentMethodLabel(item.method)}`,
+      subtitle: item.purchase_id
+        ? `Despesa de compra - ${paymentMethodLabel(item.method)}`
+        : `Despesa avulsa - ${paymentMethodLabel(item.method)}`,
       amount: toNumber(item.amount),
       dueDate: item.due_date,
       status: deriveExpenseStatus(item, today),
@@ -350,6 +406,8 @@ export default function FinancePanel({
       customerName: item.customer_name || null,
       method: item.method,
       sourceId: item.id,
+      saleId: null,
+      purchaseId: item.purchase_id || null,
       createdAt: item.created_at
     }));
 
@@ -639,6 +697,94 @@ export default function FinancePanel({
     }
   };
 
+  const getEntryLink = (entry: FinanceEntry) => {
+    if (entry.kind === 'expense' && entry.purchaseId) {
+      return {
+        label: 'Abrir compra',
+        kind: 'purchase' as const
+      };
+    }
+    if (entry.kind === 'income' && entry.saleId) {
+      return {
+        label: 'Abrir venda',
+        kind: 'sale' as const
+      };
+    }
+    return null;
+  };
+
+  const closePurchaseDetails = () => {
+    purchaseRequestRef.current += 1;
+    setViewPurchaseId(null);
+    setViewPurchaseDetail(null);
+    setViewPurchaseError(null);
+    setViewPurchaseLoading(false);
+  };
+
+  const openPurchaseDetails = async (purchaseId: string) => {
+    setSelectedSale(null);
+    setViewPurchaseId(purchaseId);
+    setViewPurchaseDetail(null);
+    setViewPurchaseError(null);
+    setViewPurchaseLoading(true);
+
+    const requestId = purchaseRequestRef.current + 1;
+    purchaseRequestRef.current = requestId;
+
+    try {
+      const res = await fetch(`${API_BASE}/purchases/${purchaseId}`, { cache: 'no-store' });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        if (purchaseRequestRef.current !== requestId) return;
+        setViewPurchaseError(payload?.message || 'Erro ao carregar compra.');
+        return;
+      }
+
+      const payload = (await res.json().catch(() => null)) as { data?: PurchaseDetail } | null;
+      if (purchaseRequestRef.current !== requestId) return;
+      if (!payload?.data) {
+        setViewPurchaseError('Compra nao encontrada.');
+        return;
+      }
+      setViewPurchaseDetail(payload.data);
+    } catch {
+      if (purchaseRequestRef.current !== requestId) return;
+      setViewPurchaseError('Erro ao carregar compra.');
+    } finally {
+      if (purchaseRequestRef.current === requestId) {
+        setViewPurchaseLoading(false);
+      }
+    }
+  };
+
+  const openEntryLink = (entry: FinanceEntry) => {
+    const target = getEntryLink(entry);
+    if (!target) return;
+
+    setMenuOpenId(null);
+
+    if (target.kind === 'sale' && entry.saleId) {
+      closePurchaseDetails();
+      setSelectedSale({
+        id: entry.saleId,
+        customer: entry.customerName?.trim() || 'Cliente nao informado',
+        customerPhotoUrl: undefined,
+        date: entry.createdAt || entry.dueDate,
+        status: entry.status === 'paid' ? 'delivered' : 'pending',
+        total: entry.amount,
+        paid: entry.status === 'paid' ? entry.amount : 0,
+        itemName: entry.description,
+        itemQty: 1,
+        dueDate: entry.dueDate
+      });
+      return;
+    }
+
+    if (target.kind === 'purchase' && entry.purchaseId) {
+      void openPurchaseDetails(entry.purchaseId);
+    }
+  };
+
   return (
     <>
       <section className="panel finance-toolbar-panel filters-panel-static">
@@ -736,63 +882,82 @@ export default function FinancePanel({
               <span />
             </div>
 
-            {visibleEntries.map((entry) => (
-              <div key={entry.id} className="finance-list-row">
-                <div className="finance-desc-cell">
-                  <span className={`finance-entry-dot ${entry.kind === 'expense' ? 'expense' : 'income'}`}>
-                    {entry.kind === 'expense' ? '↓' : '↑'}
-                  </span>
+            {visibleEntries.map((entry) => {
+              const entryLink = getEntryLink(entry);
+              const canToggleStatus = entry.kind === 'expense' || entry.incomeSource === 'receivable';
+              const canDelete = entry.kind === 'expense';
+              const hasMenu = Boolean(entryLink) || canToggleStatus || canDelete;
+
+              return (
+                <div key={entry.id} className="finance-list-row">
+                  <div className="finance-desc-cell">
+                    <span className={`finance-entry-dot ${entry.kind === 'expense' ? 'expense' : 'income'}`}>
+                      {entry.kind === 'expense' ? '↓' : '↑'}
+                    </span>
+                    <div>
+                      {entryLink ? (
+                        <button type="button" className="finance-entry-link" onClick={() => openEntryLink(entry)}>
+                          {entry.description}
+                        </button>
+                      ) : (
+                        <strong>{entry.description}</strong>
+                      )}
+                      <div className="meta">{entry.subtitle}</div>
+                    </div>
+                  </div>
+                  <div className="mono finance-value-cell">{formatCurrency(entry.amount)}</div>
                   <div>
-                    <strong>{entry.description}</strong>
-                    <div className="meta">{entry.subtitle}</div>
+                    <span className={`finance-status-badge ${statusClass(entry.status)}`}>
+                      {statusLabel(entry)}
+                    </span>
+                  </div>
+                  <div className="mono">{formatDate(entry.dueDate)}</div>
+                  <div className="finance-entry-actions">
+                    {hasMenu ? (
+                      <>
+                        <button
+                          type="button"
+                          className={`button icon small${menuOpenId === entry.id ? ' active' : ''}`}
+                          onClick={() => setMenuOpenId((current) => (current === entry.id ? null : entry.id))}
+                          aria-label="Acoes"
+                          disabled={processingId === entry.id}
+                        >
+                          <IconDots />
+                        </button>
+
+                        {menuOpenId === entry.id ? (
+                          <div className="finance-entry-menu">
+                            {entryLink ? (
+                              <button type="button" onClick={() => openEntryLink(entry)}>
+                                {entryLink.label}
+                              </button>
+                            ) : null}
+                            {canToggleStatus ? (
+                              entry.status === 'paid' ? (
+                                <button type="button" onClick={() => markAsPending(entry)}>
+                                  Marcar como pendente
+                                </button>
+                              ) : (
+                                <button type="button" onClick={() => markAsPaid(entry)}>
+                                  Marcar como pago
+                                </button>
+                              )
+                            ) : null}
+                            {canDelete ? (
+                              <button type="button" className="danger" onClick={() => deleteExpense(entry)}>
+                                Excluir
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="finance-entry-action-placeholder">--</span>
+                    )}
                   </div>
                 </div>
-                <div className="mono finance-value-cell">{formatCurrency(entry.amount)}</div>
-                <div>
-                <span className={`finance-status-badge ${statusClass(entry.status)}`}>
-                  {statusLabel(entry)}
-                </span>
-              </div>
-                <div className="mono">{formatDate(entry.dueDate)}</div>
-                <div className="finance-entry-actions">
-                  {entry.kind === 'expense' || entry.incomeSource === 'receivable' ? (
-                    <>
-                      <button
-                        type="button"
-                        className={`button icon small${menuOpenId === entry.id ? ' active' : ''}`}
-                        onClick={() => setMenuOpenId((current) => (current === entry.id ? null : entry.id))}
-                        aria-label="Acoes"
-                        disabled={processingId === entry.id}
-                      >
-                        <IconDots />
-                      </button>
-
-                      {menuOpenId === entry.id ? (
-                        <div className="finance-entry-menu">
-                          {entry.status === 'paid' ? (
-                            <button type="button" onClick={() => markAsPending(entry)}>
-                              Marcar como pendente
-                            </button>
-                          ) : (
-                            <button type="button" onClick={() => markAsPaid(entry)}>
-                              Marcar como pago
-                            </button>
-                          )}
-
-                          {entry.kind === 'expense' ? (
-                            <button type="button" className="danger" onClick={() => deleteExpense(entry)}>
-                              Excluir
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <span className="finance-entry-action-placeholder">--</span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -888,6 +1053,107 @@ export default function FinancePanel({
           </div>
         </div>
       ) : null}
+
+      {viewPurchaseId ? (
+        <div className="modal-backdrop" onClick={closePurchaseDetails}>
+          <div className="modal modal-purchase-view" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header purchase-view-header">
+              <h3>Compra N.º {viewPurchaseDetail?.order_number || viewPurchaseId.slice(0, 6).toUpperCase()}</h3>
+              <button className="modal-close" type="button" onClick={closePurchaseDetails}>
+                ✕
+              </button>
+            </div>
+
+            <div className="purchase-view-grid">
+              <section className="purchase-view-section">
+                <h4>Informacoes gerais</h4>
+                <div className="divider" />
+                <div className="purchase-view-field">
+                  <span>Marca</span>
+                  <strong>{viewPurchaseDetail?.brand?.trim() || '--'}</strong>
+                </div>
+                <div className="purchase-view-field">
+                  <span>Fornecedor</span>
+                  <strong>{viewPurchaseDetail?.supplier?.trim() || '--'}</strong>
+                </div>
+                <div className="purchase-view-field">
+                  <span>Data</span>
+                  <strong>
+                    {formatDate(viewPurchaseDetail?.purchase_date || viewPurchaseDetail?.created_at || '')}
+                  </strong>
+                </div>
+
+                <h4>Produtos</h4>
+                <div className="divider" />
+                <div className="purchase-view-products">
+                  {viewPurchaseLoading ? (
+                    <span className="muted">Carregando produtos...</span>
+                  ) : viewPurchaseDetail?.purchase_items?.length ? (
+                    viewPurchaseDetail.purchase_items.map((item) => {
+                      const imageUrl = item.product_image_url?.trim() || '';
+                      const quantity = Math.max(1, Math.trunc(toNumber(item.quantity)));
+                      const unitCost = formatCurrency(Math.max(0, toNumber(item.unit_cost)));
+                      const productName = item.product_name?.trim() || `SKU ${item.sku}`;
+                      const expiryText = item.expires_at ? ` • Validade ${formatDate(item.expires_at)}` : '';
+                      return (
+                        <div key={item.id} className="purchase-view-product">
+                          <div className="purchase-view-product-thumb">
+                            {imageUrl ? (
+                              <img className="product-thumb-image" src={imageUrl} alt={productName} />
+                            ) : (
+                              <span className="product-thumb-placeholder" aria-hidden="true">
+                                <IconBox />
+                              </span>
+                            )}
+                          </div>
+                          <div className="purchase-view-product-info">
+                            <strong>{productName}</strong>
+                            <span className="muted">
+                              {quantity} un. - {unitCost}
+                              {expiryText}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <span className="muted">{viewPurchaseError || 'Produtos nao disponiveis.'}</span>
+                  )}
+                </div>
+              </section>
+
+              <section className="purchase-view-section purchase-view-summary">
+                <h4>Resumo Financeiro</h4>
+                <div className="divider" />
+                <div className="purchase-view-field">
+                  <span>Total da compra</span>
+                  <strong>{formatCurrency(Math.max(0, toNumber(viewPurchaseDetail?.total || 0)))}</strong>
+                </div>
+                <div className="purchase-view-field total">
+                  <span>Status</span>
+                  <strong>
+                    <span className={`badge ${purchaseStatusClass(viewPurchaseDetail?.status)}`}>
+                      {purchaseStatusLabel(viewPurchaseDetail?.status)}
+                    </span>
+                  </strong>
+                </div>
+              </section>
+            </div>
+
+            <div className="modal-footer purchase-view-actions">
+              <button className="button ghost" type="button" onClick={closePurchaseDetails}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <SalesDetailModal
+        open={Boolean(selectedSale)}
+        onClose={() => setSelectedSale(null)}
+        sale={selectedSale}
+      />
     </>
   );
 }

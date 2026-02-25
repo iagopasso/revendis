@@ -105,7 +105,7 @@ const BRAND_BASE_URL: Record<CatalogBrandSlug, string> = {
   tupperware: 'https://www.tupperware.com.br',
   eudora: 'https://www.eudora.com.br',
   boticario: 'https://www.boticario.com.br',
-  oui: 'https://www.boticario.com.br/perfumaria/oui',
+  oui: 'https://www.ouiparis.com',
   natura: 'https://www.natura.com.br',
   demillus: 'https://www.demillus.com.br',
   farmasi: 'https://www.farmasi.com.br',
@@ -144,20 +144,32 @@ type FetchJsonResult = {
   json: unknown;
 };
 
-const DEFAULT_UPSTREAM_TIMEOUT_MS = 8000;
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 20000;
 const MAX_VTEX_PAGES = 20;
 const VTEX_PAGE_SIZE = 50;
 const VTEX_MAX_PAGES_BY_BRAND: Partial<Record<CatalogBrandSlug, number>> = {
-  'mary-kay': 60,
-  eudora: 80,
-  boticario: 80,
-  oui: 80
+  'mary-kay': 120,
+  eudora: 120,
+  boticario: 120,
+  oui: 120
 };
 const MAX_SHOPIFY_PAGES = 40;
 const SHOPIFY_PAGE_SIZE = 250;
 const MAX_SITEMAP_FILES = 25;
 const MAX_SITEMAP_PRODUCT_URLS = 220;
 const MAX_SITEMAP_FETCH_CONCURRENCY = 6;
+const MAX_EUDORA_SITEMAP_PRODUCT_URLS = 1200;
+const MAX_AVON_SITEMAP_PRODUCT_URLS = 1800;
+const MAX_MARY_KAY_SITEMAP_PRODUCT_URLS = 1500;
+const MAX_TUPPERWARE_SITEMAP_PRODUCT_URLS = 1500;
+const MAX_BOTICARIO_SITEMAP_PRODUCT_URLS = 1800;
+const MAX_OUI_SITEMAP_PRODUCT_URLS = 1200;
+const MAX_EXTASE_SITEMAP_PRODUCT_URLS = 1200;
+const BELEZA_WEB_PRODUCT_SITEMAP_ID: Partial<Record<CatalogBrandSlug, string>> = {
+  eudora: '46',
+  boticario: '47',
+  oui: '60'
+};
 const TRAY_PAGE_SIZE = 50;
 const MAX_TRAY_PAGES = 80;
 const DIAMANTE_PRODUCT_SITEMAP_PREFIX = '/sitemap/product-';
@@ -165,10 +177,80 @@ const MAX_DIAMANTE_PRODUCT_URLS = 1200;
 const AVON_BFF_PATH = '/bff-app-avon-brazil/search';
 const AVON_BFF_CATEGORY = 'todos-produtos';
 const AVON_BFF_PAGE_SIZE = 200;
-const MAX_AVON_BFF_PAGES = 30;
+const MAX_AVON_BFF_PAGES = 60;
 const DEFAULT_AVON_BFF_API_KEY = '39643690-ecee-455d-8d8c-f313cef95da6';
 const DEFAULT_AVON_BFF_TENANT = 'brazil-avon';
-const AVON_PATHS = ['/', '/c/perfumaria', '/c/maquiagem', '/c/corpo-e-banho'] as const;
+const TEXT_PROXY_PREFIX = (process.env.CATALOG_TEXT_PROXY_PREFIX || 'https://r.jina.ai/http://').trim();
+const TEXT_PROXY_HOST_ALLOWLIST = new Set([
+  'www.boticario.com.br',
+  'boticario.com.br',
+  'www.eudora.com.br',
+  'eudora.com.br',
+  'www.ouiparis.com',
+  'ouiparis.com'
+]);
+const URL_DERIVED_PRODUCT_BRANDS = new Set<CatalogBrandSlug>(['eudora', 'boticario', 'oui']);
+const PRODUCT_SITEMAP_HINT_PATTERN = /(?:\/|[-_])(produto|product)(?:[-_.\/]|$)/i;
+const PRODUCT_URL_WORD_HINT_PATTERN =
+  /(desodorante|colonia|perfume|parfum|shampoo|condicionador|hidratante|mascara|batom|creme|oleo|sabonete|serum|protetor|esfoliante|body-splash|ampola|refil|kit|\d+(?:ml|g|kg|l|cm|mm|un|unidade|unidades))/i;
+const PRODUCT_URL_BLOCKLIST = new Set([
+  'api',
+  'autenticacao',
+  'atendimento',
+  'bemvinda',
+  'blog',
+  'busca',
+  'cabelos',
+  'cabelo',
+  'categoria',
+  'corpoebanho',
+  'corpobanho',
+  'cuidadosparapele',
+  'dicasdebeleza',
+  'fidelidade',
+  'institucional',
+  'lancamentos',
+  'landings',
+  'maquiagem',
+  'marcas',
+  'marcasdogrupoboticario',
+  'minhaconta',
+  'perfumaria',
+  'presentes',
+  'principal',
+  'promocao',
+  'sacola',
+  'specialpages'
+]);
+const AVON_PATHS = [
+  '/',
+  '/c/perfumaria',
+  '/c/maquiagem',
+  '/c/corpo-e-banho',
+  '/c/cabelos',
+  '/c/rosto',
+  '/c/promocoes'
+] as const;
+const MARY_KAY_PATHS = ['/', '/c/maquiagem', '/c/cuidados-com-a-pele', '/promocoes'] as const;
+const TUPPERWARE_PATHS = ['/', '/collections/all', '/collections/lancamentos', '/products'] as const;
+const EUDORA_PATHS = [
+  '/',
+  '/maquiagem',
+  '/perfumaria',
+  '/cabelos',
+  '/corpo-banho',
+  '/promocoes'
+] as const;
+const BOTICARIO_PATHS = [
+  '/',
+  '/maquiagem',
+  '/perfumaria',
+  '/cabelo',
+  '/corpo-e-banho',
+  '/presentes',
+  '/promocoes'
+] as const;
+const OUI_PATHS = ['/', '/perfumaria', '/presentes', '/promocao', '/promocoes'] as const;
 const GENERIC_BRAND_PATHS: Record<
   Exclude<CatalogBrandSlug, 'avon' | 'mary-kay' | 'tupperware' | 'eudora' | 'boticario' | 'oui' | 'natura'>,
   string[]
@@ -204,9 +286,49 @@ const BRAND_UPSTREAM_PRODUCT_FILTERS: Partial<
 > = {
   extase: (product) => {
     const token = normalizeBrandToken(`${product.name} ${product.url || ''}`);
-    return token.includes('extase') || token.includes('xtase');
+    if (!token) return false;
+    return !(
+      token.includes('produtodeteste') ||
+      token.includes('producttest') ||
+      token.includes('dummyproduto') ||
+      token.includes('dummyproduct')
+    );
   }
 };
+
+const isOuiCatalogProduct = (product: BrandCatalogProduct) => {
+  const token = normalizeBrandToken(`${product.brand} ${product.name}`);
+  return token.includes('oui');
+};
+
+const toProxyUrl = (url: string) => {
+  if (!TEXT_PROXY_PREFIX) return null;
+  return `${TEXT_PROXY_PREFIX}${url.replace(/^https?:\/\//i, '')}`;
+};
+
+const buildTextFetchCandidates = (url: string) => {
+  const candidates: string[] = [];
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (TEXT_PROXY_HOST_ALLOWLIST.has(host)) {
+      const proxyUrl = toProxyUrl(url);
+      if (proxyUrl) {
+        // Prefer proxy first for hosts that routinely timeout in this environment.
+        candidates.push(proxyUrl);
+      }
+    }
+  } catch {
+    // Ignore URL parsing failures and keep direct URL fallback.
+  }
+  candidates.push(url);
+  return Array.from(new Set(candidates));
+};
+
+const extractSitemapUrlsFromRobots = (body: string) =>
+  Array.from(body.matchAll(/sitemap:\s*(https?:\/\/\S+)/gi))
+    .map((match) => normalizeText(match[1]))
+    .map((url) => url.replace(/[)>.,;]+$/, ''))
+    .filter(Boolean);
 
 const BRAND_BY_ALIAS = Object.entries(CATALOG_BRAND_ALIASES).reduce<
   Record<string, CatalogBrandSlug>
@@ -550,23 +672,37 @@ const fetchTextWithTimeout = async ({
   timeoutMs?: number;
   signal?: AbortSignal;
 }) => {
-  const wrapped = withTimeoutController(timeoutMs, signal);
-  try {
-    const response = await fetch(url, {
-      headers: {
-        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
-        'user-agent': 'Mozilla/5.0 (compatible; RevendisCatalogBot/1.0)'
-      },
-      signal: wrapped.signal
-    });
-    if (!response.ok) {
-      throw new Error(`http_${response.status}`);
+  const candidates = buildTextFetchCandidates(url);
+  const attemptTimeoutMs = Math.max(4000, Math.trunc(timeoutMs / Math.max(1, candidates.length)));
+  let lastError: Error | null = null;
+
+  for (const candidate of candidates) {
+    const wrapped = withTimeoutController(attemptTimeoutMs, signal);
+    try {
+      const response = await fetch(candidate, {
+        headers: {
+          accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
+          'user-agent': 'Mozilla/5.0 (compatible; RevendisCatalogBot/1.0)'
+        },
+        signal: wrapped.signal
+      });
+      if (!response.ok) {
+        throw new Error(`http_${response.status}`);
+      }
+      const text = await response.text();
+      if (text) {
+        return text;
+      }
+      lastError = new Error('empty_body');
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    } finally {
+      wrapped.cleanup();
     }
-    return response.text();
-  } finally {
-    wrapped.cleanup();
   }
+
+  throw lastError || new Error('fetch_text_failed');
 };
 
 const fetchJsonWithTimeout = async ({
@@ -1194,6 +1330,7 @@ const fetchExtaseCatalogProducts = async ({
     brand: 'extase',
     baseUrl: BRAND_BASE_URL.extase,
     paths: GENERIC_BRAND_PATHS.extase,
+    maxSitemapUrls: MAX_EXTASE_SITEMAP_PRODUCT_URLS,
     signal,
     filterFn: BRAND_UPSTREAM_PRODUCT_FILTERS.extase
   });
@@ -1392,6 +1529,7 @@ const fetchDiamanteCatalogProducts = async ({
     brand: 'diamante',
     baseUrl: BRAND_BASE_URL.diamante,
     paths: GENERIC_BRAND_PATHS.diamante,
+    maxSitemapUrls: MAX_DIAMANTE_PRODUCT_URLS,
     signal
   });
 
@@ -1632,12 +1770,23 @@ const fetchMaryKayCatalogProducts = async ({
   signal
 }: {
   signal?: AbortSignal;
-}): Promise<UpstreamFetchResult> =>
-  fetchVtexCatalogProducts({
+}): Promise<UpstreamFetchResult> => {
+  const vtex = await fetchVtexCatalogProducts({
     brand: 'mary-kay',
     baseUrl: BRAND_BASE_URL['mary-kay'],
     signal
   });
+
+  const generic = await fetchGenericBrandCatalogProducts({
+    brand: 'mary-kay',
+    baseUrl: BRAND_BASE_URL['mary-kay'],
+    paths: [...MARY_KAY_PATHS],
+    maxSitemapUrls: MAX_MARY_KAY_SITEMAP_PRODUCT_URLS,
+    signal
+  });
+
+  return mergeUpstreamResults(vtex, generic);
+};
 
 const fetchAvonCatalogProductsFromPages = async ({
   signal
@@ -1697,6 +1846,110 @@ const toPathname = (value: string) => {
   }
 };
 
+const prettifyProductSlug = (slug: string) =>
+  slug
+    .split('-')
+    .filter(Boolean)
+    .map((segment) => {
+      if (!segment) return segment;
+      if (/^\d+(ml|g|kg|l|cm|mm|un|unidade|unidades)$/i.test(segment)) {
+        return segment.toLowerCase();
+      }
+      if (segment.length <= 2) {
+        return segment.toUpperCase();
+      }
+      return `${segment.charAt(0).toUpperCase()}${segment.slice(1).toLowerCase()}`;
+    })
+    .join(' ')
+    .trim();
+
+const shouldDeriveCatalogProductFromUrl = ({
+  brand,
+  url
+}: {
+  brand: CatalogBrandSlug;
+  url: string;
+}) => {
+  if (!URL_DERIVED_PRODUCT_BRANDS.has(brand)) return false;
+
+  const path = toPathname(url).toLowerCase();
+  if (!path || path === '/' || path.endsWith('.xml')) return false;
+  if (path.includes('/api/') || path.includes('/minha-conta')) return false;
+
+  const segments = path
+    .split('/')
+    .map((segment) => decodeURIComponent(segment).trim())
+    .filter(Boolean);
+  if (segments.length === 0) return false;
+
+  const normalizedSegments = segments.map((segment) => normalizeBrandToken(segment));
+  if (normalizedSegments.some((segment) => PRODUCT_URL_BLOCKLIST.has(segment))) {
+    return false;
+  }
+
+  const lastSegment = segments[segments.length - 1];
+  if (!lastSegment || !lastSegment.includes('-')) return false;
+
+  const normalizedLastSegment = normalizeBrandToken(lastSegment);
+  if (normalizedLastSegment.length < 10 || /^\d+$/.test(normalizedLastSegment)) {
+    return false;
+  }
+
+  const slugWordCount = lastSegment.split('-').filter(Boolean).length;
+  if (slugWordCount < 3) return false;
+
+  return PRODUCT_URL_WORD_HINT_PATTERN.test(lastSegment);
+};
+
+const extractProxyTitle = (body: string) => normalizeText(body.match(/^Title:\s*(.+)$/im)?.[1] || '');
+
+const deriveCatalogProductFromUrl = ({
+  brand,
+  url,
+  html
+}: {
+  brand: CatalogBrandSlug;
+  url: string;
+  html: string;
+}): BrandCatalogProduct | null => {
+  if (!shouldDeriveCatalogProductFromUrl({ brand, url })) return null;
+
+  const path = toPathname(url);
+  const segments = path
+    .split('/')
+    .map((segment) => decodeURIComponent(segment).trim())
+    .filter(Boolean);
+  const slug = normalizeText((segments[segments.length - 1] || '').replace(/\.[a-z0-9]+$/i, ''));
+  if (!slug) return null;
+
+  const title = extractProxyTitle(html);
+  const titleHead = normalizeText(title.split('|')[0] || '');
+  const useTitle =
+    titleHead &&
+    normalizeBrandToken(titleHead) !== normalizeBrandToken(CATALOG_BRAND_LABELS[brand]) &&
+    !normalizeBrandToken(titleHead).includes('lojacom');
+
+  const name = useTitle ? titleHead : prettifyProductSlug(slug);
+  if (!name) return null;
+
+  const sourceCategoryCandidate = segments.length > 1 ? segments[0] : 'catalogo';
+  const id = `${brand.toUpperCase()}-URL-${hashId(url)}`;
+
+  return {
+    id,
+    sku: id,
+    barcode: null,
+    name,
+    brand: CATALOG_BRAND_LABELS[brand],
+    price: null,
+    inStock: true,
+    url,
+    imageUrl: null,
+    sourceCategory: slugifyCategory(sourceCategoryCandidate || 'catalogo'),
+    sourceBrand: brand
+  };
+};
+
 const isLikelyCatalogPageUrl = (value: string) => {
   const pathname = toPathname(value).toLowerCase();
   if (!pathname || pathname === '/') return false;
@@ -1712,18 +1965,28 @@ const isLikelyCatalogPageUrl = (value: string) => {
 
 const fetchSitemapCatalogUrls = async ({
   baseUrl,
+  maxUrls = MAX_SITEMAP_PRODUCT_URLS,
+  onlyProductSitemaps = false,
   signal
 }: {
   baseUrl: string;
+  maxUrls?: number;
+  onlyProductSitemaps?: boolean;
   signal?: AbortSignal;
 }) => {
   const normalizedBase = baseUrl.replace(/\/+$/, '');
-  const queue: string[] = [`${normalizedBase}/sitemap.xml`, `${normalizedBase}/sitemap_index.xml`];
+  const queue: string[] = [
+    `${normalizedBase}/robots.txt`,
+    `${normalizedBase}/sitemap.xml`,
+    `${normalizedBase}/sitemap_index.xml`,
+    `${normalizedBase}/sitemap-index.xml`
+  ];
   const visited = new Set<string>();
   const collected = new Set<string>();
   const failedSources: string[] = [];
+  const safeMaxUrls = Math.max(1, Math.min(5000, Math.trunc(maxUrls)));
 
-  while (queue.length > 0 && visited.size < MAX_SITEMAP_FILES && collected.size < MAX_SITEMAP_PRODUCT_URLS) {
+  while (queue.length > 0 && visited.size < MAX_SITEMAP_FILES && collected.size < safeMaxUrls) {
     const sitemapUrl = queue.shift();
     if (!sitemapUrl || visited.has(sitemapUrl)) continue;
     visited.add(sitemapUrl);
@@ -1733,6 +1996,17 @@ const fetchSitemapCatalogUrls = async ({
         url: sitemapUrl,
         signal
       });
+      if (toPathname(sitemapUrl).toLowerCase().endsWith('/robots.txt')) {
+        extractSitemapUrlsFromRobots(xml)
+          .map((item) => toAbsoluteUrl(normalizedBase, item))
+          .filter((item): item is string => Boolean(item))
+          .forEach((item) => {
+            if (!visited.has(item) && queue.length < MAX_SITEMAP_FILES * 3) {
+              queue.push(item);
+            }
+          });
+        continue;
+      }
       if (!looksLikeXmlSitemap(xml)) {
         continue;
       }
@@ -1750,11 +2024,15 @@ const fetchSitemapCatalogUrls = async ({
         continue;
       }
 
+      if (onlyProductSitemaps && !PRODUCT_SITEMAP_HINT_PATTERN.test(toPathname(sitemapUrl).toLowerCase())) {
+        continue;
+      }
+
       locs
         .filter((loc) => isLikelyCatalogPageUrl(loc))
-        .slice(0, MAX_SITEMAP_PRODUCT_URLS)
+        .slice(0, safeMaxUrls)
         .forEach((loc) => {
-          if (collected.size < MAX_SITEMAP_PRODUCT_URLS) {
+          if (collected.size < safeMaxUrls) {
             collected.add(loc);
           }
         });
@@ -1773,18 +2051,23 @@ const fetchCatalogProductsFromPageUrls = async ({
   brand,
   baseUrl,
   urls,
+  maxUrls = MAX_SITEMAP_PRODUCT_URLS,
+  allowUrlDerivedProducts = false,
   signal,
   filterFn
 }: {
   brand: CatalogBrandSlug;
   baseUrl: string;
   urls: string[];
+  maxUrls?: number;
+  allowUrlDerivedProducts?: boolean;
   signal?: AbortSignal;
   filterFn?: (product: BrandCatalogProduct) => boolean;
 }): Promise<UpstreamFetchResult> => {
   const deduped = new Map<string, BrandCatalogProduct>();
   const failedSources: string[] = [];
-  const uniqueUrls = Array.from(new Set(urls)).slice(0, MAX_SITEMAP_PRODUCT_URLS);
+  const safeMaxUrls = Math.max(1, Math.min(5000, Math.trunc(maxUrls)));
+  const uniqueUrls = Array.from(new Set(urls)).slice(0, safeMaxUrls);
   const concurrency = Math.min(MAX_SITEMAP_FETCH_CONCURRENCY, Math.max(1, uniqueUrls.length));
 
   let pointer = 0;
@@ -1793,6 +2076,18 @@ const fetchCatalogProductsFromPageUrls = async ({
       const current = uniqueUrls[pointer];
       pointer += 1;
       if (!current) continue;
+
+      if (allowUrlDerivedProducts) {
+        const derived = deriveCatalogProductFromUrl({
+          brand,
+          url: current,
+          html: ''
+        });
+        if (derived && (!filterFn || filterFn(derived))) {
+          deduped.set(derived.id, derived);
+          continue;
+        }
+      }
 
       try {
         const html = await fetchTextWithTimeout({
@@ -1812,7 +2107,30 @@ const fetchCatalogProductsFromPageUrls = async ({
             deduped.set(product.id, product);
           }
         });
+        if (parsed.length > 0) {
+          continue;
+        }
+
+        const derived = deriveCatalogProductFromUrl({
+          brand,
+          url: current,
+          html
+        });
+        if (derived && (!filterFn || filterFn(derived))) {
+          deduped.set(derived.id, derived);
+          continue;
+        }
+        failedSources.push(current);
       } catch {
+        const derived = deriveCatalogProductFromUrl({
+          brand,
+          url: current,
+          html: ''
+        });
+        if (derived && (!filterFn || filterFn(derived))) {
+          deduped.set(derived.id, derived);
+          continue;
+        }
         failedSources.push(current);
       }
     }
@@ -1826,16 +2144,78 @@ const fetchCatalogProductsFromPageUrls = async ({
   };
 };
 
+const fetchBelezaWebProductSitemapCatalogProducts = async ({
+  brand,
+  maxUrls = MAX_SITEMAP_PRODUCT_URLS,
+  signal,
+  filterFn
+}: {
+  brand: CatalogBrandSlug;
+  maxUrls?: number;
+  signal?: AbortSignal;
+  filterFn?: (product: BrandCatalogProduct) => boolean;
+}): Promise<UpstreamFetchResult> => {
+  const storeId = BELEZA_WEB_PRODUCT_SITEMAP_ID[brand];
+  if (!storeId) {
+    return {
+      products: [],
+      failedSources: []
+    };
+  }
+
+  const safeMaxUrls = Math.max(1, Math.min(5000, Math.trunc(maxUrls)));
+  const sitemapUrl = `https://data-exporter.belezanaweb.com.br/sitemap/${storeId}/produto.xml`;
+
+  try {
+    const xml = await fetchTextWithTimeout({
+      url: sitemapUrl,
+      signal
+    });
+    const urls = parseXmlLocTags(xml)
+      .map((item) => normalizeText(item))
+      .filter(Boolean)
+      .filter((url) => isLikelyCatalogPageUrl(url))
+      .slice(0, safeMaxUrls);
+
+    const products = urls
+      .map((url) =>
+        deriveCatalogProductFromUrl({
+          brand,
+          url,
+          html: ''
+        })
+      )
+      .filter((item): item is BrandCatalogProduct => Boolean(item))
+      .filter((item) => !filterFn || filterFn(item));
+
+    return {
+      products,
+      failedSources: []
+    };
+  } catch {
+    return {
+      products: [],
+      failedSources: [sitemapUrl]
+    };
+  }
+};
+
 const fetchGenericBrandCatalogProducts = async ({
   brand,
   baseUrl,
   paths,
+  maxSitemapUrls = MAX_SITEMAP_PRODUCT_URLS,
+  onlyProductSitemaps = false,
+  allowUrlDerivedProducts = false,
   signal,
   filterFn
 }: {
   brand: CatalogBrandSlug;
   baseUrl: string;
   paths: string[];
+  maxSitemapUrls?: number;
+  onlyProductSitemaps?: boolean;
+  allowUrlDerivedProducts?: boolean;
   signal?: AbortSignal;
   filterFn?: (product: BrandCatalogProduct) => boolean;
 }): Promise<UpstreamFetchResult> => {
@@ -1865,6 +2245,8 @@ const fetchGenericBrandCatalogProducts = async ({
 
   const sitemap = await fetchSitemapCatalogUrls({
     baseUrl,
+    maxUrls: maxSitemapUrls,
+    onlyProductSitemaps,
     signal
   });
   failedSources.push(...sitemap.failedSources);
@@ -1874,6 +2256,8 @@ const fetchGenericBrandCatalogProducts = async ({
       brand,
       baseUrl,
       urls: sitemap.urls,
+      maxUrls: maxSitemapUrls,
+      allowUrlDerivedProducts,
       signal,
       filterFn
     });
@@ -1921,70 +2305,111 @@ const fetchUpstreamBrandProducts = async ({
         brand: 'avon',
         baseUrl: BRAND_BASE_URL.avon,
         paths: [...AVON_PATHS],
+        maxSitemapUrls: MAX_AVON_SITEMAP_PRODUCT_URLS,
         signal
       });
       return mergeUpstreamResults(upstream, fallback);
     }
     case 'mary-kay':
       return fetchMaryKayCatalogProducts({ signal });
-    case 'tupperware':
-      return fetchTupperwareCatalogProducts({ signal });
+    case 'tupperware': {
+      const shopify = await fetchTupperwareCatalogProducts({ signal });
+      const generic = await fetchGenericBrandCatalogProducts({
+        brand: 'tupperware',
+        baseUrl: BRAND_BASE_URL.tupperware,
+        paths: [...TUPPERWARE_PATHS],
+        maxSitemapUrls: MAX_TUPPERWARE_SITEMAP_PRODUCT_URLS,
+        signal
+      });
+      return mergeUpstreamResults(shopify, generic);
+    }
     case 'eudora': {
       const upstream = await fetchVtexCatalogProducts({
         brand: 'eudora',
         baseUrl: BRAND_BASE_URL.eudora,
-        filterFn: (product) => normalizeBrandToken(product.brand).includes('eudora'),
         signal
       });
-      if (upstream.products.length > 0) {
-        return upstream;
+      const exporterFallback = await fetchBelezaWebProductSitemapCatalogProducts({
+        brand: 'eudora',
+        maxUrls: MAX_EUDORA_SITEMAP_PRODUCT_URLS,
+        signal
+      });
+
+      if (exporterFallback.products.length > 0) {
+        return mergeUpstreamResults(upstream, exporterFallback);
       }
+
       const fallback = await fetchGenericBrandCatalogProducts({
         brand: 'eudora',
         baseUrl: BRAND_BASE_URL.eudora,
-        paths: ['/'],
+        paths: [...EUDORA_PATHS],
+        maxSitemapUrls: MAX_EUDORA_SITEMAP_PRODUCT_URLS,
+        onlyProductSitemaps: true,
+        allowUrlDerivedProducts: true,
         signal,
-        filterFn: (product) => normalizeBrandToken(product.brand).includes('eudora')
+        filterFn: undefined
       });
-      return mergeUpstreamResults(upstream, fallback);
+      return mergeUpstreamResults(upstream, mergeUpstreamResults(exporterFallback, fallback));
     }
     case 'boticario': {
       const upstream = await fetchVtexCatalogProducts({
         brand: 'boticario',
         baseUrl: BRAND_BASE_URL.boticario,
-        filterFn: (product) => normalizeBrandToken(product.brand).includes('boticario'),
+        filterFn: (product) => !isOuiCatalogProduct(product),
         signal
       });
-      if (upstream.products.length > 0) {
-        return upstream;
+      const exporterFallback = await fetchBelezaWebProductSitemapCatalogProducts({
+        brand: 'boticario',
+        maxUrls: MAX_BOTICARIO_SITEMAP_PRODUCT_URLS,
+        signal,
+        filterFn: (product) => !isOuiCatalogProduct(product)
+      });
+
+      if (exporterFallback.products.length > 0) {
+        return mergeUpstreamResults(upstream, exporterFallback);
       }
+
       const fallback = await fetchGenericBrandCatalogProducts({
         brand: 'boticario',
         baseUrl: BRAND_BASE_URL.boticario,
-        paths: ['/'],
+        paths: [...BOTICARIO_PATHS],
+        maxSitemapUrls: MAX_BOTICARIO_SITEMAP_PRODUCT_URLS,
+        onlyProductSitemaps: true,
+        allowUrlDerivedProducts: true,
         signal,
-        filterFn: (product) => normalizeBrandToken(product.brand).includes('boticario')
+        filterFn: (product) => !isOuiCatalogProduct(product)
       });
-      return mergeUpstreamResults(upstream, fallback);
+      return mergeUpstreamResults(upstream, mergeUpstreamResults(exporterFallback, fallback));
     }
     case 'oui': {
       const upstream = await fetchVtexCatalogProducts({
         brand: 'oui',
         baseUrl: BRAND_BASE_URL.boticario,
-        filterFn: (product) => normalizeBrandToken(product.brand).includes('oui'),
+        filterFn: (product) => isOuiCatalogProduct(product),
         signal
       });
-      if (upstream.products.length > 0) {
-        return upstream;
+      const exporterFallback = await fetchBelezaWebProductSitemapCatalogProducts({
+        brand: 'oui',
+        maxUrls: MAX_OUI_SITEMAP_PRODUCT_URLS,
+        signal,
+        filterFn: (product) => isOuiCatalogProduct(product)
+      });
+
+      if (exporterFallback.products.length > 0) {
+        return mergeUpstreamResults(upstream, exporterFallback);
       }
+
       const fallback = await fetchGenericBrandCatalogProducts({
         brand: 'oui',
         baseUrl: BRAND_BASE_URL.oui,
-        paths: ['/'],
+        paths: [...OUI_PATHS],
+        maxSitemapUrls: MAX_OUI_SITEMAP_PRODUCT_URLS,
+        onlyProductSitemaps: true,
+        allowUrlDerivedProducts: true,
         signal,
-        filterFn: (product) => normalizeBrandToken(product.brand).includes('oui')
+        filterFn: (product) => isOuiCatalogProduct(product)
       });
-      return mergeUpstreamResults(upstream, fallback);
+      return mergeUpstreamResults(upstream, mergeUpstreamResults(exporterFallback, fallback));
     }
     case 'natura':
       return {

@@ -265,6 +265,404 @@ test('lists Avon products from Avon BFF endpoint with pagination', async () => {
   }
 });
 
+test('collects Eudora products from VTEX even when brand field is a product line', async () => {
+  const previousCatalogEnableUpstream = process.env.CATALOG_ENABLE_UPSTREAM;
+  process.env.CATALOG_ENABLE_UPSTREAM = '1';
+
+  const fetchMock = jest.fn(async (input: string | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/api/catalog_system/pub/products/search') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            productId: 'EUD-1001',
+            productName: 'Shampoo Siage Reconstrucao',
+            brand: 'Siage',
+            link: '/p/shampoo-siage-reconstrucao/EUD-1001',
+            items: [
+              {
+                itemId: '1001',
+                ean: '7891234567001',
+                images: [{ imageUrl: 'https://cdn.eudora.com.br/produtos/EUD-1001.jpg' }],
+                sellers: [
+                  {
+                    commertialOffer: {
+                      Price: 42.9,
+                      AvailableQuantity: 8
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      text: async () => '<html><body></body></html>'
+    };
+  });
+
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  try {
+    const response = await request(app).get(
+      '/api/catalog/brands/eudora/products?allowSampleFallback=false&limit=10'
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.meta.source).toBe('upstream');
+    expect(response.body.meta.total).toBe(1);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0]).toMatchObject({
+      id: 'EUD-1001',
+      sku: 'EUD-1001',
+      barcode: '7891234567001',
+      name: 'Shampoo Siage Reconstrucao',
+      sourceBrand: 'eudora',
+      inStock: true
+    });
+    expect(fetchMock).toHaveBeenCalled();
+  } finally {
+    if (typeof previousCatalogEnableUpstream === 'string') {
+      process.env.CATALOG_ENABLE_UPSTREAM = previousCatalogEnableUpstream;
+    } else {
+      delete process.env.CATALOG_ENABLE_UPSTREAM;
+    }
+  }
+});
+
+test('collects Eudora products from product sitemap URLs when product pages are unavailable', async () => {
+  const previousCatalogEnableUpstream = process.env.CATALOG_ENABLE_UPSTREAM;
+  process.env.CATALOG_ENABLE_UPSTREAM = '1';
+
+  const sitemapIndex = `<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>https://data-exporter.belezanaweb.com.br/sitemap/46/produto.xml</loc></sitemap><sitemap><loc>https://data-exporter.belezanaweb.com.br/sitemap/46/marca.xml</loc></sitemap></sitemapindex>`;
+  const productSitemap = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://www.eudora.com.br/niina-secrets-desodorante-colonia-100ml/</loc></url><url><loc>https://www.eudora.com.br/promocao/</loc></url><url><loc>https://www.eudora.com.br/siage-shampoo-hairplastia-250ml/</loc></url></urlset>`;
+
+  const fetchMock = jest.fn(async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes('/api/catalog_system/pub/products/search')) {
+      return {
+        ok: false,
+        status: 404,
+        json: async () => null
+      };
+    }
+    if (url.endsWith('/robots.txt')) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => 'User-agent: *\nSitemap: https://www.eudora.com.br/sitemap-index.xml\n'
+      };
+    }
+    if (url.endsWith('/sitemap-index.xml')) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => sitemapIndex
+      };
+    }
+    if (url.includes('/sitemap/46/produto.xml')) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => productSitemap
+      };
+    }
+    if (url.includes('/sitemap/46/marca.xml')) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://www.eudora.com.br/perfumaria/</loc></url></urlset>`
+      };
+    }
+
+    return {
+      ok: false,
+      status: 404,
+      text: async () => ''
+    };
+  });
+
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  try {
+    const response = await request(app).get(
+      '/api/catalog/brands/eudora/products?allowSampleFallback=false&limit=10'
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.meta.source).toBe('upstream');
+    expect(response.body.meta.total).toBe(2);
+    expect(response.body.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceBrand: 'eudora',
+          url: 'https://www.eudora.com.br/niina-secrets-desodorante-colonia-100ml/'
+        }),
+        expect.objectContaining({
+          sourceBrand: 'eudora',
+          url: 'https://www.eudora.com.br/siage-shampoo-hairplastia-250ml/'
+        })
+      ])
+    );
+  } finally {
+    if (typeof previousCatalogEnableUpstream === 'string') {
+      process.env.CATALOG_ENABLE_UPSTREAM = previousCatalogEnableUpstream;
+    } else {
+      delete process.env.CATALOG_ENABLE_UPSTREAM;
+    }
+  }
+});
+
+test('collects Boticario catalog without requiring brand token and excludes Oui items', async () => {
+  const previousCatalogEnableUpstream = process.env.CATALOG_ENABLE_UPSTREAM;
+  process.env.CATALOG_ENABLE_UPSTREAM = '1';
+
+  const fetchMock = jest.fn(async (input: string | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/api/catalog_system/pub/products/search') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            productId: 'BOT-1001',
+            productName: 'Lily Creme Acetinado',
+            brand: 'Lily',
+            link: '/p/lily-creme-acetinado/BOT-1001',
+            items: [
+              {
+                itemId: '1001',
+                ean: '7891234567101',
+                images: [{ imageUrl: 'https://cdn.boticario.com.br/produtos/BOT-1001.jpg' }],
+                sellers: [
+                  {
+                    commertialOffer: {
+                      Price: 99.9,
+                      AvailableQuantity: 6
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            productId: 'OUI-2001',
+            productName: 'Oui Eau de Parfum',
+            brand: 'Oui',
+            link: '/p/oui-eau-de-parfum/OUI-2001',
+            items: [
+              {
+                itemId: '2001',
+                ean: '7891234567201',
+                sellers: [
+                  {
+                    commertialOffer: {
+                      Price: 229.9,
+                      AvailableQuantity: 4
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      text: async () => '<html><body></body></html>'
+    };
+  });
+
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  try {
+    const response = await request(app).get(
+      '/api/catalog/brands/boticario/products?allowSampleFallback=false&limit=10'
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.meta.source).toBe('upstream');
+    expect(response.body.meta.total).toBe(1);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0]).toMatchObject({
+      id: 'BOT-1001',
+      sourceBrand: 'boticario',
+      name: 'Lily Creme Acetinado'
+    });
+  } finally {
+    if (typeof previousCatalogEnableUpstream === 'string') {
+      process.env.CATALOG_ENABLE_UPSTREAM = previousCatalogEnableUpstream;
+    } else {
+      delete process.env.CATALOG_ENABLE_UPSTREAM;
+    }
+  }
+});
+
+test('collects Oui products from Oui product sitemap URLs when VTEX is unavailable', async () => {
+  const previousCatalogEnableUpstream = process.env.CATALOG_ENABLE_UPSTREAM;
+  process.env.CATALOG_ENABLE_UPSTREAM = '1';
+
+  const sitemapIndex = `<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>https://data-exporter.belezanaweb.com.br/sitemap/60/produto.xml</loc></sitemap></sitemapindex>`;
+  const productSitemap = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://www.ouiparis.com/oui-scapin-245-intense-eau-de-parfum-75ml/</loc></url><url><loc>https://www.ouiparis.com/promocao/</loc></url></urlset>`;
+
+  const fetchMock = jest.fn(async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes('/api/catalog_system/pub/products/search')) {
+      return {
+        ok: false,
+        status: 404,
+        json: async () => null
+      };
+    }
+    if (url === 'https://www.ouiparis.com/robots.txt') {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => 'User-agent: *\nSitemap: https://www.ouiparis.com/sitemap-index.xml\n'
+      };
+    }
+    if (url === 'https://www.ouiparis.com/sitemap-index.xml') {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => sitemapIndex
+      };
+    }
+    if (url.includes('/sitemap/60/produto.xml')) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => productSitemap
+      };
+    }
+
+    return {
+      ok: false,
+      status: 404,
+      text: async () => ''
+    };
+  });
+
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  try {
+    const response = await request(app).get('/api/catalog/brands/oui/products?allowSampleFallback=false&limit=10');
+
+    expect(response.status).toBe(200);
+    expect(response.body.meta.source).toBe('upstream');
+    expect(response.body.meta.total).toBe(1);
+    expect(response.body.data[0]).toMatchObject({
+      sourceBrand: 'oui',
+      url: 'https://www.ouiparis.com/oui-scapin-245-intense-eau-de-parfum-75ml/'
+    });
+  } finally {
+    if (typeof previousCatalogEnableUpstream === 'string') {
+      process.env.CATALOG_ENABLE_UPSTREAM = previousCatalogEnableUpstream;
+    } else {
+      delete process.env.CATALOG_ENABLE_UPSTREAM;
+    }
+  }
+});
+
+test('collects Oui products from Boticario VTEX feed', async () => {
+  const previousCatalogEnableUpstream = process.env.CATALOG_ENABLE_UPSTREAM;
+  process.env.CATALOG_ENABLE_UPSTREAM = '1';
+
+  const fetchMock = jest.fn(async (input: string | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/api/catalog_system/pub/products/search') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            productId: 'BOT-1001',
+            productName: 'Lily Creme Acetinado',
+            brand: 'Lily',
+            link: '/p/lily-creme-acetinado/BOT-1001',
+            items: [
+              {
+                itemId: '1001',
+                ean: '7891234567101',
+                sellers: [
+                  {
+                    commertialOffer: {
+                      Price: 99.9,
+                      AvailableQuantity: 6
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            productId: 'OUI-2001',
+            productName: 'Oui Eau de Parfum',
+            brand: 'Oui',
+            link: '/p/oui-eau-de-parfum/OUI-2001',
+            items: [
+              {
+                itemId: '2001',
+                ean: '7891234567201',
+                images: [{ imageUrl: 'https://cdn.boticario.com.br/produtos/OUI-2001.jpg' }],
+                sellers: [
+                  {
+                    commertialOffer: {
+                      Price: 229.9,
+                      AvailableQuantity: 4
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      text: async () => '<html><body></body></html>'
+    };
+  });
+
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  try {
+    const response = await request(app).get(
+      '/api/catalog/brands/oui/products?allowSampleFallback=false&limit=10'
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.meta.source).toBe('upstream');
+    expect(response.body.meta.total).toBe(1);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0]).toMatchObject({
+      id: 'OUI-2001',
+      sourceBrand: 'oui',
+      name: 'Oui Eau de Parfum'
+    });
+  } finally {
+    if (typeof previousCatalogEnableUpstream === 'string') {
+      process.env.CATALOG_ENABLE_UPSTREAM = previousCatalogEnableUpstream;
+    } else {
+      delete process.env.CATALOG_ENABLE_UPSTREAM;
+    }
+  }
+});
+
 test('resolves brand aliases on aggregate endpoint', async () => {
   const response = await request(app).get(
     '/api/catalog/brands/products?brands=tuppware,boticario&allowSampleFallback=true'
@@ -362,18 +760,30 @@ test('collects Extase products from Tray web_api endpoint without sample fallbac
 
     expect(response.status).toBe(200);
     expect(response.body.meta.source).toBe('upstream');
-    expect(response.body.meta.total).toBe(1);
-    expect(response.body.data).toHaveLength(1);
-    expect(response.body.data[0]).toMatchObject({
-      id: '101',
-      sku: 'EXT-100',
-      barcode: '7891234567890',
-      name: 'Perfume Feminino Extase 100mL',
-      sourceBrand: 'extase',
-      sourceCategory: 'perfumaria',
-      inStock: true
-    });
-    expect(response.body.data[0].url).toContain('/perfume-feminino-extase');
+    expect(response.body.meta.total).toBe(2);
+    expect(response.body.data).toHaveLength(2);
+    expect(response.body.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: '101',
+          sku: 'EXT-100',
+          barcode: '7891234567890',
+          name: 'Perfume Feminino Extase 100mL',
+          sourceBrand: 'extase',
+          sourceCategory: 'perfumaria',
+          inStock: true
+        }),
+        expect.objectContaining({
+          id: '102',
+          sku: 'RGE-100',
+          name: 'Perfume Feminino Rouge 100mL',
+          sourceBrand: 'extase',
+          sourceCategory: 'perfumaria',
+          inStock: true
+        })
+      ])
+    );
+    expect(response.body.data[0].sourceBrand).toBe('extase');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   } finally {
     if (typeof previousCatalogEnableUpstream === 'string') {
@@ -522,12 +932,22 @@ test('collects Extase products from sitemap pages without sample fallback', asyn
 
     expect(response.status).toBe(200);
     expect(response.body.meta.source).toBe('upstream');
-    expect(response.body.data).toHaveLength(1);
-    expect(response.body.data[0]).toMatchObject({
-      name: 'Perfume Feminino Extase 100mL',
-      sourceBrand: 'extase',
-      sku: 'EXT-100'
-    });
+    expect(response.body.meta.total).toBe(2);
+    expect(response.body.data).toHaveLength(2);
+    expect(response.body.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Perfume Feminino Extase 100mL',
+          sourceBrand: 'extase',
+          sku: 'EXT-100'
+        }),
+        expect.objectContaining({
+          name: 'Perfume Feminino Rouge 100mL',
+          sourceBrand: 'extase',
+          sku: 'RGE-100'
+        })
+      ])
+    );
   } finally {
     if (typeof previousCatalogEnableUpstream === 'string') {
       process.env.CATALOG_ENABLE_UPSTREAM = previousCatalogEnableUpstream;
@@ -828,6 +1248,85 @@ test('does not replace upstream cache with sample fallback during preloaded sync
     queryMock.mock.calls.some(([sql]) =>
       String(sql).includes('DELETE FROM catalog_preloaded_products')
     )
+  ).toBe(false);
+});
+
+test('syncs preloaded cache into inventory without removing existing products', async () => {
+  jest.spyOn(db, 'query').mockImplementation(async (sql: string) => {
+    if (sql.includes('FROM reseller_brands')) {
+      return {
+        rowCount: 1,
+        rows: [{ sourceBrand: 'avon' }]
+      } as unknown as Awaited<ReturnType<typeof db.query>>;
+    }
+
+    if (sql.includes('FROM catalog_preloaded_products')) {
+      return {
+        rowCount: 1,
+        rows: [
+          {
+            id: 'cache-1',
+            code: '155708',
+            sku: '155708',
+            barcode: '7891234567890',
+            name: '300 Km/h Deo Colonia Boost',
+            brand: 'Avon',
+            sourceBrand: 'avon',
+            sourceLineBrand: '300 Km/h',
+            price: 37.9,
+            purchasePrice: 37.9,
+            inStock: false,
+            imageUrl: 'https://cdn.avon.com/155708.jpg',
+            sourceCategory: 'perfumaria',
+            sourceUrl: 'https://www.avon.com.br/produto/155708',
+            fetchedSource: 'upstream',
+            updatedAt: '2026-02-11T11:00:00.000Z'
+          }
+        ]
+      } as unknown as Awaited<ReturnType<typeof db.query>>;
+    }
+
+    return {
+      rowCount: 0,
+      rows: []
+    } as unknown as Awaited<ReturnType<typeof db.query>>;
+  });
+
+  const queryMock = jest.fn(async (_sql: string, _params?: unknown[]) => ({
+    rowCount: 1,
+    rows: []
+  }));
+
+  jest
+    .spyOn(db, 'withTransaction')
+    .mockImplementation(
+      (async (handler: (client: unknown) => Promise<unknown>) =>
+        handler({ query: queryMock })) as typeof db.withTransaction
+    );
+
+  const response = await request(app).post('/api/catalog/preloaded/sync-to-inventory').send({
+    brands: ['avon'],
+    limit: 10,
+    inStockOnly: false
+  });
+
+  expect(response.status).toBe(200);
+  expect(response.body.meta.selectedBrands).toEqual(['avon']);
+  expect(response.body.meta.upsertedProducts).toBe(1);
+  expect(response.body.meta.preserveExistingActive).toBe(true);
+  expect(response.body.data[0].sku).toContain('CATBRA-AVON');
+  expect(
+    queryMock.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO products'))
+  ).toBe(true);
+  const upsertCall = queryMock.mock.calls.find(([sql]) =>
+    String(sql).includes('INSERT INTO products')
+  );
+  expect(upsertCall?.[1]).toEqual(expect.arrayContaining([true]));
+  expect(
+    queryMock.mock.calls.some(([sql]) => String(sql).includes('DELETE FROM reseller_brands'))
+  ).toBe(false);
+  expect(
+    queryMock.mock.calls.some(([sql]) => String(sql).includes('SET active = false'))
   ).toBe(false);
 });
 

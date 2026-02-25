@@ -1353,10 +1353,10 @@ export default function App() {
         method: 'POST',
         body: JSON.stringify({
           brands: [...CATALOG_BRAND_SLUGS],
-          limit: 120,
+          limit: 2000,
           inStockOnly: false,
           deactivateMissing: false,
-          allowSampleFallback: true
+          allowSampleFallback: false
         })
       });
     });

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { PoolClient } from 'pg';
 import type { PurchaseInput, PurchaseStatusUpdateInput } from '../dto';
 import { DEFAULT_ORG_ID, DEFAULT_STORE_ID } from '../config';
 import { query, withTransaction } from '../db';
@@ -20,6 +21,75 @@ const buildError = (status: number, code: string, message: string) => {
   error.status = status;
   error.code = code;
   return error;
+};
+
+const buildPurchaseExpenseDescription = ({
+  supplier,
+  brand
+}: {
+  supplier: string;
+  brand?: string | null;
+}) => {
+  const normalizedSupplier = supplier.trim() || 'Fornecedor nao informado';
+  const normalizedBrand = normalizeOptional(brand || undefined);
+  if (normalizedBrand) {
+    return `Pedido de compra ${normalizedBrand} - ${normalizedSupplier}`;
+  }
+  return `Pedido de compra - ${normalizedSupplier}`;
+};
+
+const syncPurchaseExpense = async ({
+  client,
+  purchase
+}: {
+  client: PoolClient;
+  purchase: {
+    id: string;
+    store_id?: string | null;
+    supplier: string;
+    brand?: string | null;
+    status: string;
+    total: number | string;
+    purchase_date: string;
+  };
+}) => {
+  const storeId = purchase.store_id || DEFAULT_STORE_ID;
+  if (purchase.status === 'cancelled') {
+    await client.query(
+      `DELETE FROM finance_expenses
+       WHERE store_id = $1
+         AND purchase_id = $2`,
+      [storeId, purchase.id]
+    );
+    return;
+  }
+
+  await client.query(
+    `INSERT INTO finance_expenses (
+       store_id,
+       purchase_id,
+       description,
+       amount,
+       due_date,
+       status
+     )
+     VALUES ($1, $2, $3, $4, $5, 'pending')
+     ON CONFLICT (store_id, purchase_id)
+     DO UPDATE SET
+       description = EXCLUDED.description,
+       amount = EXCLUDED.amount,
+       due_date = EXCLUDED.due_date`,
+    [
+      storeId,
+      purchase.id,
+      buildPurchaseExpenseDescription({
+        supplier: purchase.supplier,
+        brand: purchase.brand
+      }),
+      purchase.total,
+      purchase.purchase_date
+    ]
+  );
 };
 
 let ensurePurchasesTablePromise: Promise<void> | null = null;
@@ -120,6 +190,76 @@ const ensurePurchasesTable = async () => {
       `CREATE INDEX IF NOT EXISTS idx_purchase_items_product
        ON purchase_items (product_id)`
     );
+
+    await query(
+      `CREATE TABLE IF NOT EXISTS finance_expenses (
+         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+         store_id uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+         customer_id uuid REFERENCES customers(id) ON DELETE SET NULL,
+         purchase_id uuid,
+         description text NOT NULL,
+         amount numeric(12,2) NOT NULL,
+         due_date date NOT NULL,
+         status text NOT NULL DEFAULT 'pending',
+         paid_at timestamptz,
+         method text,
+         created_at timestamptz NOT NULL DEFAULT now()
+       )`
+    );
+
+    await query(
+      `ALTER TABLE finance_expenses
+       ADD COLUMN IF NOT EXISTS purchase_id uuid`
+    );
+
+    await query(
+      `DELETE FROM finance_expenses older
+       USING finance_expenses newer
+       WHERE older.store_id = newer.store_id
+         AND older.purchase_id = newer.purchase_id
+         AND older.purchase_id IS NOT NULL
+         AND older.id < newer.id`
+    );
+
+    await query(
+      `DO $$
+       BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM pg_constraint WHERE conname = 'finance_expenses_store_purchase_unique'
+         ) THEN
+           ALTER TABLE finance_expenses
+             ADD CONSTRAINT finance_expenses_store_purchase_unique UNIQUE (store_id, purchase_id);
+         END IF;
+       END $$`
+    );
+
+    await query(
+      `INSERT INTO finance_expenses (store_id, purchase_id, description, amount, due_date, status)
+       SELECT
+         p.store_id,
+         p.id,
+         CASE
+           WHEN p.brand IS NULL OR btrim(p.brand) = '' THEN 'Pedido de compra - ' || p.supplier
+           ELSE 'Pedido de compra ' || btrim(p.brand) || ' - ' || p.supplier
+         END,
+         p.total,
+         p.purchase_date,
+         'pending'
+       FROM purchases p
+       LEFT JOIN finance_expenses fe
+         ON fe.store_id = p.store_id
+        AND fe.purchase_id = p.id
+       WHERE p.status <> 'cancelled'
+         AND fe.id IS NULL`
+    );
+
+    await query(
+      `DELETE FROM finance_expenses fe
+       USING purchases p
+       WHERE fe.purchase_id = p.id
+         AND fe.store_id = p.store_id
+         AND p.status = 'cancelled'`
+    );
   })();
 
   try {
@@ -151,6 +291,64 @@ router.get(
       [storeId]
     );
     res.json({ data: result.rows });
+  })
+);
+
+router.get(
+  '/purchases/:id',
+  validateRequest({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    await ensurePurchasesTable();
+    const { id } = req.params;
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
+
+    const purchaseRes = await query(
+      `SELECT id,
+              supplier,
+              brand,
+              status,
+              total,
+              items,
+              purchase_date,
+              created_at
+       FROM purchases
+       WHERE id = $1
+         AND store_id = $2
+       LIMIT 1`,
+      [id, storeId]
+    );
+
+    if (!purchaseRes.rows.length) {
+      return res.status(404).json({ code: 'not_found', message: 'Compra nao encontrada.' });
+    }
+
+    const itemsRes = await query(
+      `SELECT pi.id,
+              pi.purchase_id,
+              pi.product_id,
+              pi.sku,
+              pi.quantity,
+              pi.unit_cost,
+              pi.expires_at,
+              pi.created_at,
+              p.name AS product_name,
+              p.brand AS product_brand,
+              p.image_url AS product_image_url,
+              p.barcode AS product_barcode
+       FROM purchase_items pi
+       LEFT JOIN products p
+         ON p.id = pi.product_id
+       WHERE pi.purchase_id = $1
+       ORDER BY pi.created_at ASC, pi.id ASC`,
+      [id]
+    );
+
+    return res.json({
+      data: {
+        ...purchaseRes.rows[0],
+        purchase_items: itemsRes.rows
+      }
+    });
   })
 );
 
@@ -224,6 +422,19 @@ router.post(
           );
         }
 
+        await syncPurchaseExpense({
+          client,
+          purchase: {
+            id: purchaseId,
+            store_id: storeId,
+            supplier: supplier.trim(),
+            brand: normalizeOptional(brand) || undefined,
+            status: nextStatus,
+            total,
+            purchase_date: purchaseDate || new Date().toISOString().slice(0, 10)
+          }
+        });
+
         await writeAudit(client, {
           organizationId: orgId,
           storeId,
@@ -275,11 +486,26 @@ router.patch(
         `UPDATE purchases
          SET status = $3
          WHERE id = $1 AND store_id = $2
-         RETURNING id, supplier, brand, status, total, items, purchase_date, created_at`,
+         RETURNING id, store_id, supplier, brand, status, total, items, purchase_date, created_at`,
         [id, storeId, status]
       );
 
       if (!result.rows.length) return null;
+
+      const updatedPurchase = result.rows[0] as {
+        id: string;
+        store_id?: string | null;
+        supplier: string;
+        brand?: string | null;
+        status: string;
+        total: number | string;
+        purchase_date: string;
+      };
+
+      await syncPurchaseExpense({
+        client,
+        purchase: updatedPurchase
+      });
 
       await writeAudit(client, {
         organizationId: orgId,
@@ -313,6 +539,13 @@ router.delete(
     const userId = req.header('x-user-id') || null;
 
     const removed = await withTransaction(async (client) => {
+      await client.query(
+        `DELETE FROM finance_expenses
+         WHERE store_id = $1
+           AND purchase_id = $2`,
+        [storeId, id]
+      );
+
       const result = await client.query(
         `DELETE FROM purchases
          WHERE id = $1 AND store_id = $2

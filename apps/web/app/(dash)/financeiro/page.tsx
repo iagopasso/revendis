@@ -18,6 +18,7 @@ type Expense = {
   id: string;
   store_id?: string;
   customer_id?: string | null;
+  purchase_id?: string | null;
   customer_name?: string | null;
   description: string;
   amount: number | string;
