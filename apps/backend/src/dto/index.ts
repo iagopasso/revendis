@@ -154,6 +154,14 @@ export type PurchaseStatusUpdateInput = {
   status: 'pending' | 'received' | 'cancelled';
 };
 
+export type PurchaseUpdateInput = {
+  supplier?: string;
+  total?: number;
+  items?: number;
+  brand?: string;
+  purchaseDate?: string;
+};
+
 export type CustomerInput = {
   name: string;
   phone: string;

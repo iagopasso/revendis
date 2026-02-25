@@ -30,3 +30,16 @@ export const purchaseStatusUpdateSchema = z
     status: purchaseStatusSchema
   })
   .strict();
+
+export const purchaseUpdateSchema = z
+  .object({
+    supplier: z.string().min(1).optional(),
+    total: z.number().positive().optional(),
+    items: z.number().int().positive().optional(),
+    brand: z.string().optional(),
+    purchaseDate: z.string().optional()
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'Informe ao menos um campo para atualizar a compra.'
+  });

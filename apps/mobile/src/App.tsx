@@ -687,6 +687,7 @@ export default function App() {
   const [purchaseTotal, setPurchaseTotal] = useState('');
   const [purchaseItemsCount, setPurchaseItemsCount] = useState('1');
   const [purchaseDate, setPurchaseDate] = useState(toDateInput());
+  const [purchaseEditingId, setPurchaseEditingId] = useState('');
 
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
@@ -1526,7 +1527,25 @@ export default function App() {
     });
   };
 
-  const createPurchase = async () => {
+  const resetPurchaseForm = () => {
+    setPurchaseEditingId('');
+    setPurchaseSupplier('');
+    setPurchaseBrand('');
+    setPurchaseTotal('');
+    setPurchaseItemsCount('1');
+    setPurchaseDate(toDateInput());
+  };
+
+  const startEditPurchase = (purchase: Purchase) => {
+    setPurchaseEditingId(purchase.id);
+    setPurchaseSupplier(purchase.supplier || '');
+    setPurchaseBrand(purchase.brand || '');
+    setPurchaseTotal(String(Math.max(0, toNumber(purchase.total))));
+    setPurchaseItemsCount(String(Math.max(1, Math.trunc(toNumber(purchase.items) || 1))));
+    setPurchaseDate((purchase.purchase_date || '').slice(0, 10) || toDateInput());
+  };
+
+  const savePurchase = async () => {
     const supplier = purchaseSupplier.trim();
     const total = Math.max(0, toNumber(purchaseTotal));
     const items = Math.max(1, Math.trunc(toNumber(purchaseItemsCount)));
@@ -1538,26 +1557,35 @@ export default function App() {
       setActionMessage({ tone: 'error', text: 'Informe um total de compra valido.' });
       return;
     }
+    const payload = {
+      supplier,
+      total,
+      items,
+      brand: purchaseBrand.trim() || undefined,
+      purchaseDate: purchaseDate.trim() || undefined
+    };
+
+    if (purchaseEditingId) {
+      const success = await runAction('Compra atualizada', async () => {
+        await backendRequest(`/purchases/${purchaseEditingId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload)
+        });
+      });
+      if (success) resetPurchaseForm();
+      return;
+    }
+
     const success = await runAction('Compra criada', async () => {
       await backendRequest('/purchases', {
         method: 'POST',
         body: JSON.stringify({
-          supplier,
-          total,
-          items,
-          brand: purchaseBrand.trim() || undefined,
-          purchaseDate: purchaseDate.trim() || undefined,
+          ...payload,
           status: 'pending'
         })
       });
     });
-    if (success) {
-      setPurchaseSupplier('');
-      setPurchaseBrand('');
-      setPurchaseTotal('');
-      setPurchaseItemsCount('1');
-      setPurchaseDate(toDateInput());
-    }
+    if (success) resetPurchaseForm();
   };
 
   const changePurchaseStatus = async (
@@ -1573,9 +1601,12 @@ export default function App() {
   };
 
   const removePurchase = async (purchaseId: string) => {
-    await runAction('Compra removida', async () => {
+    const success = await runAction('Compra removida', async () => {
       await backendRequest(`/purchases/${purchaseId}`, { method: 'DELETE' });
     });
+    if (success && purchaseEditingId === purchaseId) {
+      resetPurchaseForm();
+    }
   };
 
   const createCustomer = async () => {
@@ -2757,7 +2788,7 @@ export default function App() {
               </View>
 
               <View style={styles.panel}>
-                <Text style={styles.panelTitle}>Nova compra</Text>
+                <Text style={styles.panelTitle}>{purchaseEditingId ? 'Editar compra' : 'Nova compra'}</Text>
                 <TextInput
                   style={styles.actionInput}
                   placeholder="Fornecedor"
@@ -2793,11 +2824,19 @@ export default function App() {
                   onChangeText={setPurchaseDate}
                 />
                 <ActionButton
-                  label="Registrar compra"
-                  onPress={createPurchase}
+                  label={purchaseEditingId ? 'Salvar edicao' : 'Registrar compra'}
+                  onPress={savePurchase}
                   disabled={actionBusy}
                   variant="primary"
                 />
+                {purchaseEditingId ? (
+                  <ActionButton
+                    label="Cancelar edicao"
+                    onPress={resetPurchaseForm}
+                    disabled={actionBusy}
+                    variant="muted"
+                  />
+                ) : null}
               </View>
 
               <View style={styles.panel}>
@@ -2813,6 +2852,12 @@ export default function App() {
                       <Text style={styles.listAmount}>{formatCurrency(purchase.total)}</Text>
                       <Badge label={purchaseStatusLabel(purchase.status)} style={toneStyle(purchase.status)} />
                       <View style={styles.rowActions}>
+                        <ActionButton
+                          label="Editar"
+                          onPress={() => startEditPurchase(purchase)}
+                          disabled={actionBusy}
+                          variant="link"
+                        />
                         <ActionButton
                           label="Pendente"
                           onPress={() => changePurchaseStatus(purchase.id, 'pending')}

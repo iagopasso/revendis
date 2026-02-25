@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import type { PoolClient } from 'pg';
-import type { PurchaseInput, PurchaseStatusUpdateInput } from '../dto';
+import type { PurchaseInput, PurchaseStatusUpdateInput, PurchaseUpdateInput } from '../dto';
 import { DEFAULT_ORG_ID, DEFAULT_STORE_ID } from '../config';
 import { query, withTransaction } from '../db';
 import { validateRequest } from '../middleware/validate';
 import { idParamSchema } from '../schemas/common';
-import { purchaseInputSchema, purchaseStatusUpdateSchema } from '../schemas/purchases';
+import { purchaseInputSchema, purchaseStatusUpdateSchema, purchaseUpdateSchema } from '../schemas/purchases';
 import { asyncHandler } from '../utils/async-handler';
 import { writeAudit } from '../utils/audit';
 
@@ -21,6 +21,14 @@ const buildError = (status: number, code: string, message: string) => {
   error.status = status;
   error.code = code;
   return error;
+};
+
+const parseIsoDateInput = (value: string) => {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+  const parsed = new Date(`${trimmed}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  return trimmed;
 };
 
 const buildPurchaseExpenseDescription = ({
@@ -467,6 +475,126 @@ router.post(
       }
       throw error;
     }
+  })
+);
+
+router.patch(
+  '/purchases/:id',
+  validateRequest({ params: idParamSchema, body: purchaseUpdateSchema }),
+  asyncHandler(async (req, res) => {
+    await ensurePurchasesTable();
+    const { id } = req.params;
+    const payload = req.body as PurchaseUpdateInput;
+    const orgId = req.header('x-org-id') || null;
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
+    const userId = req.header('x-user-id') || null;
+
+    const fields: string[] = [];
+    const values: Array<string | number | null> = [];
+
+    if (payload.supplier !== undefined) {
+      const supplier = payload.supplier.trim();
+      if (!supplier) {
+        return res.status(400).json({
+          code: 'invalid_payload',
+          message: 'Informe o fornecedor da compra.'
+        });
+      }
+      fields.push(`supplier = $${fields.length + 1}`);
+      values.push(supplier);
+    }
+
+    if (payload.brand !== undefined) {
+      fields.push(`brand = $${fields.length + 1}`);
+      values.push(normalizeOptional(payload.brand));
+    }
+
+    if (payload.total !== undefined) {
+      if (!Number.isFinite(payload.total) || payload.total <= 0) {
+        return res.status(400).json({
+          code: 'invalid_payload',
+          message: 'Informe um total de compra valido.'
+        });
+      }
+      fields.push(`total = $${fields.length + 1}`);
+      values.push(payload.total);
+    }
+
+    if (payload.items !== undefined) {
+      const items = Math.trunc(payload.items);
+      if (!Number.isFinite(items) || items <= 0) {
+        return res.status(400).json({
+          code: 'invalid_payload',
+          message: 'Informe uma quantidade de itens valida.'
+        });
+      }
+      fields.push(`items = $${fields.length + 1}`);
+      values.push(items);
+    }
+
+    if (payload.purchaseDate !== undefined) {
+      const parsedDate = parseIsoDateInput(payload.purchaseDate);
+      if (!parsedDate) {
+        return res.status(400).json({
+          code: 'invalid_payload',
+          message: 'Informe a data da compra no formato YYYY-MM-DD.'
+        });
+      }
+      fields.push(`purchase_date = $${fields.length + 1}`);
+      values.push(parsedDate);
+    }
+
+    if (!fields.length) {
+      return res.status(400).json({
+        code: 'invalid_payload',
+        message: 'Informe ao menos um campo para atualizar a compra.'
+      });
+    }
+
+    const updated = await withTransaction(async (client) => {
+      const result = await client.query(
+        `UPDATE purchases
+         SET ${fields.join(', ')}
+         WHERE id = $${fields.length + 1} AND store_id = $${fields.length + 2}
+         RETURNING id, store_id, supplier, brand, status, total, items, purchase_date, created_at`,
+        [...values, id, storeId]
+      );
+
+      if (!result.rows.length) return null;
+
+      const updatedPurchase = result.rows[0] as {
+        id: string;
+        store_id?: string | null;
+        supplier: string;
+        brand?: string | null;
+        status: string;
+        total: number | string;
+        purchase_date: string;
+      };
+
+      await syncPurchaseExpense({
+        client,
+        purchase: updatedPurchase
+      });
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        storeId,
+        userId,
+        entityType: 'purchase',
+        entityId: id,
+        action: 'updated',
+        payload
+      });
+
+      return result.rows[0];
+    });
+
+    if (!updated) {
+      return res.status(404).json({ code: 'not_found', message: 'Compra nao encontrada.' });
+    }
+
+    return res.json({ data: updated });
   })
 );
 

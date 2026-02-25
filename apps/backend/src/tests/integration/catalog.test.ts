@@ -1087,6 +1087,35 @@ test('syncs products from brand sites into internal catalog', async () => {
   expect(queryMock).toHaveBeenCalled();
 });
 
+test('does not sync inventory products when /catalog/brands/sync is called without brands or allBrands', async () => {
+  const querySpy = jest
+    .spyOn(db, 'query')
+    .mockResolvedValue({ rowCount: 0, rows: [] } as unknown as Awaited<ReturnType<typeof db.query>>);
+  const queryMock = jest.fn(async (_sql: string, _params?: unknown[]) => ({
+    rowCount: 0,
+    rows: []
+  }));
+
+  jest
+    .spyOn(db, 'withTransaction')
+    .mockImplementation(
+      (async (handler: (client: unknown) => Promise<unknown>) =>
+        handler({ query: queryMock })) as typeof db.withTransaction
+    );
+
+  const response = await request(app).post('/api/catalog/brands/sync').send({
+    inStockOnly: false
+  });
+
+  expect(response.status).toBe(200);
+  expect(response.body.meta.selectedBrands).toEqual([]);
+  expect(response.body.meta.total).toBe(0);
+  expect(
+    queryMock.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO products'))
+  ).toBe(false);
+  expect(querySpy).not.toHaveBeenCalled();
+});
+
 test('syncs Natura consultant products into internal catalog and keeps only brands with products', async () => {
   const fetchMock = jest
     .fn()

@@ -1233,11 +1233,14 @@ router.post(
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     const requestedBrands = parseBodyBrands(payload.brands);
     const allBrands = payload.allBrands === true;
-    const selectedBrands = await resolveRequestedCatalogBrands({
-      orgId,
-      requestedBrands: requestedBrands.length > 0 ? requestedBrands : null,
-      allBrands
-    });
+    const selectedBrands =
+      requestedBrands.length > 0 || allBrands
+        ? await resolveRequestedCatalogBrands({
+            orgId,
+            requestedBrands: requestedBrands.length > 0 ? requestedBrands : null,
+            allBrands
+          })
+        : [];
     const inStockOnly = payload.inStockOnly === true;
     const preserveExistingActive = payload.preserveExistingActive !== false;
     const perBrandLimit = parsePreloadBodyLimit(payload.limit, MAX_CACHE_LIMIT);
@@ -2119,11 +2122,14 @@ router.post(
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     const requestedBrands = parseBodyBrands(payload.brands);
     const allBrands = payload.allBrands === true;
-    const selectedBrands = await resolveRequestedCatalogBrands({
-      orgId,
-      requestedBrands: requestedBrands.length > 0 ? requestedBrands : null,
-      allBrands
-    });
+    const selectedBrands =
+      requestedBrands.length > 0 || allBrands
+        ? await resolveRequestedCatalogBrands({
+            orgId,
+            requestedBrands: requestedBrands.length > 0 ? requestedBrands : null,
+            allBrands
+          })
+        : [];
     const inStockOnly = payload.inStockOnly === true;
     const deactivateMissing = payload.deactivateMissing === true;
     const allowSampleFallback = payload.allowSampleFallback === true;

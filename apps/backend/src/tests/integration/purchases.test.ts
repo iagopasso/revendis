@@ -93,6 +93,39 @@ test('creates, updates and deletes purchase', async () => {
     quantity: 3
   });
 
+  const updateRes = await request(app).patch(`/api/purchases/${purchaseId}`).send({
+    supplier: 'Fornecedor Atualizado',
+    total: 390.5,
+    items: 7,
+    brand: 'Marca Atualizada',
+    purchaseDate: '2026-01-15'
+  });
+  expect(updateRes.status).toBe(200);
+  expect(updateRes.body.data).toMatchObject({
+    id: purchaseId,
+    supplier: 'Fornecedor Atualizado',
+    total: '390.50',
+    items: 7,
+    brand: 'Marca Atualizada'
+  });
+  const updatedPurchaseDate = new Date(updateRes.body.data.purchase_date).toISOString().slice(0, 10);
+  expect(updatedPurchaseDate).toBe('2026-01-15');
+
+  const expenseAfterUpdate = await query<{
+    purchase_id: string;
+    amount: number | string;
+    due_date: string;
+  }>(
+    `SELECT purchase_id, amount, due_date
+       FROM finance_expenses
+      WHERE purchase_id = $1`,
+    [purchaseId]
+  );
+  expect(expenseAfterUpdate.rows).toHaveLength(1);
+  expect(Number(expenseAfterUpdate.rows[0].amount)).toBeCloseTo(390.5, 2);
+  const updateDueDate = new Date(expenseAfterUpdate.rows[0].due_date).toISOString().slice(0, 10);
+  expect(updateDueDate).toBe('2026-01-15');
+
   const statusRes = await request(app).patch(`/api/purchases/${purchaseId}/status`).send({
     status: 'received'
   });
