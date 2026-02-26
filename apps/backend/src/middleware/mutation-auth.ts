@@ -22,6 +22,14 @@ const isPublicWriteRoute = (req: Request) => {
   return path === '/storefront/orders';
 };
 
+const hasAuthSessionCookie = (req: Request) => {
+  const rawCookie = req.header('cookie') || '';
+  if (!rawCookie) return false;
+  return (
+    rawCookie.includes('__Secure-authjs.session-token=') || rawCookie.includes('authjs.session-token=')
+  );
+};
+
 export const requireMutationAuth = (req: Request, res: Response, next: NextFunction) => {
   const method = req.method.toUpperCase();
   if (!WRITE_METHODS.has(method)) {
@@ -29,6 +37,11 @@ export const requireMutationAuth = (req: Request, res: Response, next: NextFunct
   }
 
   if (isPublicWriteRoute(req)) {
+    return next();
+  }
+
+  // Web authenticated sessions can mutate without explicit mutation token.
+  if (hasAuthSessionCookie(req)) {
     return next();
   }
 
