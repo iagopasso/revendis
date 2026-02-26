@@ -31,6 +31,39 @@ const parseIsoDateInput = (value: string) => {
   return trimmed;
 };
 
+const toDateOnly = (value: unknown) => {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    const isoPrefix = trimmed.match(/^(\d{4}-\d{2}-\d{2})T/);
+    if (isoPrefix?.[1]) return isoPrefix[1];
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toISOString().slice(0, 10);
+  }
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+    return value.toISOString().slice(0, 10);
+  }
+  return '';
+};
+
+const formatPurchaseRow = <
+  T extends { purchase_date?: unknown; created_at?: unknown; payment_due_date?: unknown }
+>(
+  row: T
+) => ({
+  ...row,
+  purchase_date: toDateOnly(row.purchase_date) || toDateOnly(row.created_at),
+  payment_due_date: toDateOnly(row.payment_due_date) || null
+});
+
+const formatPurchaseItemRow = <T extends { expires_at?: unknown }>(row: T) => ({
+  ...row,
+  expires_at: toDateOnly(row.expires_at) || null
+});
 const buildPurchaseExpenseDescription = ({
   supplier,
   brand
@@ -284,17 +317,21 @@ router.get(
     await ensurePurchasesTable();
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const result = await query(
-      `SELECT id,
-              supplier,
-              brand,
-              status,
-              total,
-              items,
-              purchase_date,
-              created_at
-       FROM purchases
-       WHERE store_id = $1
-       ORDER BY purchase_date DESC, created_at DESC
+      `SELECT p.id,
+              p.supplier,
+              p.brand,
+              p.status,
+              p.total,
+              p.items,
+              p.purchase_date,
+              p.created_at,
+              fe.due_date AS payment_due_date
+       FROM purchases p
+       LEFT JOIN finance_expenses fe
+         ON fe.store_id = p.store_id
+        AND fe.purchase_id = p.id
+       WHERE p.store_id = $1
+       ORDER BY p.purchase_date DESC, p.created_at DESC
        LIMIT 200`,
       [storeId]
     );
@@ -311,17 +348,21 @@ router.get(
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
 
     const purchaseRes = await query(
-      `SELECT id,
-              supplier,
-              brand,
-              status,
-              total,
-              items,
-              purchase_date,
-              created_at
-       FROM purchases
-       WHERE id = $1
-         AND store_id = $2
+      `SELECT p.id,
+              p.supplier,
+              p.brand,
+              p.status,
+              p.total,
+              p.items,
+              p.purchase_date,
+              p.created_at,
+              fe.due_date AS payment_due_date
+       FROM purchases p
+       LEFT JOIN finance_expenses fe
+         ON fe.store_id = p.store_id
+        AND fe.purchase_id = p.id
+       WHERE p.id = $1
+         AND p.store_id = $2
        LIMIT 1`,
       [id, storeId]
     );
@@ -587,7 +628,28 @@ router.patch(
         payload
       });
 
-      return result.rows[0];
+      const refreshed = await client.query(
+        `SELECT p.id,
+                p.store_id,
+                p.supplier,
+                p.brand,
+                p.status,
+                p.total,
+                p.items,
+                p.purchase_date,
+                p.created_at,
+                fe.due_date AS payment_due_date
+         FROM purchases p
+         LEFT JOIN finance_expenses fe
+           ON fe.store_id = p.store_id
+          AND fe.purchase_id = p.id
+         WHERE p.id = $1
+           AND p.store_id = $2
+         LIMIT 1`,
+        [id, storeId]
+      );
+
+      return refreshed.rows[0] || updatedPurchase;
     });
 
     if (!updated) {
@@ -645,7 +707,28 @@ router.patch(
         payload: { status }
       });
 
-      return result.rows[0];
+      const refreshed = await client.query(
+        `SELECT p.id,
+                p.store_id,
+                p.supplier,
+                p.brand,
+                p.status,
+                p.total,
+                p.items,
+                p.purchase_date,
+                p.created_at,
+                fe.due_date AS payment_due_date
+         FROM purchases p
+         LEFT JOIN finance_expenses fe
+           ON fe.store_id = p.store_id
+          AND fe.purchase_id = p.id
+         WHERE p.id = $1
+           AND p.store_id = $2
+         LIMIT 1`,
+        [id, storeId]
+      );
+
+      return refreshed.rows[0] || result.rows[0];
     });
 
     if (!updated) {

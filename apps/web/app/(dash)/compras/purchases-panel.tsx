@@ -18,6 +18,7 @@ type Purchase = {
   brand?: string | null;
   order_number?: string | null;
   purchase_date: string;
+  payment_due_date?: string | null;
   created_at: string;
 };
 
@@ -1947,7 +1948,12 @@ export default function PurchasesPanel({
                     <strong>Cartao de Credito</strong>
                     <span className="muted">Parcela 1 de 1</span>
                     <div className="purchase-payment-date">
-                      {formatDateLabel(viewPurchase.purchase_date || viewPurchase.created_at)}
+                      {formatDateLabel(
+                        viewPurchaseDetail?.payment_due_date ||
+                          viewPurchase.payment_due_date ||
+                          viewPurchase.purchase_date ||
+                          viewPurchase.created_at
+                      )}
                     </div>
                   </div>
                   <div className="purchase-payment-right">
