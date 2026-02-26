@@ -220,6 +220,22 @@ const ensurePurchasesTable = async () => {
 
     await query(
       `ALTER TABLE purchase_items
+       ADD COLUMN IF NOT EXISTS id uuid`
+    );
+
+    await query(
+      `UPDATE purchase_items
+       SET id = gen_random_uuid()
+       WHERE id IS NULL`
+    );
+
+    await query(
+      `ALTER TABLE purchase_items
+       ALTER COLUMN id SET DEFAULT gen_random_uuid()`
+    );
+
+    await query(
+      `ALTER TABLE purchase_items
        ADD COLUMN IF NOT EXISTS purchase_id uuid`
     );
 
