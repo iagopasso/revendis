@@ -1958,7 +1958,7 @@ export default function PurchasesPanel({
 
               {createStep === 'products' ? (
                 <>
-                  <button className="button ghost" type="button" onClick={() => closeCreate()}>
+                  <button className="button ghost" type="button" onClick={() => setCreateStep('basic')}>
                     Voltar
                   </button>
                   <button className="button primary purchase-create-next" type="button" onClick={handleProductsNextStep}>
