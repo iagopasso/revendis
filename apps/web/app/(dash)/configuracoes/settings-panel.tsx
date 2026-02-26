@@ -1414,11 +1414,18 @@ export default function SettingsPanel({
                   ) : (
                     filteredCatalogOptions.map((option) => {
                       const alreadyAdded = option.alreadyAdded;
+                      const catalogBrandLogo = resolveBrandLogo(option.label);
 
                       return (
                         <article key={option.slug} className="catalog-brand-picker-item">
                           <div className="catalog-brand-picker-info">
-                            <span className="catalog-brand-logo">{option.label.slice(0, 1).toUpperCase()}</span>
+                            <span className="catalog-brand-logo">
+                              {catalogBrandLogo ? (
+                                <img src={catalogBrandLogo} alt={option.label} />
+                              ) : (
+                                option.label.slice(0, 1).toUpperCase()
+                              )}
+                            </span>
                             <div className="catalog-brand-picker-text">
                               <strong>{option.label}</strong>
                               <span className="meta">{option.slug}</span>
