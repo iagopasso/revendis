@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import React from 'react';
 import Providers from './providers';
+import { DEFAULT_THEME_MODE, THEME_INIT_SCRIPT } from './theme';
 
 export const metadata: Metadata = {
   applicationName: 'Revendis',
@@ -34,8 +35,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" data-theme={DEFAULT_THEME_MODE} suppressHydrationWarning>
       <body suppressHydrationWarning>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <Providers>{children}</Providers>
       </body>
     </html>

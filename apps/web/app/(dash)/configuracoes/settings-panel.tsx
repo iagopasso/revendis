@@ -10,6 +10,7 @@ import {
   IconEdit,
   IconLock,
   IconPlus,
+  IconSettings,
   IconStar,
   IconTrash,
   IconUpload,
@@ -17,6 +18,7 @@ import {
 } from '../icons';
 import { API_BASE, buildMutationHeaders, toNumber } from '../lib';
 import { resolveBrandLogo } from '../brand-logos';
+import { readThemePreference, setThemePreference, type ThemeMode } from '../../theme';
 
 type BrandSource = 'existing' | 'catalog' | 'manual';
 type BrandCreateMode = 'catalog' | 'manual';
@@ -83,7 +85,7 @@ type SettingsPanelProps = {
   initialAccessMembers: AccessMember[];
 };
 
-type SettingsSection = 'conta' | 'assinatura' | 'marcas' | 'pix' | 'alerta' | 'acessos';
+type SettingsSection = 'conta' | 'assinatura' | 'marcas' | 'pix' | 'alerta' | 'acessos' | 'aparencia';
 
 type AccountForm = {
   ownerName: string;
@@ -134,6 +136,7 @@ const sectionOptions: Array<{
   { id: 'marcas', label: 'Gerenciar marcas', icon: IconStar },
   { id: 'pix', label: 'Chave Pix', icon: IconDiamond },
   { id: 'alerta', label: 'Alerta de vencimento', icon: IconCalendar },
+  { id: 'aparencia', label: 'Aparencia', icon: IconSettings },
   { id: 'acessos', label: 'Gerenciar acessos', icon: IconLock }
 ];
 
@@ -143,6 +146,7 @@ const sectionTitle: Record<SettingsSection, string> = {
   marcas: 'Configurar marcas revendidas',
   pix: 'Chave Pix',
   alerta: 'Alerta de vencimento',
+  aparencia: 'Aparencia',
   acessos: 'Gerenciar acessos'
 };
 
@@ -152,6 +156,7 @@ const sectionDescription: Record<SettingsSection, string> = {
   marcas: 'Adicione as marcas que voce revende para seus clientes.',
   pix: 'Configure as chaves para recebimentos e conciliacao.',
   alerta: 'Defina alertas de vencimento para recebiveis pendentes.',
+  aparencia: 'Escolha entre modo claro e modo escuro para o painel web.',
   acessos: 'Controle membros da equipe e niveis de permissao.'
 };
 
@@ -374,6 +379,7 @@ export default function SettingsPanel({
   const [alertsForm, setAlertsForm] = useState<AlertForm>(toAlertForm(initialAlerts));
   const [alertsSaving, setAlertsSaving] = useState(false);
   const [alertsError, setAlertsError] = useState<string | null>(null);
+  const [themeMode, setThemeMode] = useState<ThemeMode>('dark');
 
   const [members, setMembers] = useState<AccessMember[]>(initialAccessMembers);
   const [memberModalOpen, setMemberModalOpen] = useState(false);
@@ -411,6 +417,10 @@ export default function SettingsPanel({
   useEffect(() => {
     setMembers(initialAccessMembers);
   }, [initialAccessMembers]);
+
+  useEffect(() => {
+    setThemeMode(readThemePreference());
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -785,6 +795,12 @@ export default function SettingsPanel({
     } finally {
       setAlertsSaving(false);
     }
+  };
+
+  const handleChangeTheme = (nextTheme: ThemeMode) => {
+    setThemePreference(nextTheme);
+    setThemeMode(nextTheme);
+    setToast(nextTheme === 'dark' ? 'Modo escuro ativado' : 'Modo claro ativado');
   };
 
   const openCreateMember = () => {
@@ -1229,6 +1245,30 @@ export default function SettingsPanel({
     </div>
   );
 
+  const renderAppearanceSection = () => (
+    <div className="settings-form-card settings-theme-card">
+      <div className="settings-theme-options">
+        <button
+          type="button"
+          className={`settings-theme-option${themeMode === 'dark' ? ' active' : ''}`}
+          onClick={() => handleChangeTheme('dark')}
+        >
+          <strong>Modo escuro</strong>
+          <span>Visual com menor brilho para uso prolongado.</span>
+        </button>
+        <button
+          type="button"
+          className={`settings-theme-option${themeMode === 'light' ? ' active' : ''}`}
+          onClick={() => handleChangeTheme('light')}
+        >
+          <strong>Modo claro</strong>
+          <span>Visual de alto contraste para ambientes iluminados.</span>
+        </button>
+      </div>
+      <div className="settings-note">A alteracao e aplicada imediatamente e salva para os proximos acessos.</div>
+    </div>
+  );
+
   const renderAccessSection = () => (
     <div className="settings-access-panel">
       <div className="settings-access-toolbar">
@@ -1282,6 +1322,7 @@ export default function SettingsPanel({
     if (activeSection === 'assinatura') return renderSubscriptionSection();
     if (activeSection === 'pix') return renderPixSection();
     if (activeSection === 'alerta') return renderAlertSection();
+    if (activeSection === 'aparencia') return renderAppearanceSection();
     return renderAccessSection();
   };
 
