@@ -161,6 +161,7 @@ export type PurchaseUpdateInput = {
   brand?: string;
   purchaseDate?: string;
   dueDate?: string;
+  purchaseItems?: PurchaseItemInput[];
 };
 
 export type CustomerInput = {

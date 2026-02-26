@@ -1058,7 +1058,8 @@ export default function PurchasesPanel({
             total,
             brand: form.brand.trim(),
             purchaseDate: normalizedPurchaseDate,
-            dueDate: normalizedDueDate || undefined
+            dueDate: normalizedDueDate || undefined,
+            purchaseItems
           })
         });
 

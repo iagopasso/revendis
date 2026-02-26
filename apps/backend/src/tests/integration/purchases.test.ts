@@ -31,6 +31,15 @@ test('creates, updates and deletes purchase', async () => {
   expect(productRes.status).toBe(201);
   const productId = productRes.body.data.id as string;
 
+  const secondSku = `PUR-${Date.now()}-B`;
+  const secondProductRes = await request(app).post('/api/inventory/products').send({
+    name: 'Produto Compra Teste B',
+    sku: secondSku,
+    price: 18.9
+  });
+  expect(secondProductRes.status).toBe(201);
+  const secondProductId = secondProductRes.body.data.id as string;
+
   const createRes = await request(app).post('/api/purchases').send({
     supplier: 'Fornecedor Teste',
     total: 450.75,
@@ -98,7 +107,19 @@ test('creates, updates and deletes purchase', async () => {
     total: 390.5,
     items: 7,
     brand: 'Marca Atualizada',
-    purchaseDate: '2026-01-15'
+    purchaseDate: '2026-01-15',
+    purchaseItems: [
+      {
+        productId,
+        quantity: 2,
+        unitCost: 12.4
+      },
+      {
+        productId: secondProductId,
+        quantity: 1,
+        unitCost: 19.9
+      }
+    ]
   });
   expect(updateRes.status).toBe(200);
   expect(updateRes.body.data).toMatchObject({
@@ -110,6 +131,20 @@ test('creates, updates and deletes purchase', async () => {
   });
   const updatedPurchaseDate = new Date(updateRes.body.data.purchase_date).toISOString().slice(0, 10);
   expect(updatedPurchaseDate).toBe('2026-01-15');
+
+  const detailAfterUpdateRes = await request(app).get(`/api/purchases/${purchaseId}`);
+  expect(detailAfterUpdateRes.status).toBe(200);
+  expect(detailAfterUpdateRes.body.data.purchase_items).toHaveLength(2);
+  const detailItems = detailAfterUpdateRes.body.data.purchase_items as Array<{
+    product_id: string;
+    quantity: number | string;
+  }>;
+  expect(detailItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ product_id: productId, quantity: 2 }),
+      expect.objectContaining({ product_id: secondProductId, quantity: 1 })
+    ])
+  );
 
   const expenseAfterUpdate = await query<{
     purchase_id: string;

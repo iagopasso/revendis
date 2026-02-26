@@ -612,9 +612,11 @@ router.patch(
     await ensurePurchasesTable();
     const { id } = req.params;
     const payload = req.body as PurchaseUpdateInput;
-    const orgId = req.header('x-org-id') || null;
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const userId = req.header('x-user-id') || null;
+    const purchaseItemsProvided = payload.purchaseItems !== undefined;
+    const purchaseItemsPayload = payload.purchaseItems || [];
 
     const fields: string[] = [];
     const values: Array<string | number | null> = [];
@@ -684,7 +686,14 @@ router.patch(
       }
     }
 
-    if (!fields.length && !dueDateProvided) {
+    if (purchaseItemsProvided && purchaseItemsPayload.length <= 0) {
+      return res.status(400).json({
+        code: 'invalid_payload',
+        message: 'Inclua ao menos um produto na compra.'
+      });
+    }
+
+    if (!fields.length && !dueDateProvided && !purchaseItemsProvided) {
       return res.status(400).json({
         code: 'invalid_payload',
         message: 'Informe ao menos um campo para atualizar a compra.'
@@ -727,6 +736,38 @@ router.patch(
       }
 
       if (!updatedPurchase) return null;
+
+      if (purchaseItemsProvided) {
+        await client.query(
+          `DELETE FROM purchase_items
+           WHERE purchase_id = $1`,
+          [id]
+        );
+
+        for (const item of purchaseItemsPayload) {
+          const productRes = await client.query(
+            `SELECT id, sku
+             FROM products
+             WHERE id = $1 AND organization_id = $2`,
+            [item.productId, orgId]
+          );
+          if (!productRes.rows.length) {
+            throw buildError(400, 'invalid_purchase_item', 'Produto da compra nao encontrado.');
+          }
+
+          const productId = productRes.rows[0].id as string;
+          const sku = productRes.rows[0].sku as string;
+          const quantity = Math.max(1, Math.trunc(item.quantity));
+          const unitCost = typeof item.unitCost === 'number' ? Math.max(0, item.unitCost) : 0;
+          const expiresAt = item.expiresAt || null;
+
+          await client.query(
+            `INSERT INTO purchase_items (purchase_id, product_id, sku, quantity, unit_cost, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [id, productId, sku, quantity, unitCost, expiresAt]
+          );
+        }
+      }
 
       await syncPurchaseExpense({
         client,

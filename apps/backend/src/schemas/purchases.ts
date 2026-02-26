@@ -41,7 +41,8 @@ export const purchaseUpdateSchema = z
     items: z.number().int().positive().optional(),
     brand: z.string().optional(),
     purchaseDate: z.string().optional(),
-    dueDate: z.string().optional()
+    dueDate: z.string().optional(),
+    purchaseItems: z.array(purchaseItemSchema).optional()
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {
