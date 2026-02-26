@@ -15,6 +15,9 @@ const resolveBackendBase = () => {
 };
 
 const BACKEND_BASE = resolveBackendBase();
+const SERVER_MUTATION_TOKEN =
+  (process.env.MUTATION_AUTH_TOKEN || process.env.NEXT_PUBLIC_MUTATION_AUTH_TOKEN || '').trim();
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 const proxyToBackend = async (
   request: NextRequest,
@@ -30,6 +33,9 @@ const proxyToBackend = async (
   headers.delete('content-length');
 
   const method = request.method.toUpperCase();
+  if (SERVER_MUTATION_TOKEN && WRITE_METHODS.has(method) && !headers.has('x-mutation-token')) {
+    headers.set('x-mutation-token', SERVER_MUTATION_TOKEN);
+  }
   const hasBody = method !== 'GET' && method !== 'HEAD';
   const bodyBuffer = hasBody ? await request.arrayBuffer() : null;
   const body = bodyBuffer && bodyBuffer.byteLength > 0 ? bodyBuffer : undefined;
