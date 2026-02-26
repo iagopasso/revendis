@@ -202,83 +202,6 @@ const ensurePurchasesTable = async () => {
        )`
     );
 
-    // Keep backward compatibility for environments with older purchase schema.
-    await query(
-      `ALTER TABLE purchases
-       ADD COLUMN IF NOT EXISTS purchase_date date NOT NULL DEFAULT CURRENT_DATE`
-    );
-
-    await query(
-      `ALTER TABLE purchases
-       ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()`
-    );
-
-    await query(
-      `ALTER TABLE purchase_items
-       ADD COLUMN IF NOT EXISTS product_id uuid`
-    );
-
-    await query(
-      `ALTER TABLE purchase_items
-       ADD COLUMN IF NOT EXISTS id uuid`
-    );
-
-    await query(
-      `UPDATE purchase_items
-       SET id = gen_random_uuid()
-       WHERE id IS NULL`
-    );
-
-    await query(
-      `ALTER TABLE purchase_items
-       ALTER COLUMN id SET DEFAULT gen_random_uuid()`
-    );
-
-    await query(
-      `ALTER TABLE purchase_items
-       ADD COLUMN IF NOT EXISTS purchase_id uuid`
-    );
-
-    await query(
-      `ALTER TABLE purchase_items
-       ADD COLUMN IF NOT EXISTS sku text`
-    );
-
-    await query(
-      `ALTER TABLE purchase_items
-       ADD COLUMN IF NOT EXISTS quantity integer NOT NULL DEFAULT 1`
-    );
-
-    await query(
-      `ALTER TABLE purchase_items
-       ADD COLUMN IF NOT EXISTS unit_cost numeric(12,2) NOT NULL DEFAULT 0`
-    );
-
-    await query(
-      `ALTER TABLE purchase_items
-       ADD COLUMN IF NOT EXISTS expires_at date`
-    );
-
-    await query(
-      `ALTER TABLE purchase_items
-       ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()`
-    );
-
-    await query(
-      `ALTER TABLE products
-       ADD COLUMN IF NOT EXISTS brand text`
-    );
-
-    await query(
-      `ALTER TABLE products
-       ADD COLUMN IF NOT EXISTS barcode text`
-    );
-
-    await query(
-      `ALTER TABLE products
-       ADD COLUMN IF NOT EXISTS image_url text`
-    );
-
     await query(
       `DO $$
        BEGIN
@@ -472,7 +395,7 @@ router.get(
               p.barcode AS product_barcode
        FROM purchase_items pi
        LEFT JOIN products p
-         ON p.id::text = pi.product_id::text
+         ON p.id = pi.product_id
        WHERE pi.purchase_id = $1
        ORDER BY pi.created_at ASC, pi.id ASC`,
       [id]
