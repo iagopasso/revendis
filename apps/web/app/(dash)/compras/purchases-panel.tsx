@@ -1204,9 +1204,7 @@ export default function PurchasesPanel({
     setViewPurchaseLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/purchases/${purchaseId}`, {
-        headers: buildMutationHeaders()
-      });
+      const res = await fetch(`${API_BASE}/purchases/${purchaseId}`);
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { message?: string } | null;
         setViewPurchaseError(payload?.message || 'Nao foi possivel carregar os itens da compra.');
@@ -1245,9 +1243,7 @@ export default function PurchasesPanel({
     setProcessingId(purchase.id);
 
     try {
-      const res = await fetch(`${API_BASE}/purchases/${purchase.id}`, {
-        headers: buildMutationHeaders()
-      });
+      const res = await fetch(`${API_BASE}/purchases/${purchase.id}`);
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { message?: string } | null;
         setActionError(payload?.message || 'Nao foi possivel carregar a compra para editar.');
