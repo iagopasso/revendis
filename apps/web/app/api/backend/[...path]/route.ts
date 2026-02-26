@@ -33,8 +33,9 @@ const proxyToBackend = async (
   headers.delete('content-length');
 
   const method = request.method.toUpperCase();
-  if (SERVER_MUTATION_TOKEN && WRITE_METHODS.has(method) && !headers.has('x-mutation-token')) {
+  if (SERVER_MUTATION_TOKEN && WRITE_METHODS.has(method)) {
     headers.set('x-mutation-token', SERVER_MUTATION_TOKEN);
+    headers.set('authorization', `Bearer ${SERVER_MUTATION_TOKEN}`);
   }
   const hasBody = method !== 'GET' && method !== 'HEAD';
   const bodyBuffer = hasBody ? await request.arrayBuffer() : null;
