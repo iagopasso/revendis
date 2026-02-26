@@ -10,25 +10,61 @@ import { writeAudit } from '../utils/audit';
 import { parseSaleCreatedAt } from '../utils/sale-date';
 
 const router = Router();
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const toQueryString = (value: unknown) => {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  return '';
+};
+
+const normalizeDateInput = (value: unknown) => {
+  const input = toQueryString(value).trim();
+  if (!input) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) return null;
+  const parsed = new Date(`${input}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return input;
+};
+
+const resolveCustomerFilter = (value: unknown) => {
+  const input = toQueryString(value).trim();
+  if (!input) return { customerId: null, customerName: null };
+  if (UUID_REGEX.test(input)) return { customerId: input, customerName: null };
+  return { customerId: null, customerName: input };
+};
 
 router.get(
   '/sales/orders',
   asyncHandler(async (req, res) => {
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
+    const from = normalizeDateInput(req.query.from);
+    const to = normalizeDateInput(req.query.to);
+    const { customerId, customerName } = resolveCustomerFilter(req.query.customer);
+    const hasFilters = Boolean(from || to || customerId || customerName);
     const result = await query(
       `WITH base_sales AS (
          SELECT s.id,
+                s.customer_id,
                 s.status,
                 s.subtotal,
                 s.discount_total,
                 s.total,
                 s.created_at,
-                s.customer_id,
-                s.customer_name
+                COALESCE(c.name, s.customer_name) AS customer_name,
+                c.photo_url AS customer_photo_url
          FROM sales s
+         LEFT JOIN customers c ON c.id = s.customer_id
          WHERE s.store_id = $1
+           AND ($2::date IS NULL OR s.created_at::date >= $2::date)
+           AND ($3::date IS NULL OR s.created_at::date <= $3::date)
+           AND ($4::uuid IS NULL OR s.customer_id = $4::uuid)
+           AND (
+             $5::text IS NULL
+             OR lower(trim(COALESCE(c.name, s.customer_name, ''))) = lower(trim($5::text))
+           )
          ORDER BY s.created_at DESC
-         LIMIT 100
+         LIMIT CASE WHEN $6::boolean THEN 100 ELSE 5000 END
        ),
        item_totals AS (
          SELECT si.sale_id, COALESCE(SUM(si.quantity), 0) AS total_quantity
@@ -49,17 +85,16 @@ router.get(
               bs.discount_total,
               bs.total,
               bs.created_at,
-              COALESCE(c.name, bs.customer_name) AS customer_name,
-              c.photo_url AS customer_photo_url,
+              bs.customer_name,
+              bs.customer_photo_url,
               COALESCE(items.total_quantity, 0) AS items_count,
               COALESCE(costs.cost_total, 0) AS cost_total,
               (bs.total - COALESCE(costs.cost_total, 0)) AS profit
        FROM base_sales bs
-       LEFT JOIN customers c ON c.id = bs.customer_id
        LEFT JOIN item_totals items ON items.sale_id = bs.id
        LEFT JOIN cost_totals costs ON costs.sale_id = bs.id
        ORDER BY bs.created_at DESC`,
-      [storeId]
+      [storeId, from, to, customerId, customerName, !hasFilters]
     );
     res.json({ data: result.rows });
   })

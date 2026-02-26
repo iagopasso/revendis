@@ -177,6 +177,42 @@ const parseMaskedDateToIso = (value: string) => {
   return iso;
 };
 
+const normalizeInputDate = (value?: string | null) => {
+  const trimmed = value?.trim() || '';
+  if (!trimmed) return '';
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const isoPrefix = trimmed.match(/^(\d{4}-\d{2}-\d{2})T/);
+  if (isoPrefix?.[1]) return isoPrefix[1];
+
+  const brDate = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brDate) {
+    const day = brDate[1];
+    const month = brDate[2];
+    const year = brDate[3];
+    const iso = `${year}-${month}-${day}`;
+    const parsed = new Date(`${iso}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return '';
+    if (parsed.getUTCFullYear() !== Number(year)) return '';
+    if (parsed.getUTCMonth() + 1 !== Number(month)) return '';
+    if (parsed.getUTCDate() !== Number(day)) return '';
+    return iso;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return toInputDate(parsed);
+};
+
+const isoDateToMask = (value?: string | null) => {
+  const normalized = normalizeInputDate(value);
+  if (!normalized) return '';
+  const [year, month, day] = normalized.split('-');
+  if (!year || !month || !day) return '';
+  return `${day}/${month}/${year}`;
+};
+
 const createDefaultForm = (): PurchaseForm => ({
   orderNumber: '',
   supplier: 'Fornecedor nao informado',
@@ -236,11 +272,11 @@ const createPurchaseDraftItem = (product: Product): PurchaseDraftItem => ({
 });
 
 const formatDateLabel = (value: string) => {
-  if (!value) return '--';
-  const raw = value.includes('T') ? value : `${value}T00:00:00`;
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('pt-BR');
+  const normalized = normalizeInputDate(value);
+  if (!normalized) return value || '--';
+  const [year, month, day] = normalized.split('-');
+  if (!year || !month || !day) return value || '--';
+  return `${day}/${month}/${year}`;
 };
 
 const createDraftPurchase = ({
@@ -263,7 +299,7 @@ const createDraftPurchase = ({
   items: Math.max(0, items),
   brand: form.brand.trim() || null,
   order_number: form.orderNumber.trim() || null,
-  purchase_date: form.purchaseDate || toInputDate(new Date()),
+  purchase_date: normalizeInputDate(form.purchaseDate) || toInputDate(new Date()),
   created_at: createdAt || new Date().toISOString()
 });
 
@@ -301,7 +337,7 @@ const snapshotFromPurchase = (purchase: Purchase): DraftSnapshot => ({
     brand: purchase.brand?.trim() || '',
     items: toNumber(purchase.items) > 0 ? String(toNumber(purchase.items)) : '',
     total: toNumber(purchase.total) > 0 ? formatCurrency(toNumber(purchase.total)) : '',
-    purchaseDate: purchase.purchase_date || toInputDate(new Date())
+    purchaseDate: normalizeInputDate(purchase.purchase_date) || toInputDate(new Date())
   },
   items: []
 });
@@ -373,8 +409,8 @@ const parseDraftPurchase = (value: unknown): Purchase | null => {
   const orderNumber = typeof value.order_number === 'string' ? value.order_number : null;
   const purchaseDate =
     typeof value.purchase_date === 'string' && value.purchase_date.trim()
-      ? value.purchase_date
-      : toInputDate(new Date());
+      ? normalizeInputDate(value.purchase_date)
+      : '';
   const createdAt =
     typeof value.created_at === 'string' && value.created_at.trim()
       ? value.created_at
@@ -388,7 +424,7 @@ const parseDraftPurchase = (value: unknown): Purchase | null => {
     items,
     brand,
     order_number: orderNumber,
-    purchase_date: purchaseDate,
+    purchase_date: purchaseDate || toInputDate(new Date()),
     created_at: createdAt
   };
 };
@@ -510,6 +546,7 @@ export default function PurchasesPanel({
   const [viewPurchaseDetail, setViewPurchaseDetail] = useState<PurchaseDetail | null>(null);
   const [viewPurchaseLoading, setViewPurchaseLoading] = useState(false);
   const [viewPurchaseError, setViewPurchaseError] = useState<string | null>(null);
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const viewBrandLogo = resolveBrandLogo(
     (viewPurchaseDetail?.brand || viewPurchase?.brand || null) as string | null
   );
@@ -619,7 +656,7 @@ export default function PurchasesPanel({
   };
 
   useEffect(() => {
-    const baseDate = form.purchaseDate || toInputDate(new Date());
+    const baseDate = normalizeInputDate(form.purchaseDate) || toInputDate(new Date());
     const count = Math.max(1, installments.length);
     setInstallments(distributeInstallments(count, purchaseTotal, baseDate));
     setForm((prev) => ({
@@ -680,19 +717,18 @@ export default function PurchasesPanel({
   );
 
   const purchaseProductResults = useMemo(() => {
-    const normalizedQuery = purchaseProductQuery.trim().toLowerCase();
     const base = brandScopedProducts.filter((product) => !selectedProductIds.has(product.id));
-    if (!normalizedQuery) return base;
+    const normalizedQuery = purchaseProductQuery.trim().toLowerCase();
+    if (!normalizedQuery) return [];
 
-    return base
-      .filter((product) => {
-        return (
-          product.name.toLowerCase().includes(normalizedQuery) ||
-          product.sku.toLowerCase().includes(normalizedQuery) ||
-          (product.brand || '').toLowerCase().includes(normalizedQuery) ||
-          (product.barcode || '').toLowerCase().includes(normalizedQuery)
-        );
-      });
+    return base.filter((product) => {
+      return (
+        product.name.toLowerCase().includes(normalizedQuery) ||
+        product.sku.toLowerCase().includes(normalizedQuery) ||
+        (product.brand || '').toLowerCase().includes(normalizedQuery) ||
+        (product.barcode || '').toLowerCase().includes(normalizedQuery)
+      );
+    });
   }, [brandScopedProducts, purchaseProductQuery, selectedProductIds]);
 
   const purchaseItemsCount = useMemo(
@@ -792,6 +828,7 @@ export default function PurchasesPanel({
     setFormError(null);
     setSaving(false);
     setActiveDraftId(null);
+    setEditingPurchaseId(null);
     setForm(createDefaultForm());
   };
 
@@ -805,15 +842,26 @@ export default function PurchasesPanel({
     setCreateStep('basic');
     setCreateOpen(true);
     setActiveDraftId(null);
+    setEditingPurchaseId(null);
   };
 
   const handleCreateNextStep = () => {
     const nextErrors: { brand?: string; orderNumber?: string; purchaseDate?: string } = {};
     if (!form.brand.trim()) nextErrors.brand = 'Campo obrigatorio';
-    if (!form.orderNumber.trim()) nextErrors.orderNumber = 'Campo obrigatorio';
-    if (!form.purchaseDate) nextErrors.purchaseDate = 'Campo obrigatorio';
+    if (!editingPurchaseId && !form.orderNumber.trim()) nextErrors.orderNumber = 'Campo obrigatorio';
+    if (!normalizeInputDate(form.purchaseDate)) nextErrors.purchaseDate = 'Campo obrigatorio';
     setBasicErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
+
+    if (editingPurchaseId) {
+      setCreateStep('products');
+      setCreateOpen(true);
+      setProductSearchOpen(false);
+      setPurchaseProductQuery('');
+      setFormError(null);
+      setMenuOpenId(null);
+      return;
+    }
 
     const draftId =
       activeDraftId || `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -857,7 +905,7 @@ export default function PurchasesPanel({
       brand: purchase.brand?.trim() || '',
       items: toNumber(purchase.items) > 0 ? String(toNumber(purchase.items)) : '',
       total: toNumber(purchase.total) > 0 ? formatCurrency(toNumber(purchase.total)) : '',
-      purchaseDate: purchase.purchase_date || toInputDate(new Date())
+      purchaseDate: normalizeInputDate(purchase.purchase_date) || toInputDate(new Date())
     };
 
     setForm(snapshot ? cloneForm(snapshot.form) : fallbackForm);
@@ -869,6 +917,7 @@ export default function PurchasesPanel({
     setCreateStep('products');
     setCreateOpen(true);
     setActiveDraftId(purchase.id);
+    setEditingPurchaseId(null);
     setMenuOpenId(null);
   };
 
@@ -894,7 +943,7 @@ export default function PurchasesPanel({
   const handleProductSearchSelect = (product: Product) => {
     setPurchaseDraftItems((prev) => [...prev, createPurchaseDraftItem(product)]);
     setPurchaseProductQuery('');
-    setProductSearchOpen(true);
+    setProductSearchOpen(false);
     setFormError(null);
   };
 
@@ -988,15 +1037,74 @@ export default function PurchasesPanel({
       return;
     }
 
-    if (!form.purchaseDate) {
-      setFormError('Informe a data da compra.');
+    const normalizedPurchaseDate = normalizeInputDate(form.purchaseDate);
+    if (!normalizedPurchaseDate) {
+      setFormError('Informe a data da compra no formato YYYY-MM-DD.');
       return;
     }
+    const normalizedDueDate = normalizeInputDate(installments[0]?.dueDate);
 
     setSaving(true);
     setFormError(null);
 
     try {
+      if (editingPurchaseId) {
+        const res = await fetch(`${API_BASE}/purchases/${editingPurchaseId}`, {
+          method: 'PATCH',
+          headers: buildMutationHeaders(),
+          body: JSON.stringify({
+            supplier,
+            items,
+            total,
+            brand: form.brand.trim(),
+            purchaseDate: normalizedPurchaseDate,
+            dueDate: normalizedDueDate || undefined
+          })
+        });
+
+        const payload = (await res.json().catch(() => null)) as { data?: Purchase; message?: string } | null;
+        if (!res.ok || !payload?.data) {
+          setFormError(payload?.message || 'Erro ao atualizar compra.');
+          return;
+        }
+        const updatedPurchase = payload.data;
+
+        setPurchases((prev) =>
+          sortPurchases(
+            prev.map((item) =>
+              item.id === editingPurchaseId
+                ? {
+                    ...item,
+                    ...updatedPurchase,
+                    order_number: updatedPurchase.order_number ?? item.order_number
+                  }
+                : item
+            )
+          )
+        );
+        setViewPurchase((prev) =>
+          prev && prev.id === editingPurchaseId
+            ? {
+                ...prev,
+                ...updatedPurchase,
+                order_number: updatedPurchase.order_number ?? prev.order_number
+              }
+            : prev
+        );
+        setViewPurchaseDetail((prev) =>
+          prev && prev.id === editingPurchaseId
+            ? {
+                ...prev,
+                ...updatedPurchase,
+                order_number: updatedPurchase.order_number ?? prev.order_number
+              }
+            : prev
+        );
+
+        closeCreate(false);
+        return;
+      }
+
       const res = await fetch(`${API_BASE}/purchases`, {
         method: 'POST',
         headers: buildMutationHeaders(),
@@ -1005,7 +1113,7 @@ export default function PurchasesPanel({
           items,
           total,
           brand: form.brand.trim() || undefined,
-          purchaseDate: form.purchaseDate,
+          purchaseDate: normalizedPurchaseDate,
           status: 'pending',
           purchaseItems
         })
@@ -1048,7 +1156,7 @@ export default function PurchasesPanel({
       setForm(createDefaultForm());
       closeCreate(false);
     } catch {
-      setFormError('Erro ao criar compra.');
+      setFormError(editingPurchaseId ? 'Erro ao atualizar compra.' : 'Erro ao criar compra.');
     } finally {
       setSaving(false);
     }
@@ -1129,6 +1237,72 @@ export default function PurchasesPanel({
     setViewPurchaseDetail(null);
     setViewPurchaseError(null);
     setViewPurchaseLoading(false);
+  };
+
+  const startEditPurchase = async (purchase: Purchase) => {
+    setActionError(null);
+    setMenuOpenId(null);
+    setProcessingId(purchase.id);
+
+    try {
+      const res = await fetch(`${API_BASE}/purchases/${purchase.id}`, {
+        headers: buildMutationHeaders()
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+        setActionError(payload?.message || 'Nao foi possivel carregar a compra para editar.');
+        return;
+      }
+
+      const payload = (await res.json().catch(() => null)) as { data?: PurchaseDetail } | null;
+      if (!payload?.data) {
+        setActionError('Nao foi possivel carregar a compra para editar.');
+        return;
+      }
+
+      const detail = payload.data;
+      const draftItems: PurchaseDraftItem[] = detail.purchase_items.map((item) => ({
+        id: item.id,
+        productId: item.product_id,
+        price: formatCurrency(Math.max(0, toNumber(item.unit_cost))),
+        expiryDate: isoDateToMask(item.expires_at),
+        quantity: String(Math.max(1, Math.trunc(toNumber(item.quantity))))
+      }));
+
+      setForm({
+        orderNumber: detail.order_number?.trim() || purchase.order_number?.trim() || '',
+        supplier: detail.supplier?.trim() || 'Fornecedor nao informado',
+        brand: detail.brand?.trim() || '',
+        items: toNumber(detail.items) > 0 ? String(Math.trunc(toNumber(detail.items))) : '',
+        total: toNumber(detail.total) > 0 ? formatCurrency(toNumber(detail.total)) : '',
+        purchaseDate: normalizeInputDate(detail.purchase_date) || toInputDate(new Date())
+      });
+      setPurchaseDraftItems(draftItems);
+      setPurchaseProductQuery('');
+      setProductSearchOpen(false);
+      setBasicErrors({});
+      setFormError(null);
+      setCreateStep('details');
+      setCreateOpen(true);
+      setActiveDraftId(null);
+      setEditingPurchaseId(purchase.id);
+      setFreight('');
+      setAddition('');
+      setDiscount('');
+      setPaymentMethod('Cartao de Credito');
+      setInstallments(
+        distributeInstallments(
+          1,
+          Math.max(0, toNumber(detail.total)),
+          normalizeInputDate(detail.purchase_date) || toInputDate(new Date())
+        )
+      );
+      closeViewPurchase();
+    } catch {
+      setActionError('Nao foi possivel carregar a compra para editar.');
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   useEffect(() => {
@@ -1386,7 +1560,7 @@ export default function PurchasesPanel({
             onKeyDown={handleCreateModalKeyDown}
           >
             <div className="modal-header">
-              <h3>Nova compra</h3>
+              <h3>{editingPurchaseId ? 'Editar compra' : 'Nova compra'}</h3>
               <button className="modal-close" type="button" onClick={() => closeCreate()}>
                 ✕
               </button>
@@ -1457,13 +1631,15 @@ export default function PurchasesPanel({
                     <span className="input-field-label">Buscar produto</span>
                     <input
                       aria-label="Buscar produto para compra"
-                      placeholder="Busque usando o nome, codigo da marca ou codigo de barras"
+                      placeholder="Busque usando o nome, codigo do produto ou codigo de barras"
                       value={purchaseProductQuery}
-                      onFocus={() => setProductSearchOpen(true)}
+                      onFocus={() => {
+                        if (purchaseProductQuery.trim()) setProductSearchOpen(true);
+                      }}
                       onChange={(event) => {
                         const value = event.target.value;
                         setPurchaseProductQuery(value);
-                        setProductSearchOpen(true);
+                        setProductSearchOpen(Boolean(value.trim()));
                       }}
                       onKeyDown={(event) => {
                         if (event.key !== 'Enter') return;
@@ -1477,7 +1653,7 @@ export default function PurchasesPanel({
                     </span>
                   </label>
 
-                  {productSearchOpen ? (
+                  {productSearchOpen && purchaseProductQuery.trim() ? (
                     <div className="purchase-create-search-results store-modal-list">
                       {purchaseProductResults.length === 0 ? (
                         <span className="meta">Nenhum produto encontrado para a marca selecionada.</span>
@@ -1522,7 +1698,7 @@ export default function PurchasesPanel({
                       <IconBox />
                     </span>
                     <strong>Nenhum produto incluido</strong>
-                    <span>Busque por um produto usando o nome, codigo da marca ou codigo de barras.</span>
+                    <span>Busque por um produto usando o nome, codigo do produto ou codigo de barras.</span>
                   </div>
                 ) : (
                   <div className="purchase-create-products-table">
@@ -1734,13 +1910,14 @@ export default function PurchasesPanel({
                               <input
                                 type="date"
                                 value={item.dueDate}
-                                onChange={(event) =>
+                                onChange={(event) => {
+                                  const nextDate = event.target.value;
                                   setInstallments((prev) =>
                                     prev.map((inst) =>
-                                      inst.id === item.id ? { ...inst, dueDate: event.target.value } : inst
+                                      inst.id === item.id ? { ...inst, dueDate: nextDate } : inst
                                     )
-                                  )
-                                }
+                                  );
+                                }}
                               />
                             </label>
                             <label>
@@ -1800,7 +1977,7 @@ export default function PurchasesPanel({
                     Voltar
                   </button>
                   <button className="button primary" type="button" onClick={handleCreatePurchase} disabled={saving}>
-                    {saving ? 'Salvando...' : 'Salvar compra'}
+                    {saving ? 'Salvando...' : editingPurchaseId ? 'Salvar edicao' : 'Salvar compra'}
                   </button>
                 </>
               ) : null}
@@ -1973,6 +2150,14 @@ export default function PurchasesPanel({
             <div className="modal-footer purchase-view-actions">
               <button className="button ghost" type="button" onClick={closeViewPurchase}>
                 Fechar
+              </button>
+              <button
+                className="button ghost"
+                type="button"
+                onClick={() => void startEditPurchase(viewPurchase)}
+                disabled={processingId === viewPurchase.id}
+              >
+                Editar compra
               </button>
               {viewPurchase.status === 'pending' ? (
                 <button

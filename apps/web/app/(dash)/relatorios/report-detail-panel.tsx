@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import DateRangePicker from '../date-range';
@@ -17,6 +18,11 @@ type ReportTableRow = {
   values: Record<string, string>;
 };
 
+type ReportCustomerOption = {
+  value: string;
+  label: string;
+};
+
 type ReportDetailPanelProps = {
   breadcrumb: string;
   title: string;
@@ -28,6 +34,8 @@ type ReportDetailPanelProps = {
   backHref?: string;
   periodLabel?: string;
   dateRangeDefaultPreset?: string;
+  selectedCustomer?: string;
+  customerOptions?: ReportCustomerOption[];
 };
 
 const csvEscape = (value: string) => `"${value.replace(/"/g, '""')}"`;
@@ -54,8 +62,13 @@ export default function ReportDetailPanel({
   emptyMessage,
   backHref = '/relatorios',
   periodLabel = 'Ultimos 28 dias',
-  dateRangeDefaultPreset = '28d'
+  dateRangeDefaultPreset = '28d',
+  selectedCustomer = '',
+  customerOptions = []
 }: ReportDetailPanelProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [downloadOpen, setDownloadOpen] = useState(false);
   const breadcrumbParts = useMemo(
     () => breadcrumb.split('›').map((part) => part.trim()).filter(Boolean),
@@ -63,6 +76,7 @@ export default function ReportDetailPanel({
   );
   const breadcrumbRoot = breadcrumbParts[0] || 'Relatorios';
   const breadcrumbCurrent = breadcrumbParts[1] || title;
+  const hasCustomerFilter = customerOptions.length > 0;
 
   useEffect(() => {
     if (!downloadOpen) return;
@@ -206,6 +220,17 @@ export default function ReportDetailPanel({
     setDownloadOpen(false);
   };
 
+  const updateCustomerFilter = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set('customer', value);
+    } else {
+      params.delete('customer');
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  };
+
   return (
     <section className="report-detail-shell">
       <div className="report-detail-header-row">
@@ -244,6 +269,19 @@ export default function ReportDetailPanel({
 
       <div className="report-detail-toolbar">
         <DateRangePicker defaultPreset={dateRangeDefaultPreset} />
+        {hasCustomerFilter ? (
+          <label className="report-detail-customer-field">
+            <span>Cliente</span>
+            <select value={selectedCustomer} onChange={(event) => updateCustomerFilter(event.target.value)}>
+              <option value="">Todos os clientes</option>
+              {customerOptions.map((customer) => (
+                <option key={customer.value} value={customer.value}>
+                  {customer.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
 
       {rows.length === 0 ? (

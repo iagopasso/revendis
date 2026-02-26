@@ -10,6 +10,8 @@ const toDateInput = (value: unknown) => {
   return '';
 };
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const normalizeDateInput = (value: unknown) => {
   const input = toDateInput(value).trim();
   if (!input) return null;
@@ -19,7 +21,23 @@ const normalizeDateInput = (value: unknown) => {
   return input;
 };
 
-const toIsoDate = (date: Date) => date.toISOString().slice(0, 10);
+const resolveCustomerFilter = (customerValue: unknown) => {
+  const raw = toDateInput(customerValue).trim();
+  if (!raw) {
+    return { customerId: null, customerName: null };
+  }
+  if (UUID_REGEX.test(raw)) {
+    return { customerId: raw, customerName: null };
+  }
+  return { customerId: null, customerName: raw };
+};
+
+const toIsoDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const resolveRangeDates = (fromValue: unknown, toValue: unknown) => {
   const fromInput = normalizeDateInput(fromValue);
@@ -60,6 +78,7 @@ router.get('/reports/top-products', async (req, res, next) => {
   try {
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const { from, to } = resolveRangeDates(req.query.from, req.query.to);
+    const { customerId, customerName } = resolveCustomerFilter(req.query.customer);
     const result = await query(
       `SELECT COALESCE(p.name, si.sku) AS product_name,
               si.sku,
@@ -70,13 +89,19 @@ router.get('/reports/top-products', async (req, res, next) => {
        FROM sale_items si
        JOIN sales s ON s.id = si.sale_id
        LEFT JOIN products p ON p.id = si.product_id
+       LEFT JOIN customers c ON c.id = s.customer_id
        WHERE s.store_id = $1
          AND ($2::date IS NULL OR s.created_at::date >= $2::date)
          AND ($3::date IS NULL OR s.created_at::date <= $3::date)
+         AND ($4::uuid IS NULL OR s.customer_id = $4::uuid)
+         AND (
+           $5::text IS NULL
+           OR lower(trim(COALESCE(c.name, s.customer_name, ''))) = lower(trim($5::text))
+         )
        GROUP BY COALESCE(p.name, si.sku), si.sku
        ORDER BY sold_qty DESC, sold_total DESC
        LIMIT 50`,
-      [storeId, from, to]
+      [storeId, from, to, customerId, customerName]
     );
 
     res.json({ data: result.rows });

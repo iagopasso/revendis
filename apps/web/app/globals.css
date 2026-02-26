@@ -3344,6 +3344,7 @@ button.dashboard-reminder-card {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 10px;
 }
 
 .report-detail-toolbar .date-range-trigger {
@@ -3354,6 +3355,27 @@ button.dashboard-reminder-card {
   padding: 10px 14px;
   font-size: 0.92rem;
   font-weight: 600;
+}
+
+.report-detail-customer-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #1f2937;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.report-detail-customer-field select {
+  min-height: 40px;
+  min-width: 230px;
+  border-radius: 8px;
+  border: 1px solid #d6ddeb;
+  background: #ffffff;
+  color: #1f2937;
+  font: inherit;
+  font-weight: 500;
+  padding: 0 10px;
 }
 
 .report-detail-period {
@@ -4618,6 +4640,18 @@ button.dashboard-reminder-card {
   color: #475569;
 }
 
+.purchase-view-input {
+  width: 180px;
+  max-width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+  text-align: right;
+}
+
 .purchase-view-field.total {
   font-size: 1.05rem;
 }
@@ -4679,6 +4713,22 @@ button.dashboard-reminder-card {
 .purchase-payment-date {
   font-weight: 700;
   margin-top: 6px;
+}
+
+.purchase-payment-date-edit {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.purchase-payment-date-edit > span {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.purchase-payment-date-edit .purchase-view-input {
+  width: 170px;
+  text-align: left;
 }
 
 .purchase-payment-right {
@@ -4839,8 +4889,12 @@ button.dashboard-reminder-card {
   border: none;
   padding: 0;
   background: #f1f5f9;
-  height: 208px;
-  flex: 0 0 208px;
+  width: 100%;
+  aspect-ratio: 5 / 4;
+  min-height: 164px;
+  max-height: 208px;
+  height: auto;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -9944,8 +9998,8 @@ button.dashboard-reminder-card {
   }
 
   .inventory-thumb {
-    height: 182px;
-    flex-basis: 182px;
+    min-height: 156px;
+    max-height: 186px;
   }
 
   .inventory-thumb .product-thumb-image {
@@ -10233,8 +10287,8 @@ button.dashboard-reminder-card {
   }
 
   .inventory-thumb {
-    height: 216px;
-    flex-basis: 216px;
+    min-height: 176px;
+    max-height: 208px;
   }
 }
 
@@ -14697,6 +14751,7 @@ button.dashboard-reminder-card {
 @media (max-width: 768px) {
   .report-detail-toolbar {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .report-detail-toolbar .date-range,
@@ -14713,6 +14768,17 @@ button.dashboard-reminder-card {
     right: auto;
     width: min(360px, calc(100vw - 28px));
     max-width: calc(100vw - 28px);
+  }
+
+  .report-detail-customer-field {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .report-detail-customer-field select {
+    width: 100%;
+    min-width: 0;
   }
 
   input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):not(
@@ -15054,8 +15120,8 @@ button.dashboard-reminder-card {
   }
 
   .inventory-scope .inventory-thumb {
-    height: 204px;
-    flex-basis: 204px;
+    min-height: 172px;
+    max-height: 204px;
   }
 
   .inventory-scope .inventory-thumb .product-thumb-image {

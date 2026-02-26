@@ -1,4 +1,4 @@
-import { fetchList, formatCurrency, isInDateRange, toNumber, digitsOnly } from '../../lib';
+import { fetchList, formatCurrency, getStringParam, toNumber, digitsOnly } from '../../lib';
 import ReportDetailPanel from '../report-detail-panel';
 import { buildReportRangeContext, type ReportSearchParams } from '../range';
 
@@ -11,15 +11,55 @@ type TopProduct = {
   last_sale_at: string;
 };
 
+type SaleCustomer = {
+  customer_id?: string | null;
+  customer_name?: string | null;
+  created_at: string;
+};
+
+const getCustomerValue = (sale: SaleCustomer) => {
+  const customerId = sale.customer_id?.trim();
+  if (customerId) return customerId;
+  return sale.customer_name?.trim() || '';
+};
+
+const getCustomerLabel = (sale: SaleCustomer) => sale.customer_name?.trim() || '';
+
 export default async function RelatorioProdutosMaisVendidosPage({
   searchParams
 }: {
   searchParams?: Promise<ReportSearchParams>;
 }) {
   const resolvedParams = (await searchParams) || {};
-  const { dateRange, periodLabel, rangeQuery } = buildReportRangeContext(resolvedParams);
-  const response = await fetchList<TopProduct>(`/reports/top-products${rangeQuery}`);
-  const products = (response?.data ?? []).filter((product) => isInDateRange(product.last_sale_at, dateRange));
+  const selectedCustomer = getStringParam(resolvedParams.customer).trim();
+  const { periodLabel, rangeQuery } = buildReportRangeContext(resolvedParams);
+  const reportQueryParams = new URLSearchParams(rangeQuery.startsWith('?') ? rangeQuery.slice(1) : '');
+  if (selectedCustomer) {
+    reportQueryParams.set('customer', selectedCustomer);
+  }
+  const reportQuery = reportQueryParams.toString();
+  const salesQueryParams = new URLSearchParams(rangeQuery.startsWith('?') ? rangeQuery.slice(1) : '');
+  const salesQuery = salesQueryParams.toString();
+
+  const [topProductsResponse, salesResponse] = await Promise.all([
+    fetchList<TopProduct>(`/reports/top-products${reportQuery ? `?${reportQuery}` : ''}`),
+    fetchList<SaleCustomer>(`/sales/orders${salesQuery ? `?${salesQuery}` : ''}`)
+  ]);
+
+  const products = topProductsResponse?.data ?? [];
+  const salesInRange = salesResponse?.data ?? [];
+  const customerOptionsMap = new Map<string, string>();
+
+  salesInRange.forEach((sale) => {
+    const value = getCustomerValue(sale);
+    const label = getCustomerLabel(sale);
+    if (!value || !label || customerOptionsMap.has(value)) return;
+    customerOptionsMap.set(value, label);
+  });
+
+  const customerOptions = Array.from(customerOptionsMap.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
 
   const columns = [
     { key: 'rank', label: '#' },
@@ -57,6 +97,8 @@ export default async function RelatorioProdutosMaisVendidosPage({
         exportBaseName="relatorio-produtos-mais-vendidos"
         emptyTitle="Nenhum produto vendido no periodo"
         emptyMessage="Nao ha vendas de produtos no periodo selecionado."
+        selectedCustomer={selectedCustomer}
+        customerOptions={customerOptions}
       />
     </main>
   );

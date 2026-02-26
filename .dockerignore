@@ -1,0 +1,16 @@
+.git
+.github
+.vscode
+.turbo
+.logs
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/test-results
+**/.eslintcache
+**/tsconfig.tsbuildinfo
+*.log
+*.local
+.env
+.env.*

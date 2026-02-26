@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconBox, IconDots, IconPlus } from '../icons';
 import { API_BASE, buildMutationHeaders, formatCurrency, toNumber } from '../lib';
 import SalesDetailModal, { type SaleDetail } from '../sales-detail-modal';
@@ -279,6 +279,12 @@ const sortByDateDesc = (entries: FinanceEntry[]) => {
   });
 };
 
+const getEntryDisplayDate = (entry: FinanceEntry) => {
+  if (entry.status !== 'paid') return entry.dueDate;
+  if (entry.kind === 'expense') return entry.paidAt || entry.dueDate;
+  return entry.settledAt || entry.createdAt || entry.dueDate;
+};
+
 const createDefaultForm = (monthCursor: Date): ExpenseForm => {
   const baseDate = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
   return {
@@ -297,6 +303,7 @@ export default function FinancePanel({
   customers
 }: FinancePanelProps) {
   const purchaseRequestRef = useRef(0);
+  const financeRefreshRequestRef = useRef(0);
   const [receivables, setReceivables] = useState<Receivable[]>(initialReceivables);
   const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
   const [payments, setPayments] = useState<Payment[]>(initialPayments);
@@ -330,6 +337,66 @@ export default function FinancePanel({
   useEffect(() => {
     setPayments(initialPayments);
   }, [initialPayments]);
+
+  const refreshFinanceData = useCallback(async () => {
+    const requestId = financeRefreshRequestRef.current + 1;
+    financeRefreshRequestRef.current = requestId;
+
+    try {
+      const [receivablesRes, expensesRes, paymentsRes] = await Promise.all([
+        fetch(`${API_BASE}/finance/receivables`, { cache: 'no-store' }),
+        fetch(`${API_BASE}/finance/expenses`, { cache: 'no-store' }),
+        fetch(`${API_BASE}/finance/payments`, { cache: 'no-store' })
+      ]);
+
+      if (financeRefreshRequestRef.current !== requestId) return;
+
+      if (receivablesRes.ok) {
+        const payload = (await receivablesRes.json().catch(() => null)) as { data?: Receivable[] } | null;
+        if (payload?.data) {
+          setReceivables(payload.data);
+        }
+      }
+
+      if (expensesRes.ok) {
+        const payload = (await expensesRes.json().catch(() => null)) as { data?: Expense[] } | null;
+        if (payload?.data) {
+          setExpenses(payload.data);
+        }
+      }
+
+      if (paymentsRes.ok) {
+        const payload = (await paymentsRes.json().catch(() => null)) as { data?: Payment[] } | null;
+        if (payload?.data) {
+          setPayments(payload.data);
+        }
+      }
+    } catch {
+      // Keep current in-memory state when refresh fails.
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshFinanceData();
+  }, [refreshFinanceData]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      void refreshFinanceData();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshFinanceData();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [refreshFinanceData]);
 
   useEffect(() => {
     const handleOutside = (event: MouseEvent) => {
@@ -878,7 +945,7 @@ export default function FinancePanel({
               <span>Descricao</span>
               <span>Valor</span>
               <span>Situacao</span>
-              <span>Vencimento</span>
+              <span>Data de pagamento</span>
               <span />
             </div>
 
@@ -911,7 +978,7 @@ export default function FinancePanel({
                       {statusLabel(entry)}
                     </span>
                   </div>
-                  <div className="mono">{formatDate(entry.dueDate)}</div>
+                  <div className="mono">{formatDate(getEntryDisplayDate(entry))}</div>
                   <div className="finance-entry-actions">
                     {hasMenu ? (
                       <>

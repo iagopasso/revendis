@@ -64,6 +64,7 @@ const formatPurchaseItemRow = <T extends { expires_at?: unknown }>(row: T) => ({
   ...row,
   expires_at: toDateOnly(row.expires_at) || null
 });
+
 const buildPurchaseExpenseDescription = ({
   supplier,
   brand
@@ -92,6 +93,8 @@ const syncPurchaseExpense = async ({
     status: string;
     total: number | string;
     purchase_date: string;
+    due_date?: string | null;
+    force_due_date_from_purchase?: boolean;
   };
 }) => {
   const storeId = purchase.store_id || DEFAULT_STORE_ID;
@@ -114,12 +117,16 @@ const syncPurchaseExpense = async ({
        due_date,
        status
      )
-     VALUES ($1, $2, $3, $4, $5, 'pending')
+     VALUES ($1, $2, $3, $4, COALESCE($6::date, $5::date), 'pending')
      ON CONFLICT (store_id, purchase_id)
      DO UPDATE SET
        description = EXCLUDED.description,
        amount = EXCLUDED.amount,
-       due_date = EXCLUDED.due_date`,
+       due_date = CASE
+         WHEN $6::date IS NOT NULL THEN $6::date
+         WHEN $7::boolean THEN EXCLUDED.due_date
+         ELSE finance_expenses.due_date
+       END`,
     [
       storeId,
       purchase.id,
@@ -128,7 +135,9 @@ const syncPurchaseExpense = async ({
         brand: purchase.brand
       }),
       purchase.total,
-      purchase.purchase_date
+      purchase.purchase_date,
+      purchase.due_date || null,
+      Boolean(purchase.force_due_date_from_purchase)
     ]
   );
 };
@@ -335,7 +344,7 @@ router.get(
        LIMIT 200`,
       [storeId]
     );
-    res.json({ data: result.rows });
+    res.json({ data: result.rows.map((row) => formatPurchaseRow(row)) });
   })
 );
 
@@ -394,8 +403,8 @@ router.get(
 
     return res.json({
       data: {
-        ...purchaseRes.rows[0],
-        purchase_items: itemsRes.rows
+        ...formatPurchaseRow(purchaseRes.rows[0]),
+        purchase_items: itemsRes.rows.map((row) => formatPurchaseItemRow(row))
       }
     });
   })
@@ -505,7 +514,7 @@ router.post(
         return created.rows[0];
       });
 
-      res.status(201).json({ data: inserted });
+      res.status(201).json({ data: formatPurchaseRow(inserted) });
     } catch (error) {
       if (error && typeof error === 'object' && 'status' in error) {
         const err = error as { status?: number; code?: string; message?: string };
@@ -573,8 +582,9 @@ router.patch(
       values.push(items);
     }
 
-    if (payload.purchaseDate !== undefined) {
-      const parsedDate = parseIsoDateInput(payload.purchaseDate);
+    const purchaseDateProvided = payload.purchaseDate !== undefined;
+    if (purchaseDateProvided) {
+      const parsedDate = parseIsoDateInput(payload.purchaseDate as string);
       if (!parsedDate) {
         return res.status(400).json({
           code: 'invalid_payload',
@@ -585,7 +595,19 @@ router.patch(
       values.push(parsedDate);
     }
 
-    if (!fields.length) {
+    const dueDateProvided = payload.dueDate !== undefined;
+    let parsedDueDate: string | null = null;
+    if (dueDateProvided) {
+      parsedDueDate = parseIsoDateInput(payload.dueDate as string);
+      if (!parsedDueDate) {
+        return res.status(400).json({
+          code: 'invalid_payload',
+          message: 'Informe a data de vencimento no formato YYYY-MM-DD.'
+        });
+      }
+    }
+
+    if (!fields.length && !dueDateProvided) {
       return res.status(400).json({
         code: 'invalid_payload',
         message: 'Informe ao menos um campo para atualizar a compra.'
@@ -593,17 +615,7 @@ router.patch(
     }
 
     const updated = await withTransaction(async (client) => {
-      const result = await client.query(
-        `UPDATE purchases
-         SET ${fields.join(', ')}
-         WHERE id = $${fields.length + 1} AND store_id = $${fields.length + 2}
-         RETURNING id, store_id, supplier, brand, status, total, items, purchase_date, created_at`,
-        [...values, id, storeId]
-      );
-
-      if (!result.rows.length) return null;
-
-      const updatedPurchase = result.rows[0] as {
+      let updatedPurchase: {
         id: string;
         store_id?: string | null;
         supplier: string;
@@ -611,11 +623,41 @@ router.patch(
         status: string;
         total: number | string;
         purchase_date: string;
-      };
+      } | null = null;
+
+      if (fields.length) {
+        const result = await client.query(
+          `UPDATE purchases
+           SET ${fields.join(', ')}
+           WHERE id = $${fields.length + 1} AND store_id = $${fields.length + 2}
+           RETURNING id, store_id, supplier, brand, status, total, items, purchase_date, created_at`,
+          [...values, id, storeId]
+        );
+        if (result.rows.length) {
+          updatedPurchase = result.rows[0];
+        }
+      } else {
+        const existing = await client.query(
+          `SELECT id, store_id, supplier, brand, status, total, items, purchase_date, created_at
+           FROM purchases
+           WHERE id = $1 AND store_id = $2
+           LIMIT 1`,
+          [id, storeId]
+        );
+        if (existing.rows.length) {
+          updatedPurchase = existing.rows[0];
+        }
+      }
+
+      if (!updatedPurchase) return null;
 
       await syncPurchaseExpense({
         client,
-        purchase: updatedPurchase
+        purchase: {
+          ...updatedPurchase,
+          due_date: dueDateProvided ? parsedDueDate : null,
+          force_due_date_from_purchase: purchaseDateProvided && !dueDateProvided
+        }
       });
 
       await writeAudit(client, {
@@ -656,7 +698,7 @@ router.patch(
       return res.status(404).json({ code: 'not_found', message: 'Compra nao encontrada.' });
     }
 
-    return res.json({ data: updated });
+    return res.json({ data: formatPurchaseRow(updated) });
   })
 );
 
@@ -735,7 +777,7 @@ router.patch(
       return res.status(404).json({ code: 'not_found', message: 'Compra nao encontrada.' });
     }
 
-    return res.json({ data: updated });
+    return res.json({ data: formatPurchaseRow(updated) });
   })
 );
 

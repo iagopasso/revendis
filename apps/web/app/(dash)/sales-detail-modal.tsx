@@ -527,6 +527,13 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
       return aTime - bTime;
     });
 
+  const primaryPaidEntry = paymentListEntries.find((entry) => entry.status === 'paid');
+  const paymentDisplayDate =
+    primaryPaidEntry?.date ||
+    paymentListEntries[0]?.date ||
+    sale.dueDate ||
+    sale.date;
+
   const receiptInstallments = paymentListEntries.map((entry, index) => ({
     ...entry,
     installmentLabel: `Parcela ${index + 1} de ${paymentListEntries.length}`,
@@ -570,7 +577,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
     thermalLine,
     centerText('COMPROVANTE DE VENDA', thermalColumns),
     thermalDash,
-    `Data: ${formatDate(sale.date)}`,
+    `Data do pagamento: ${formatDate(paymentDisplayDate)}`,
     buildRow('Venda:', thermalSaleValue, thermalColumns),
     `Cliente: ${customerName}`,
     thermalDash,
@@ -936,7 +943,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
             <div className="sale-header-text">
               <strong>{customerName}</strong>
               <div className="sale-header-meta">
-                <span>{formatDate(sale.date)}</span>
+                <span>Pagamento: {formatDate(paymentDisplayDate)}</span>
                 {isCancelled ? <span className="sale-cancelled-badge">Pedido cancelado</span> : null}
               </div>
             </div>
@@ -1269,8 +1276,8 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
                         <strong>{sale.customer}</strong>
                       </div>
                       <div>
-                        <span>Data da venda</span>
-                        <strong>{formatDate(sale.date)}</strong>
+                        <span>Data do pagamento</span>
+                        <strong>{formatDate(paymentDisplayDate)}</strong>
                       </div>
                       <div>
                         <span>Valor total</span>

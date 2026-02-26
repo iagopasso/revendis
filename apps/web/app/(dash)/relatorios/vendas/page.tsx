@@ -1,9 +1,10 @@
-import { fetchList, formatCurrency, isInDateRange, toNumber } from '../../lib';
+import { fetchList, formatCurrency, getStringParam, toNumber } from '../../lib';
 import ReportDetailPanel from '../report-detail-panel';
 import { buildReportRangeContext, type ReportSearchParams } from '../range';
 
 type Sale = {
   id: string;
+  customer_id?: string | null;
   status: string;
   total: number | string;
   created_at: string;
@@ -38,21 +39,47 @@ const paymentLabel = (total: number, paid: number) => {
   return 'Pendente';
 };
 
+const getCustomerValue = (sale: Sale) => {
+  const customerId = sale.customer_id?.trim();
+  if (customerId) return customerId;
+  return sale.customer_name?.trim() || '';
+};
+
+const getCustomerLabel = (sale: Sale) => sale.customer_name?.trim() || '';
+
 export default async function RelatorioVendasPage({
   searchParams
 }: {
   searchParams?: Promise<ReportSearchParams>;
 }) {
   const resolvedParams = (await searchParams) || {};
-  const { dateRange, periodLabel } = buildReportRangeContext(resolvedParams);
+  const selectedCustomer = getStringParam(resolvedParams.customer).trim();
+  const { periodLabel, rangeQuery } = buildReportRangeContext(resolvedParams);
+  const salesQueryParams = new URLSearchParams(rangeQuery.startsWith('?') ? rangeQuery.slice(1) : '');
+  const salesQuery = salesQueryParams.toString();
 
   const [salesResponse, receivablesResponse] = await Promise.all([
-    fetchList<Sale>('/sales/orders'),
+    fetchList<Sale>(`/sales/orders${salesQuery ? `?${salesQuery}` : ''}`),
     fetchList<Receivable>('/finance/receivables')
   ]);
 
-  const sales = (salesResponse?.data ?? []).filter((sale) => isInDateRange(sale.created_at, dateRange));
+  const salesInRange = salesResponse?.data ?? [];
+  const sales = selectedCustomer
+    ? salesInRange.filter((sale) => getCustomerValue(sale) === selectedCustomer)
+    : salesInRange;
   const receivables = receivablesResponse?.data ?? [];
+  const customerOptionsMap = new Map<string, string>();
+
+  salesInRange.forEach((sale) => {
+    const value = getCustomerValue(sale);
+    const label = getCustomerLabel(sale);
+    if (!value || !label || customerOptionsMap.has(value)) return;
+    customerOptionsMap.set(value, label);
+  });
+
+  const customerOptions = Array.from(customerOptionsMap.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
 
   const receivablesBySale = new Map<
     string,
@@ -119,6 +146,8 @@ export default async function RelatorioVendasPage({
         exportBaseName="relatorio-vendas"
         emptyTitle="Nenhuma venda no periodo"
         emptyMessage="Nao ha vendas registradas no periodo selecionado."
+        selectedCustomer={selectedCustomer}
+        customerOptions={customerOptions}
       />
     </main>
   );

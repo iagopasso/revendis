@@ -5,6 +5,7 @@ export type ReportSearchParams = {
   month?: string | string[];
   from?: string | string[];
   to?: string | string[];
+  customer?: string | string[];
 };
 
 type ReportRangeContext = {
@@ -31,7 +32,10 @@ const formatDate = (date?: Date) => {
 
 const toIsoDate = (date?: Date) => {
   if (!date) return '';
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 export const buildReportRangeContext = (searchParams?: ReportSearchParams): ReportRangeContext => {

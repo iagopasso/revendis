@@ -20,7 +20,10 @@ export const purchaseInputSchema = z
     items: z.number().int().positive(),
     brand: z.string().optional(),
     status: purchaseStatusSchema.optional(),
-    purchaseDate: z.string().optional(),
+    purchaseDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
     purchaseItems: z.array(purchaseItemSchema).optional()
   })
   .strict();
@@ -37,7 +40,8 @@ export const purchaseUpdateSchema = z
     total: z.number().positive().optional(),
     items: z.number().int().positive().optional(),
     brand: z.string().optional(),
-    purchaseDate: z.string().optional()
+    purchaseDate: z.string().optional(),
+    dueDate: z.string().optional()
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {
