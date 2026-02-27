@@ -1,21 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { API_BASE, buildMutationHeaders } from './lib';
-import {
-  formatRelativeTime,
-  getNotificationHref,
-  isNotificationRead,
-  loadReadNotificationIds,
-  markNotificationIdsAsRead,
-  mergeLegacyReadState,
-  type NotificationItem,
-  saveReadNotificationIds,
-  subscribeReadNotificationIds
-} from './notifications-utils';
 import {
   IconBox,
   IconBell,
@@ -23,8 +12,6 @@ import {
   IconDashboard,
   IconDollar,
   IconGlobe,
-  IconMegaphone,
-  IconMessage,
   IconLogout,
   IconPieChart,
   IconTag,
@@ -42,17 +29,10 @@ const primaryNavItems = [
   { href: '/clientes', label: 'Clientes', mobileLabel: 'Clientes', icon: IconUsers },
   { href: '/financeiro', label: 'Financeiro', mobileLabel: 'Financeiro', icon: IconDollar },
   { href: '/loja', label: 'Loja online', mobileLabel: 'Loja', icon: IconGlobe },
-  { href: '/relatorios', label: 'Relatórios', mobileLabel: 'Relatorios', icon: IconPieChart },
-  { href: '/notificacoes', label: 'Notificações', mobileLabel: 'Alertas', icon: IconBell },
-  { href: '/configuracoes', label: 'Configurações', mobileLabel: 'Ajustes', icon: IconMessage }
+  { href: '/relatorios', label: 'Relatórios', mobileLabel: 'Relatorios', icon: IconPieChart }
 ] as const;
 
-const utilityNavItems = [
-  { label: 'Avisos', icon: IconMegaphone },
-  { label: 'WhatsApp', icon: IconWhatsapp }
-];
-
-const NOTIFICATIONS_FETCH_TIMEOUT_MS = 8000;
+const utilityNavItems = [{ label: 'WhatsApp', icon: IconWhatsapp }];
 const DEFAULT_ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || '00000000-0000-0000-0000-000000000001';
 
 type SidebarProps = {
@@ -64,90 +44,11 @@ type SidebarProps = {
 
 export default function Sidebar({ sessionUser }: SidebarProps) {
   const pathname = usePathname();
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [notificationsLoading, setNotificationsLoading] = useState(true);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
-  const notificationsRef = useRef<HTMLDivElement | null>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const [accountActionLoading, setAccountActionLoading] = useState(false);
   const [accountFeedback, setAccountFeedback] = useState('');
   const [accountFeedbackError, setAccountFeedbackError] = useState(false);
-
-  const loadNotifications = useCallback(async () => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), NOTIFICATIONS_FETCH_TIMEOUT_MS);
-    try {
-      const response = await fetch(`${API_BASE}/notifications?limit=30`, {
-        cache: 'no-store',
-        signal: controller.signal
-      });
-      if (!response.ok) return;
-      const body = (await response.json().catch(() => null)) as { data?: NotificationItem[] } | null;
-      setNotifications(Array.isArray(body?.data) ? body.data : []);
-    } catch {
-      // keep previous notifications when network/API fails
-    } finally {
-      window.clearTimeout(timer);
-      setNotificationsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    setReadNotificationIds(loadReadNotificationIds());
-    return subscribeReadNotificationIds((ids) => {
-      setReadNotificationIds(ids);
-    });
-  }, []);
-
-  useEffect(() => {
-    void loadNotifications();
-    const timer = window.setInterval(() => {
-      void loadNotifications();
-    }, 30_000);
-    return () => window.clearInterval(timer);
-  }, [loadNotifications]);
-
-  useEffect(() => {
-    if (!notifications.length) return;
-    setReadNotificationIds((current) => {
-      const merged = mergeLegacyReadState(current, notifications);
-      let changed = merged.size !== current.size;
-      if (!changed) {
-        for (const id of merged) {
-          if (!current.has(id)) {
-            changed = true;
-            break;
-          }
-        }
-      }
-      if (!changed) return current;
-      saveReadNotificationIds(merged);
-      return merged;
-    });
-  }, [notifications]);
-
-  useEffect(() => {
-    if (!notificationsOpen) return;
-    const onMouseDown = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (!notificationsRef.current?.contains(target)) {
-        setNotificationsOpen(false);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setNotificationsOpen(false);
-    };
-
-    document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [notificationsOpen]);
 
   useEffect(() => {
     if (!profileMenuOpen) return;
@@ -179,21 +80,6 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
     return () => window.clearTimeout(timer);
   }, [accountFeedback]);
 
-  const markNotificationAsRead = useCallback((notificationId: string) => {
-    setReadNotificationIds((current) => {
-      if (current.has(notificationId)) return current;
-      const next = markNotificationIdsAsRead(current, [notificationId]);
-      saveReadNotificationIds(next);
-      return next;
-    });
-  }, []);
-
-  const unreadCount = useMemo(
-    () => notifications.filter((item) => !isNotificationRead(readNotificationIds, item)).length,
-    [notifications, readNotificationIds]
-  );
-
-  const visibleNotifications = notifications.slice(0, 8);
   const displayLabel = useMemo(() => {
     const base = (sessionUser.name || sessionUser.email || 'Perfil').trim();
     const initials = base
@@ -204,8 +90,6 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
       .join('');
     return initials || 'PF';
   }, [sessionUser.email, sessionUser.name]);
-
-  const toggleNotifications = () => setNotificationsOpen((current) => !current);
 
   const handleSignOut = async () => {
     setProfileMenuOpen(false);
@@ -296,68 +180,6 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
             </button>
           );
         })}
-
-        <div className="sidebar-notifications" ref={notificationsRef}>
-          <button
-            type="button"
-            className="sidebar-icon-link sidebar-notifications-trigger"
-            aria-label="Notificacoes"
-            aria-expanded={notificationsOpen}
-            onClick={toggleNotifications}
-          >
-            <span className="nav-icon">
-              <IconBell />
-            </span>
-            {unreadCount > 0 ? <span className="sidebar-notifications-badge">{Math.min(unreadCount, 99)}</span> : null}
-          </button>
-
-          {notificationsOpen ? (
-            <div className="sidebar-notifications-popover" role="dialog" aria-label="Notificacoes">
-              <div className="sidebar-notifications-header">
-                <strong>Notificacoes</strong>
-                {unreadCount > 0 ? (
-                  <span className="sidebar-notifications-pill">{unreadCount} nao lidas</span>
-                ) : (
-                  <span className="sidebar-notifications-pill muted">Tudo lido</span>
-                )}
-              </div>
-
-              <div className="sidebar-notifications-list">
-                {notificationsLoading ? <p className="sidebar-notifications-empty">Carregando...</p> : null}
-                {!notificationsLoading && visibleNotifications.length === 0 ? (
-                  <p className="sidebar-notifications-empty">Nenhuma movimentacao encontrada.</p>
-                ) : null}
-                {!notificationsLoading
-                  ? visibleNotifications.map((item) => {
-                      const isUnread = !isNotificationRead(readNotificationIds, item);
-                      return (
-                        <Link
-                          href={getNotificationHref(item)}
-                          key={item.id}
-                          className={`sidebar-notifications-item${isUnread ? ' unread' : ''}`}
-                          title={item.message}
-                          onClick={() => {
-                            markNotificationAsRead(item.id);
-                            setNotificationsOpen(false);
-                          }}
-                        >
-                          <span className={`sidebar-notifications-dot ${item.category}`} />
-                          <div className="sidebar-notifications-item-content">
-                            <p>{item.message}</p>
-                            <span>{formatRelativeTime(item.created_at)}</span>
-                          </div>
-                        </Link>
-                      );
-                    })
-                  : null}
-              </div>
-
-              <Link href="/notificacoes" className="sidebar-notifications-footer-link" onClick={() => setNotificationsOpen(false)}>
-                Ver todas as notificacoes
-              </Link>
-            </div>
-          ) : null}
-        </div>
       </nav>
 
       <div className="sidebar-footer profile-menu-wrapper" ref={profileMenuRef}>
@@ -373,9 +195,13 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
 
         {profileMenuOpen ? (
           <div className="profile-menu" role="menu" aria-label="Conta">
+            <Link href="/notificacoes" onClick={() => setProfileMenuOpen(false)}>
+              <IconBell />
+              Alertas
+            </Link>
             <Link href="/configuracoes" onClick={() => setProfileMenuOpen(false)}>
               <IconUser />
-              Minha conta
+              Configurações
             </Link>
             <button type="button" onClick={() => void handleSignOut()}>
               <IconLogout />
