@@ -92,23 +92,15 @@ AUTH_ADMIN_NAME=Administrador
 1. [ ] Garantir deploy anterior preservado no Railway (rollback rapido).
 2. [ ] Manter backup/branch no Neon para restauracao.
 
-## 10) Fallback para erro do railpack/GHCR
+## 10) Politica de Builder
 
-Se o deploy falhar com erro de autorizacao no `ghcr.io/railwayapp/railpack-frontend`,
-troque o builder para Dockerfile em cada servico:
-
-1. [ ] `backend` -> Build -> Builder: `Dockerfile`
-2. [ ] `backend` -> Dockerfile path: `Dockerfile.backend`
-3. [ ] `web` -> Build -> Builder: `Dockerfile`
-4. [ ] `web` -> Dockerfile path: `Dockerfile.web`
-5. [ ] Re-run deploy nos dois servicos
-
-Se a opcao de Builder nao aparecer no painel:
-
-1. [ ] Usar o `Dockerfile` na raiz do repositorio (auto-detect do Railway)
-2. [ ] Definir variavel `APP_ROLE=backend` no servico backend
-3. [ ] Definir variavel `APP_ROLE=web` no servico web
-4. [ ] Re-run deploy nos dois servicos
+1. [ ] Usar apenas builder nativo do Railway (Nixpacks).
+2. [ ] Nao usar Dockerfile para `backend` nem para `web`.
+3. [ ] Em cada servico, manter Build/Start commands explicitos:
+```bash
+corepack enable && pnpm install --frozen-lockfile && pnpm --filter <backend|web> build
+pnpm --filter <backend|web> start
+```
 
 ## Modo guiado (eu te acompanho passo a passo)
 

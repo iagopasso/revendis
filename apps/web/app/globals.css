@@ -16185,6 +16185,21 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
     gap: 10px;
   }
 
+  html[data-theme='dark'] .topbar {
+    border-color: #304a66;
+    background: #0a1320;
+    box-shadow: 0 10px 24px rgba(3, 8, 14, 0.46);
+  }
+
+  html[data-theme='dark'] .topbar .hero h1 {
+    color: #eaf3ff;
+  }
+
+  html[data-theme='dark'] .topbar .hero p,
+  html[data-theme='dark'] .topbar .section-title {
+    color: #b9cbe1;
+  }
+
   .topbar .hero h1 {
     font-size: clamp(1.45rem, 5.5vw, 1.9rem);
   }
@@ -16422,4 +16437,52 @@ html[data-theme='dark'] .sale-payment-condition-toggle button.active {
     border-color: #35516e;
     background: #132233;
   }
+}
+
+/* Dark mode readability alignment with dashboard cards */
+html[data-theme='dark'] .finance-summary-card {
+  background: #ffffff;
+  border-color: #d1dae7;
+  color: #111827;
+}
+
+html[data-theme='dark'] .finance-summary-card .stat-label,
+html[data-theme='dark'] .finance-summary-card .meta {
+  color: #64748b;
+}
+
+html[data-theme='dark'] .finance-summary-card .stat-value {
+  color: #111827;
+}
+
+html[data-theme='dark'] .finance-summary-card .finance-negative {
+  color: #dc2626;
+}
+
+html[data-theme='dark'] .report-section,
+html[data-theme='dark'] .report-card,
+html[data-theme='dark'] .report-table-wrap {
+  background: #ffffff;
+  border-color: #d1dae7;
+}
+
+html[data-theme='dark'] .report-section .panel-title,
+html[data-theme='dark'] .report-card strong,
+html[data-theme='dark'] .report-card .icon,
+html[data-theme='dark'] .report-detail-title,
+html[data-theme='dark'] .report-detail-breadcrumb,
+html[data-theme='dark'] .report-detail-breadcrumb-link,
+html[data-theme='dark'] .report-detail-customer-field,
+html[data-theme='dark'] .report-table tbody td {
+  color: #111827;
+}
+
+html[data-theme='dark'] .report-card p,
+html[data-theme='dark'] .report-table thead th {
+  color: #475569;
+}
+
+html[data-theme='dark'] .inventory-list .data-row.header {
+  background: #f8fafc;
+  color: #475569;
 }

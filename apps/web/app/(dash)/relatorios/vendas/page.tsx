@@ -20,11 +20,21 @@ type Receivable = {
   status: 'pending' | 'paid' | 'overdue';
 };
 
+type Customer = {
+  id: string;
+  name: string;
+};
+
 const formatDate = (value: string) => {
   if (!value) return '--';
+  const trimmed = value.trim();
+  const dateOnlyMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    return `${dateOnlyMatch[3]}/${dateOnlyMatch[2]}/${dateOnlyMatch[1]}`;
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '--';
-  return date.toLocaleDateString('pt-BR');
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(date);
 };
 
 const deliveryLabel = (status: string) => {
@@ -58,9 +68,10 @@ export default async function RelatorioVendasPage({
   const salesQueryParams = new URLSearchParams(rangeQuery.startsWith('?') ? rangeQuery.slice(1) : '');
   const salesQuery = salesQueryParams.toString();
 
-  const [salesResponse, receivablesResponse] = await Promise.all([
+  const [salesResponse, receivablesResponse, customersResponse] = await Promise.all([
     fetchList<Sale>(`/sales/orders${salesQuery ? `?${salesQuery}` : ''}`),
-    fetchList<Receivable>('/finance/receivables')
+    fetchList<Receivable>('/finance/receivables'),
+    fetchList<Customer>('/customers')
   ]);
 
   const salesInRange = salesResponse?.data ?? [];
@@ -68,7 +79,15 @@ export default async function RelatorioVendasPage({
     ? salesInRange.filter((sale) => getCustomerValue(sale) === selectedCustomer)
     : salesInRange;
   const receivables = receivablesResponse?.data ?? [];
+  const customers = customersResponse?.data ?? [];
   const customerOptionsMap = new Map<string, string>();
+
+  customers.forEach((customer) => {
+    const value = customer.id?.trim();
+    const label = customer.name?.trim();
+    if (!value || !label || customerOptionsMap.has(value)) return;
+    customerOptionsMap.set(value, label);
+  });
 
   salesInRange.forEach((sale) => {
     const value = getCustomerValue(sale);
@@ -148,6 +167,7 @@ export default async function RelatorioVendasPage({
         emptyMessage="Nao ha vendas registradas no periodo selecionado."
         selectedCustomer={selectedCustomer}
         customerOptions={customerOptions}
+        showCustomerFilter
       />
     </main>
   );
