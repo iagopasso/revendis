@@ -16423,3 +16423,81 @@ html[data-theme='dark'] .sale-payment-condition-toggle button.active {
     background: #132233;
   }
 }
+
+html[data-theme='dark'] {
+  --dash-surface: #132233;
+  --dash-surface-2: #122132;
+  --dash-surface-3: #1a2d42;
+  --dash-border: #35516e;
+  --dash-text: #eaf3ff;
+  --dash-muted: #b9cbe1;
+}
+
+html[data-theme='dark'] .page-content h1,
+html[data-theme='dark'] .page-content h2,
+html[data-theme='dark'] .page-content h3,
+html[data-theme='dark'] .page-content h4,
+html[data-theme='dark'] .panel-title,
+html[data-theme='dark'] .report-detail-title {
+  color: var(--dash-text);
+}
+
+html[data-theme='dark'] .page-content .meta,
+html[data-theme='dark'] .page-content .section-title,
+html[data-theme='dark'] .page-content .panel-subtitle,
+html[data-theme='dark'] .page-content .input-field-label,
+html[data-theme='dark'] .page-content label span,
+html[data-theme='dark'] .table-footer .meta {
+  color: var(--dash-muted);
+}
+
+html[data-theme='dark'] .panel,
+html[data-theme='dark'] .filters-panel-static,
+html[data-theme='dark'] .sales-table-panel,
+html[data-theme='dark'] .finance-toolbar-panel,
+html[data-theme='dark'] .finance-list-panel,
+html[data-theme='dark'] .report-detail-shell,
+html[data-theme='dark'] .report-table-wrap,
+html[data-theme='dark'] .settings-shell,
+html[data-theme='dark'] .store-list-panel,
+html[data-theme='dark'] .store-empty-panel,
+html[data-theme='dark'] .modal,
+html[data-theme='dark'] .store-modal,
+html[data-theme='dark'] .store-order-modal,
+html[data-theme='dark'] .store-order-accept-modal {
+  background: var(--dash-surface);
+  border-color: var(--dash-border);
+  color: var(--dash-text);
+}
+
+html[data-theme='dark'] .page-content input:not([type='checkbox']):not([type='radio']),
+html[data-theme='dark'] .page-content select,
+html[data-theme='dark'] .page-content textarea {
+  background: var(--dash-surface-2);
+  border-color: var(--dash-border);
+  color: var(--dash-text);
+}
+
+html[data-theme='dark'] .page-content input:not([type='checkbox']):not([type='radio'])::placeholder,
+html[data-theme='dark'] .page-content textarea::placeholder {
+  color: var(--dash-muted);
+}
+
+html[data-theme='dark'] .report-table thead th,
+html[data-theme='dark'] .sales-table-panel .data-row.header,
+html[data-theme='dark'] .finance-list-head {
+  color: var(--dash-muted);
+}
+
+html[data-theme='dark'] .report-table tbody td,
+html[data-theme='dark'] .finance-list-row,
+html[data-theme='dark'] .sales-table-panel .sale-row {
+  color: var(--dash-text);
+  border-color: var(--dash-border);
+  background: var(--dash-surface-2);
+}
+
+html[data-theme='dark'] .sales-table-panel .sale-row:hover,
+html[data-theme='dark'] .finance-list-row:hover {
+  background: var(--dash-surface-3);
+}

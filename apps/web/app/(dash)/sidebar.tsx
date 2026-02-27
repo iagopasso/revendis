@@ -17,7 +17,6 @@ import {
   IconTag,
   IconTrash,
   IconUser,
-  IconWhatsapp,
   IconUsers
 } from './icons';
 
@@ -32,7 +31,6 @@ const primaryNavItems = [
   { href: '/relatorios', label: 'Relatórios', mobileLabel: 'Relatorios', icon: IconPieChart }
 ] as const;
 
-const utilityNavItems = [{ label: 'WhatsApp', icon: IconWhatsapp }];
 const DEFAULT_ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || '00000000-0000-0000-0000-000000000001';
 
 type SidebarProps = {
@@ -168,19 +166,6 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
       </nav>
 
       <div className="sidebar-main-spacer" />
-
-      <nav className="sidebar-utility-nav" aria-label="Utilitários">
-        {utilityNavItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button key={item.label} type="button" className="sidebar-icon-link" aria-label={item.label}>
-              <span className="nav-icon">
-                <Icon />
-              </span>
-            </button>
-          );
-        })}
-      </nav>
 
       <div className="sidebar-footer profile-menu-wrapper" ref={profileMenuRef}>
         <button
