@@ -143,8 +143,14 @@ const emptyCustomerDraft: CustomerDraft = {
 
 const formatDate = (value: string) => {
   if (!value) return '--';
+  const trimmed = value.trim();
+  const dateOnlyMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    return `${dateOnlyMatch[3]}/${dateOnlyMatch[2]}/${dateOnlyMatch[1]}`;
+  }
   const date = new Date(value);
-  return date.toLocaleDateString('pt-BR');
+  if (Number.isNaN(date.getTime())) return '--';
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(date);
 };
 
 const deliveryLabel = (status: string) => {

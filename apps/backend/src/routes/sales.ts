@@ -56,8 +56,8 @@ router.get(
          FROM sales s
          LEFT JOIN customers c ON c.id = s.customer_id
          WHERE s.store_id = $1
-           AND ($2::date IS NULL OR s.created_at::date >= $2::date)
-           AND ($3::date IS NULL OR s.created_at::date <= $3::date)
+           AND ($2::date IS NULL OR (s.created_at AT TIME ZONE 'America/Sao_Paulo')::date >= $2::date)
+           AND ($3::date IS NULL OR (s.created_at AT TIME ZONE 'America/Sao_Paulo')::date <= $3::date)
            AND ($4::uuid IS NULL OR s.customer_id = $4::uuid)
            AND (
              $5::text IS NULL
