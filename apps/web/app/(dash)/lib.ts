@@ -4,10 +4,10 @@ export type ItemResponse<T> = { data: T };
 const withNoTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
 const resolveApiBase = () => {
+  if (typeof window !== 'undefined') return '/api/backend';
   const envBase = withNoTrailingSlash(process.env.NEXT_PUBLIC_API_URL || '');
   if (envBase) return envBase;
-  if (typeof window === 'undefined') return 'http://localhost:3001/api';
-  return '/api/backend';
+  return 'http://localhost:3001/api';
 };
 
 export const API_BASE = resolveApiBase();
