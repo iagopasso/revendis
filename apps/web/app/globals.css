@@ -16424,159 +16424,50 @@ html[data-theme='dark'] .sale-payment-condition-toggle button.active {
   }
 }
 
-/* Dark mode contrast hardening for Financeiro, Estoque, Loja and Relatorios */
-html[data-theme='dark'] .page-content .finance-toolbar-panel,
-html[data-theme='dark'] .page-content .finance-list-panel,
-html[data-theme='dark'] .page-content .finance-list-table,
-html[data-theme='dark'] .page-content .report-grid,
-html[data-theme='dark'] .page-content .report-section,
-html[data-theme='dark'] .page-content .report-card,
-html[data-theme='dark'] .page-content .report-detail-shell,
-html[data-theme='dark'] .page-content .report-table-wrap,
-html[data-theme='dark'] .page-content .inventory-scope .panel,
-html[data-theme='dark'] .page-content .inventory-scope .filters-panel-static,
-html[data-theme='dark'] .page-content .inventory-scope .data-list,
-html[data-theme='dark'] .page-content .inventory-scope .data-row,
-html[data-theme='dark'] .page-content .store-empty-panel,
-html[data-theme='dark'] .page-content .store-list-panel,
-html[data-theme='dark'] .page-content .store-orders-table,
-html[data-theme='dark'] .page-content .store-products-table,
-html[data-theme='dark'] .page-content .store-promotions-table,
-html[data-theme='dark'] .page-content .store-table-footer,
-html[data-theme='dark'] .page-content .store-modal,
-html[data-theme='dark'] .page-content .store-order-modal,
-html[data-theme='dark'] .page-content .store-order-accept-modal,
-html[data-theme='dark'] .page-content .store-order-modal-block,
-html[data-theme='dark'] .page-content .store-modal-list,
-html[data-theme='dark'] .page-content .store-promotion-product-table {
-  background: var(--dash-surface) !important;
-  border-color: var(--dash-border) !important;
-  color: var(--dash-text) !important;
+/* Dark mode readability alignment with dashboard cards */
+html[data-theme='dark'] .finance-summary-card {
+  background: #ffffff;
+  border-color: #d1dae7;
+  color: #111827;
 }
 
-html[data-theme='dark'] .page-content .finance-list-row,
-html[data-theme='dark'] .page-content .sales-table-panel .sale-row,
-html[data-theme='dark'] .page-content .report-table tbody tr,
-html[data-theme='dark'] .page-content .inventory-scope .data-row:not(.header),
-html[data-theme='dark'] .page-content .store-order-row,
-html[data-theme='dark'] .page-content .store-product-row {
-  background: var(--dash-surface-2) !important;
-  border-color: var(--dash-border) !important;
+html[data-theme='dark'] .finance-summary-card .stat-label,
+html[data-theme='dark'] .finance-summary-card .meta {
+  color: #64748b;
 }
 
-html[data-theme='dark'] .page-content .report-table thead th,
-html[data-theme='dark'] .page-content .finance-list-head,
-html[data-theme='dark'] .page-content .inventory-scope .data-row.header,
-html[data-theme='dark'] .page-content .store-products-table-head,
-html[data-theme='dark'] .page-content .store-orders-table-head,
-html[data-theme='dark'] .page-content .store-promotions-table-head,
-html[data-theme='dark'] .page-content .report-card p,
-html[data-theme='dark'] .page-content .meta,
-html[data-theme='dark'] .page-content .section-title {
-  color: var(--dash-muted) !important;
+html[data-theme='dark'] .finance-summary-card .stat-value {
+  color: #111827;
 }
 
-html[data-theme='dark'] .page-content .report-card strong,
-html[data-theme='dark'] .page-content .report-detail-title,
-html[data-theme='dark'] .page-content .finance-entry-link,
-html[data-theme='dark'] .page-content .finance-value-cell,
-html[data-theme='dark'] .page-content .inventory-scope strong,
-html[data-theme='dark'] .page-content .store-order-modal-block > strong,
-html[data-theme='dark'] .page-content .store-modal-header h3,
-html[data-theme='dark'] .page-content .store-order-modal-header h3 {
-  color: var(--dash-text) !important;
+html[data-theme='dark'] .finance-summary-card .finance-negative {
+  color: #dc2626;
 }
 
-html[data-theme='dark'] .page-content .finance-select select,
-html[data-theme='dark'] .page-content .report-detail-customer-field select,
-html[data-theme='dark'] .page-content .inventory-scope input:not([type='checkbox']):not([type='radio']),
-html[data-theme='dark'] .page-content .inventory-scope select,
-html[data-theme='dark'] .page-content .inventory-scope textarea,
-html[data-theme='dark'] .page-content .store-modal input:not([type='checkbox']):not([type='radio']),
-html[data-theme='dark'] .page-content .store-modal select,
-html[data-theme='dark'] .page-content .store-modal textarea,
-html[data-theme='dark'] .page-content .store-order-accept-modal input:not([type='checkbox']):not([type='radio']),
-html[data-theme='dark'] .page-content .store-order-accept-modal select,
-html[data-theme='dark'] .page-content .store-order-accept-modal textarea {
-  background: var(--dash-surface-2) !important;
-  border-color: var(--dash-border) !important;
-  color: var(--dash-text) !important;
+html[data-theme='dark'] .report-section,
+html[data-theme='dark'] .report-card,
+html[data-theme='dark'] .report-table-wrap {
+  background: #ffffff;
+  border-color: #d1dae7;
 }
 
-html[data-theme='dark'] {
-  --dash-surface: #132233;
-  --dash-surface-2: #122132;
-  --dash-surface-3: #1a2d42;
-  --dash-border: #35516e;
-  --dash-text: #eaf3ff;
-  --dash-muted: #b9cbe1;
+html[data-theme='dark'] .report-section .panel-title,
+html[data-theme='dark'] .report-card strong,
+html[data-theme='dark'] .report-card .icon,
+html[data-theme='dark'] .report-detail-title,
+html[data-theme='dark'] .report-detail-breadcrumb,
+html[data-theme='dark'] .report-detail-breadcrumb-link,
+html[data-theme='dark'] .report-detail-customer-field,
+html[data-theme='dark'] .report-table tbody td {
+  color: #111827;
 }
 
-html[data-theme='dark'] .page-content h1,
-html[data-theme='dark'] .page-content h2,
-html[data-theme='dark'] .page-content h3,
-html[data-theme='dark'] .page-content h4,
-html[data-theme='dark'] .panel-title,
-html[data-theme='dark'] .report-detail-title {
-  color: var(--dash-text);
+html[data-theme='dark'] .report-card p,
+html[data-theme='dark'] .report-table thead th {
+  color: #475569;
 }
 
-html[data-theme='dark'] .page-content .meta,
-html[data-theme='dark'] .page-content .section-title,
-html[data-theme='dark'] .page-content .panel-subtitle,
-html[data-theme='dark'] .page-content .input-field-label,
-html[data-theme='dark'] .page-content label span,
-html[data-theme='dark'] .table-footer .meta {
-  color: var(--dash-muted);
-}
-
-html[data-theme='dark'] .panel,
-html[data-theme='dark'] .filters-panel-static,
-html[data-theme='dark'] .sales-table-panel,
-html[data-theme='dark'] .finance-toolbar-panel,
-html[data-theme='dark'] .finance-list-panel,
-html[data-theme='dark'] .report-detail-shell,
-html[data-theme='dark'] .report-table-wrap,
-html[data-theme='dark'] .settings-shell,
-html[data-theme='dark'] .store-list-panel,
-html[data-theme='dark'] .store-empty-panel,
-html[data-theme='dark'] .modal,
-html[data-theme='dark'] .store-modal,
-html[data-theme='dark'] .store-order-modal,
-html[data-theme='dark'] .store-order-accept-modal {
-  background: var(--dash-surface);
-  border-color: var(--dash-border);
-  color: var(--dash-text);
-}
-
-html[data-theme='dark'] .page-content input:not([type='checkbox']):not([type='radio']),
-html[data-theme='dark'] .page-content select,
-html[data-theme='dark'] .page-content textarea {
-  background: var(--dash-surface-2);
-  border-color: var(--dash-border);
-  color: var(--dash-text);
-}
-
-html[data-theme='dark'] .page-content input:not([type='checkbox']):not([type='radio'])::placeholder,
-html[data-theme='dark'] .page-content textarea::placeholder {
-  color: var(--dash-muted);
-}
-
-html[data-theme='dark'] .report-table thead th,
-html[data-theme='dark'] .sales-table-panel .data-row.header,
-html[data-theme='dark'] .finance-list-head {
-  color: var(--dash-muted);
-}
-
-html[data-theme='dark'] .report-table tbody td,
-html[data-theme='dark'] .finance-list-row,
-html[data-theme='dark'] .sales-table-panel .sale-row {
-  color: var(--dash-text);
-  border-color: var(--dash-border);
-  background: var(--dash-surface-2);
-}
-
-html[data-theme='dark'] .sales-table-panel .sale-row:hover,
-html[data-theme='dark'] .finance-list-row:hover {
-  background: var(--dash-surface-3);
+html[data-theme='dark'] .inventory-list .data-row.header {
+  background: #f8fafc;
+  color: #475569;
 }
