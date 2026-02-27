@@ -36,6 +36,7 @@ type ReportDetailPanelProps = {
   dateRangeDefaultPreset?: string;
   selectedCustomer?: string;
   customerOptions?: ReportCustomerOption[];
+  showCustomerFilter?: boolean;
 };
 
 const csvEscape = (value: string) => `"${value.replace(/"/g, '""')}"`;
@@ -64,7 +65,8 @@ export default function ReportDetailPanel({
   periodLabel = 'Ultimos 28 dias',
   dateRangeDefaultPreset = '28d',
   selectedCustomer = '',
-  customerOptions = []
+  customerOptions = [],
+  showCustomerFilter = false
 }: ReportDetailPanelProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -76,7 +78,7 @@ export default function ReportDetailPanel({
   );
   const breadcrumbRoot = breadcrumbParts[0] || 'Relatorios';
   const breadcrumbCurrent = breadcrumbParts[1] || title;
-  const hasCustomerFilter = customerOptions.length > 0;
+  const hasCustomerFilter = showCustomerFilter || customerOptions.length > 0 || selectedCustomer.length > 0;
 
   useEffect(() => {
     if (!downloadOpen) return;

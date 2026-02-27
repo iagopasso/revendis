@@ -17,6 +17,11 @@ type SaleCustomer = {
   created_at: string;
 };
 
+type Customer = {
+  id: string;
+  name: string;
+};
+
 const getCustomerValue = (sale: SaleCustomer) => {
   const customerId = sale.customer_id?.trim();
   if (customerId) return customerId;
@@ -41,14 +46,23 @@ export default async function RelatorioProdutosMaisVendidosPage({
   const salesQueryParams = new URLSearchParams(rangeQuery.startsWith('?') ? rangeQuery.slice(1) : '');
   const salesQuery = salesQueryParams.toString();
 
-  const [topProductsResponse, salesResponse] = await Promise.all([
+  const [topProductsResponse, salesResponse, customersResponse] = await Promise.all([
     fetchList<TopProduct>(`/reports/top-products${reportQuery ? `?${reportQuery}` : ''}`),
-    fetchList<SaleCustomer>(`/sales/orders${salesQuery ? `?${salesQuery}` : ''}`)
+    fetchList<SaleCustomer>(`/sales/orders${salesQuery ? `?${salesQuery}` : ''}`),
+    fetchList<Customer>('/customers')
   ]);
 
   const products = topProductsResponse?.data ?? [];
   const salesInRange = salesResponse?.data ?? [];
+  const customers = customersResponse?.data ?? [];
   const customerOptionsMap = new Map<string, string>();
+
+  customers.forEach((customer) => {
+    const value = customer.id?.trim();
+    const label = customer.name?.trim();
+    if (!value || !label || customerOptionsMap.has(value)) return;
+    customerOptionsMap.set(value, label);
+  });
 
   salesInRange.forEach((sale) => {
     const value = getCustomerValue(sale);
@@ -99,6 +113,7 @@ export default async function RelatorioProdutosMaisVendidosPage({
         emptyMessage="Nao ha vendas de produtos no periodo selecionado."
         selectedCustomer={selectedCustomer}
         customerOptions={customerOptions}
+        showCustomerFilter
       />
     </main>
   );
