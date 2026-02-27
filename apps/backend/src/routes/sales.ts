@@ -503,7 +503,10 @@ router.patch(
           .status(err.status || 409)
           .json({ code: err.code || 'sale_error', message: err.message || 'Erro ao atualizar venda.' });
       }
-      throw error;
+      return res.status(500).json({
+        code: 'sale_update_failed',
+        message: 'Erro ao atualizar venda.'
+      });
     }
   })
 );
@@ -529,27 +532,49 @@ router.get(
       return res.status(404).json({ code: 'not_found', message: 'Venda nao encontrada.' });
     }
 
-    const itemsRes = await query(
-      `SELECT si.id,
-              si.product_id,
-              si.sku,
-              si.quantity,
-              si.price,
-              COALESCE(stock_info.stock_units, 0) AS stock_units,
-              p.name AS product_name, p.brand AS product_brand, p.image_url AS product_image_url
-       FROM sale_items si
-       LEFT JOIN (
-         SELECT sale_item_id, COUNT(*)::int AS stock_units
-         FROM inventory_units
-         WHERE sale_id = $1
-           AND sale_item_id IS NOT NULL
-         GROUP BY sale_item_id
-       ) stock_info ON stock_info.sale_item_id = si.id
-       LEFT JOIN products p ON p.id = si.product_id
-       WHERE si.sale_id = $1
-       ORDER BY si.created_at ASC`,
-      [id]
-    );
+    let itemsRows: unknown[] = [];
+    try {
+      const itemsRes = await query(
+        `SELECT si.id,
+                si.product_id,
+                si.sku,
+                si.quantity,
+                si.price,
+                COALESCE(stock_info.stock_units, 0) AS stock_units,
+                p.name AS product_name, p.brand AS product_brand, p.image_url AS product_image_url
+         FROM sale_items si
+         LEFT JOIN (
+           SELECT sale_item_id, COUNT(*)::int AS stock_units
+           FROM inventory_units
+           WHERE sale_id = $1
+             AND sale_item_id IS NOT NULL
+           GROUP BY sale_item_id
+         ) stock_info ON stock_info.sale_item_id = si.id
+         LEFT JOIN products p ON p.id = si.product_id
+         WHERE si.sale_id = $1
+         ORDER BY si.id ASC`,
+        [id]
+      );
+      itemsRows = itemsRes.rows;
+    } catch {
+      const fallbackItemsRes = await query(
+        `SELECT si.id,
+                si.product_id,
+                si.sku,
+                si.quantity,
+                si.price,
+                0::int AS stock_units,
+                p.name AS product_name,
+                p.brand AS product_brand,
+                p.image_url AS product_image_url
+         FROM sale_items si
+         LEFT JOIN products p ON p.id = si.product_id
+         WHERE si.sale_id = $1
+         ORDER BY si.id ASC`,
+        [id]
+      );
+      itemsRows = fallbackItemsRes.rows;
+    }
 
     const paymentsRes = await query(
       `SELECT id, method, amount, created_at
@@ -582,7 +607,7 @@ router.get(
     res.json({
       data: {
         ...saleRow,
-        items: itemsRes.rows,
+        items: itemsRows,
         payments: paymentsRes.rows,
         receivables: receivablesRes.rows,
         cost_total: costTotal,

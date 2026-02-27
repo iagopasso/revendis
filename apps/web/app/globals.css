@@ -16185,6 +16185,21 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
     gap: 10px;
   }
 
+  html[data-theme='dark'] .topbar {
+    border-color: #304a66;
+    background: #0a1320;
+    box-shadow: 0 10px 24px rgba(3, 8, 14, 0.46);
+  }
+
+  html[data-theme='dark'] .topbar .hero h1 {
+    color: #eaf3ff;
+  }
+
+  html[data-theme='dark'] .topbar .hero p,
+  html[data-theme='dark'] .topbar .section-title {
+    color: #b9cbe1;
+  }
+
   .topbar .hero h1 {
     font-size: clamp(1.45rem, 5.5vw, 1.9rem);
   }
