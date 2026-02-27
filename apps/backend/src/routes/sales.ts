@@ -12,6 +12,13 @@ import { parseSaleCreatedAt } from '../utils/sale-date';
 const router = Router();
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const buildError = (status: number, code: string, message: string) => {
+  const error = new Error(message) as Error & { status?: number; code?: string };
+  error.status = status;
+  error.code = code;
+  return error;
+};
+
 const toQueryString = (value: unknown) => {
   if (typeof value === 'string') return value;
   if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
@@ -121,13 +128,6 @@ router.post(
     const discountTotal = 0;
     const total = subtotal - discountTotal;
     const createdAtValue = parseSaleCreatedAt(createdAt);
-
-    const buildError = (status: number, code: string, message: string) => {
-      const error = new Error(message) as Error & { status?: number; code?: string };
-      error.status = status;
-      error.code = code;
-      return error;
-    };
 
     try {
       const sale = await withTransaction(async (client) => {
@@ -269,6 +269,245 @@ router.post(
   })
 );
 
+router.patch(
+  '/sales/orders/:id',
+  validateRequest({ params: idParamSchema, body: saleInputSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const userId = req.header('x-user-id') || null;
+    const {
+      items = [],
+      payments = [],
+      storeId,
+      customerId,
+      customerName,
+      createdAt
+    } = req.body as SaleInput;
+    const targetStore = storeId || req.header('x-store-id') || DEFAULT_STORE_ID;
+    const subtotal = items.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 0), 0);
+    const discountTotal = 0;
+    const total = subtotal - discountTotal;
+    const createdAtValue = parseSaleCreatedAt(createdAt);
+
+    try {
+      const sale = await withTransaction(async (client) => {
+        const existingSaleRes = await client.query(
+          `SELECT id
+           FROM sales
+           WHERE id = $1
+             AND store_id = $2
+           LIMIT 1`,
+          [id, targetStore]
+        );
+        if (!existingSaleRes.rows.length) {
+          throw buildError(404, 'not_found', 'Venda nao encontrada.');
+        }
+
+        const previousStockRes = await client.query(
+          `SELECT product_id, COUNT(*)::int AS quantity
+           FROM inventory_units
+           WHERE sale_id = $1
+             AND store_id = $2
+             AND product_id IS NOT NULL
+           GROUP BY product_id`,
+          [id, targetStore]
+        );
+
+        await client.query(
+          `UPDATE inventory_units
+           SET status = 'available',
+               sale_id = NULL,
+               sale_item_id = NULL,
+               sold_at = NULL,
+               updated_at = now()
+           WHERE sale_id = $1
+             AND store_id = $2`,
+          [id, targetStore]
+        );
+
+        await client.query(`DELETE FROM sale_items WHERE sale_id = $1`, [id]);
+        await client.query(`DELETE FROM payments WHERE sale_id = $1`, [id]);
+        await client.query(`DELETE FROM receivables WHERE sale_id = $1`, [id]);
+
+        await client.query(
+          `UPDATE sales
+           SET customer_id = $2,
+               customer_name = $3,
+               status = 'pending',
+               subtotal = $4,
+               discount_total = $5,
+               total = $6,
+               created_at = $7
+           WHERE id = $1
+             AND store_id = $8`,
+          [
+            id,
+            customerId || null,
+            customerName?.trim() || null,
+            subtotal,
+            discountTotal,
+            total,
+            createdAtValue,
+            targetStore
+          ]
+        );
+
+        for (const row of previousStockRes.rows) {
+          const productId = row.product_id as string | null;
+          const quantity = Number(row.quantity || 0);
+          if (!productId || quantity <= 0) continue;
+          await client.query(
+            `INSERT INTO inventory_movements (store_id, product_id, movement_type, quantity, reason, reference_id)
+             VALUES ($1, $2, 'return_in', $3, $4, $5)`,
+            [targetStore, productId, Math.abs(quantity), 'sale_edit_revert', id]
+          );
+        }
+
+        for (const item of items) {
+          const origin = item.origin === 'order' ? 'order' : 'stock';
+          if (item.unitId && item.quantity !== 1) {
+            throw buildError(400, 'invalid_unit_selection', 'Quantidade invalida para unidade especifica.');
+          }
+          const explicitUnitIds = item.unitIds ?? (item.unitId ? [item.unitId] : []);
+          if (origin === 'order' && explicitUnitIds.length) {
+            throw buildError(400, 'invalid_unit_selection', 'Itens de encomenda nao aceitam unidades especificas.');
+          }
+          if (explicitUnitIds.length && explicitUnitIds.length !== item.quantity) {
+            throw buildError(400, 'invalid_unit_selection', 'Quantidade nao corresponde as unidades informadas.');
+          }
+
+          const productRes = await client.query(
+            `SELECT id, sku
+             FROM products
+             WHERE organization_id = $1
+               AND sku = $2`,
+            [orgId, item.sku]
+          );
+          const productId = productRes.rows[0]?.id || null;
+          if (explicitUnitIds.length && !productId) {
+            throw buildError(400, 'invalid_unit_selection', 'Produto nao encontrado para a unidade informada.');
+          }
+
+          const saleItemRes = await client.query(
+            `INSERT INTO sale_items (sale_id, product_id, sku, quantity, price)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id`,
+            [id, productId, item.sku, item.quantity, item.price]
+          );
+          const saleItemId = saleItemRes.rows[0].id;
+
+          if (productId && origin !== 'order') {
+            if (explicitUnitIds.length) {
+              const unitsRes = await client.query(
+                `SELECT id, status
+                 FROM inventory_units
+                 WHERE id = ANY($1::uuid[])
+                   AND product_id = $2
+                   AND store_id = $3
+                 FOR UPDATE`,
+                [explicitUnitIds, productId, targetStore]
+              );
+              if (unitsRes.rows.length !== explicitUnitIds.length) {
+                throw buildError(409, 'unit_not_found', 'Unidade nao encontrada.');
+              }
+              if (unitsRes.rows.some((row) => row.status !== 'available')) {
+                throw buildError(409, 'unit_unavailable', 'Unidade indisponivel.');
+              }
+              await client.query(
+                `UPDATE inventory_units
+                 SET status = 'sold',
+                     sale_id = $1,
+                     sale_item_id = $2,
+                     sold_at = now(),
+                     updated_at = now()
+                 WHERE id = ANY($3::uuid[])`,
+                [id, saleItemId, explicitUnitIds]
+              );
+            } else {
+              const unitsRes = await client.query(
+                `SELECT id
+                 FROM inventory_units
+                 WHERE product_id = $1
+                   AND store_id = $2
+                   AND status = 'available'
+                 ORDER BY expires_at NULLS LAST, created_at ASC
+                 LIMIT $3
+                 FOR UPDATE SKIP LOCKED`,
+                [productId, targetStore, item.quantity]
+              );
+              if (unitsRes.rows.length < item.quantity) {
+                throw buildError(409, 'insufficient_stock', 'Estoque insuficiente.');
+              }
+              const unitIds = unitsRes.rows.map((row) => row.id);
+              await client.query(
+                `UPDATE inventory_units
+                 SET status = 'sold',
+                     sale_id = $1,
+                     sale_item_id = $2,
+                     sold_at = now(),
+                     updated_at = now()
+                 WHERE id = ANY($3::uuid[])`,
+                [id, saleItemId, unitIds]
+              );
+            }
+
+            await client.query(
+              `INSERT INTO inventory_movements (store_id, product_id, movement_type, quantity, reason)
+               VALUES ($1, $2, 'sale_out', $3, $4)`,
+              [targetStore, productId, -Math.abs(item.quantity), 'sale']
+            );
+          }
+        }
+
+        for (const payment of payments || []) {
+          await client.query(
+            `INSERT INTO payments (sale_id, method, amount)
+             VALUES ($1, $2, $3)`,
+            [id, payment.method, payment.amount]
+          );
+        }
+
+        await writeAudit(client, {
+          organizationId: orgId,
+          storeId: targetStore,
+          userId,
+          entityType: 'sale',
+          entityId: id,
+          action: 'updated',
+          payload: { total, items: items.length }
+        });
+
+        const refreshed = await client.query(
+          `SELECT id, status, subtotal, discount_total, total, created_at, customer_name
+           FROM sales
+           WHERE id = $1
+             AND store_id = $2
+           LIMIT 1`,
+          [id, targetStore]
+        );
+        return refreshed.rows[0];
+      });
+
+      return res.json({
+        data: {
+          ...sale,
+          items,
+          payments
+        }
+      });
+    } catch (error) {
+      if (error && typeof error === 'object' && 'status' in error) {
+        const err = error as { status?: number; code?: string; message?: string };
+        return res
+          .status(err.status || 409)
+          .json({ code: err.code || 'sale_error', message: err.message || 'Erro ao atualizar venda.' });
+      }
+      throw error;
+    }
+  })
+);
+
 router.get(
   '/sales/orders/:id',
   validateRequest({ params: idParamSchema }),
@@ -291,11 +530,24 @@ router.get(
     }
 
     const itemsRes = await query(
-      `SELECT si.id, si.sku, si.quantity, si.price,
+      `SELECT si.id,
+              si.product_id,
+              si.sku,
+              si.quantity,
+              si.price,
+              COALESCE(stock_info.stock_units, 0) AS stock_units,
               p.name AS product_name, p.brand AS product_brand, p.image_url AS product_image_url
        FROM sale_items si
+       LEFT JOIN (
+         SELECT sale_item_id, COUNT(*)::int AS stock_units
+         FROM inventory_units
+         WHERE sale_id = $1
+           AND sale_item_id IS NOT NULL
+         GROUP BY sale_item_id
+       ) stock_info ON stock_info.sale_item_id = si.id
        LEFT JOIN products p ON p.id = si.product_id
-       WHERE si.sale_id = $1`,
+       WHERE si.sale_id = $1
+       ORDER BY si.created_at ASC`,
       [id]
     );
 

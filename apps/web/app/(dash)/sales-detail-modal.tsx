@@ -28,9 +28,11 @@ export type SaleUpdate = {
 
 type SaleItemDetail = {
   id: string;
+  product_id?: string | null;
   sku: string;
   quantity: number | string;
   price: number | string;
+  stock_units?: number | string;
   product_name?: string | null;
   product_brand?: string | null;
   product_image_url?: string | null;
@@ -74,6 +76,7 @@ type SalesDetailModalProps = {
   onClose: () => void;
   sale?: SaleDetail | null;
   onUpdated?: (update: SaleUpdate) => void;
+  onEditSale?: (saleId: string) => void;
 };
 
 type PaymentState = {
@@ -238,7 +241,7 @@ const getPaymentStatus = (
   return paidFromPayments + paidFromReceivables >= total ? 'paid' : 'pending';
 };
 
-export default function SalesDetailModal({ open, onClose, sale, onUpdated }: SalesDetailModalProps) {
+export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEditSale }: SalesDetailModalProps) {
   const router = useRouter();
   const [statusOpen, setStatusOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -995,6 +998,17 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated }: Sal
               </button>
               {actionsOpen ? (
                 <div className="sale-menu">
+                  {!isCancelled ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActionsOpen(false);
+                        onEditSale?.(sale.id);
+                      }}
+                    >
+                      Editar venda
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => {

@@ -34,6 +34,42 @@ type SaleDetailsSeed = {
   item_name?: string | null;
 };
 
+type SaleDetailItemResponse = {
+  id: string;
+  product_id?: string | null;
+  sku: string;
+  quantity: number | string;
+  price: number | string;
+  stock_units?: number | string;
+};
+
+type SaleDetailReceivableResponse = {
+  id: string;
+  amount: number | string;
+  due_date: string;
+  status: string;
+  method?: string | null;
+};
+
+type SaleDetailPaymentResponse = {
+  id: string;
+  amount: number | string;
+  method?: string | null;
+  created_at?: string;
+};
+
+type SaleDetailResponse = {
+  id: string;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  created_at: string;
+  total: number | string;
+  discount_total?: number | string;
+  items: SaleDetailItemResponse[];
+  payments: SaleDetailPaymentResponse[];
+  receivables: SaleDetailReceivableResponse[];
+};
+
 type Customer = {
   id: string;
   name: string;
@@ -212,6 +248,16 @@ const toIsoDate = (value: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+const toInputDate = (value?: string | null) => {
+  const raw = (value || '').trim();
+  if (!raw) return toIsoDate(new Date());
+  const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) return `${dateOnlyMatch[1]}-${dateOnlyMatch[2]}-${dateOnlyMatch[3]}`;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return toIsoDate(new Date());
+  return toIsoDate(parsed);
+};
+
 const getProductNumericCode = (product?: Product | null) => {
   const skuDigits = digitsOnly(product?.sku);
   if (skuDigits) return skuDigits;
@@ -381,7 +427,10 @@ export default function SalesPanel({
 
   const [createSaleOpen, setCreateSaleOpen] = useState(false);
   const [createSaleSaving, setCreateSaleSaving] = useState(false);
+  const [loadingSaleForEdit, setLoadingSaleForEdit] = useState(false);
   const [createSaleError, setCreateSaleError] = useState<string | null>(null);
+  const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
+  const [editingStockByProduct, setEditingStockByProduct] = useState<Record<string, number>>({});
   const [saleCustomerName, setSaleCustomerName] = useState('');
   const [saleCustomerQuery, setSaleCustomerQuery] = useState('');
   const [saleCustomerId, setSaleCustomerId] = useState('');
@@ -431,7 +480,9 @@ export default function SalesPanel({
         const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? quantityRaw : 0;
         const origin = item.origin || 'stock';
         const unitPrice = parseMoney(item.price);
-        const available = Math.max(0, toNumber(product?.quantity ?? 0));
+        const baseAvailable = Math.max(0, toNumber(product?.quantity ?? 0));
+        const editAllowance = product?.id ? Math.max(0, toNumber(editingStockByProduct[product.id] ?? 0)) : 0;
+        const available = origin === 'stock' ? baseAvailable + editAllowance : baseAvailable;
         return {
           ...item,
           origin,
@@ -442,7 +493,7 @@ export default function SalesPanel({
           subtotal: quantity * unitPrice
         };
       }),
-    [saleProducts, saleItems]
+    [editingStockByProduct, saleProducts, saleItems]
   );
 
   const filteredProducts = useMemo(() => {
@@ -719,7 +770,9 @@ export default function SalesPanel({
       prev.map((item) => {
         if (item.id !== itemId) return item;
         const product = saleProducts.find((candidate) => candidate.id === item.productId);
-        const available = Math.max(0, toNumber(product?.quantity ?? 0));
+        const baseAvailable = Math.max(0, toNumber(product?.quantity ?? 0));
+        const editAllowance = product?.id ? Math.max(0, toNumber(editingStockByProduct[product.id] ?? 0)) : 0;
+        const available = item.origin === 'stock' ? baseAvailable + editAllowance : baseAvailable;
         const current = Number.parseInt(item.quantity || '0', 10) || 0;
         let next = Math.max(1, current + delta);
         if (item.origin === 'stock') {
@@ -735,6 +788,8 @@ export default function SalesPanel({
   };
 
   const resetCreateSaleForm = () => {
+    setEditingSaleId(null);
+    setEditingStockByProduct({});
     setSaleCustomerName('');
     setSaleCustomerQuery('');
     setSaleCustomerId('');
@@ -929,6 +984,7 @@ export default function SalesPanel({
 
   useEffect(() => {
     if (!createSaleOpen || salePaid) return;
+    if (editingSaleId && saleInstallments.length > 0) return;
     if (salePendingTotal <= 0) {
       setSaleInstallments([]);
       return;
@@ -936,7 +992,7 @@ export default function SalesPanel({
     const count = saleInstallments.length || 1;
     const baseDate = saleDate || toIsoDate(new Date());
     setSaleInstallments(buildInstallments(count, salePendingTotal, baseDate));
-  }, [createSaleOpen, salePaid, salePendingTotal, saleInstallments.length, saleDate]);
+  }, [createSaleOpen, editingSaleId, salePaid, salePendingTotal, saleInstallments.length, saleDate]);
 
   useEffect(() => {
     if (!createSaleOpen || salePaid) return;
@@ -991,6 +1047,119 @@ export default function SalesPanel({
           : sale
       );
     });
+  };
+
+  const openEditSaleModal = async (saleId: string) => {
+    setSelectedSale(null);
+    clearSaleIdFromUrl();
+    setLoadingSaleForEdit(true);
+    setCreateSaleError(null);
+    try {
+      const response = await fetch(`${API_BASE}/sales/orders/${saleId}`, {
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        setToast(payload?.message || 'Nao foi possivel carregar a venda para editar.');
+        return;
+      }
+
+      const payload = (await response.json().catch(() => null)) as { data?: SaleDetailResponse } | null;
+      const detail = payload?.data;
+      if (!detail) {
+        setToast('Nao foi possivel carregar a venda para editar.');
+        return;
+      }
+
+      const editItems: SaleDraftItem[] = [];
+      const stockByProduct: Record<string, number> = {};
+      for (const item of detail.items || []) {
+        const directProductId = (item.product_id || '').trim();
+        const normalizedSku = (item.sku || '').trim();
+        const normalizedSkuDigits = digitsOnly(normalizedSku);
+        const matchedProduct =
+          localProducts.find((product) => product.id === directProductId) ||
+          localProducts.find((product) => product.sku === normalizedSku) ||
+          (normalizedSkuDigits
+            ? localProducts.find((product) => digitsOnly(product.sku) === normalizedSkuDigits)
+            : undefined);
+        const productId = matchedProduct?.id || directProductId;
+        if (!productId) continue;
+
+        const quantity = Math.max(1, Math.trunc(toNumber(item.quantity)));
+        const stockUnits = Math.max(0, Math.trunc(toNumber(item.stock_units ?? 0)));
+        const origin: 'stock' | 'order' = stockUnits > 0 ? 'stock' : 'order';
+
+        if (origin === 'stock') {
+          stockByProduct[productId] = Math.max(0, toNumber(stockByProduct[productId] ?? 0)) + quantity;
+        }
+
+        editItems.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          productId,
+          quantity: String(quantity),
+          price: formatCurrency(Math.max(0, toNumber(item.price))),
+          origin
+        });
+      }
+
+      if (!editItems.length) {
+        setToast('Nao foi possivel carregar os itens da venda para editar.');
+        return;
+      }
+
+      const customerById = detail.customer_id
+        ? localCustomers.find((customer) => customer.id === detail.customer_id)
+        : null;
+      const customerName = customerById?.name || (detail.customer_name || '').trim();
+      const customerId = customerById?.id || '';
+      const totalValue = Math.max(0, toNumber(detail.total));
+      const discountValue = Math.max(0, toNumber(detail.discount_total ?? 0));
+      const receivables = detail.receivables || [];
+      const payments = detail.payments || [];
+      const hasReceivables = receivables.length > 0;
+      const paidAtCheckout = payments.reduce((sum, payment) => sum + Math.max(0, toNumber(payment.amount)), 0);
+      const paymentMethod =
+        receivables.find((receivable) => (receivable.method || '').trim())?.method ||
+        payments.find((payment) => (payment.method || '').trim())?.method ||
+        '';
+
+      resetCreateSaleForm();
+      setEditingSaleId(detail.id);
+      setEditingStockByProduct(stockByProduct);
+      setCreateSaleOpen(true);
+      setCustomerPickerOpen(false);
+
+      setSaleItems(editItems);
+      setSaleDate(toInputDate(detail.created_at));
+      setSaleCustomerName(customerName);
+      setSaleCustomerQuery(customerName);
+      setSaleCustomerId(customerId);
+      setSaleDiscount(discountValue > 0 ? formatCurrency(discountValue) : '');
+      setSaleRegisterMethod(paymentMethod || '');
+
+      if (hasReceivables) {
+        setSalePaid(false);
+        setSaleRegisterAmount(formatCurrency(totalValue));
+        setSaleDownPayment(paidAtCheckout > 0 ? formatCurrency(paidAtCheckout) : '');
+        setSaleInstallments(
+          receivables.map((receivable, index) => ({
+            id: `${detail.id}-installment-${index}-${receivable.id}`,
+            dueDate: toInputDate(receivable.due_date),
+            amount: formatCurrency(Math.max(0, toNumber(receivable.amount)))
+          }))
+        );
+      } else {
+        setSalePaid(true);
+        setSaleRegisterAmount('');
+        setSaleDownPayment('');
+        setSaleInstallments([]);
+      }
+    } catch {
+      setToast('Nao foi possivel carregar a venda para editar.');
+    } finally {
+      setLoadingSaleForEdit(false);
+    }
   };
 
   const handleCreateCustomer = async () => {
@@ -1118,7 +1287,9 @@ export default function SalesPanel({
     for (const item of normalizedItems) {
       if (!item.product || item.origin === 'order') continue;
       const requested = requestedByProduct.get(item.product.id) || 0;
-      const available = Math.max(0, toNumber(item.product.quantity ?? 0));
+      const baseAvailable = Math.max(0, toNumber(item.product.quantity ?? 0));
+      const editAllowance = editingSaleId ? Math.max(0, toNumber(editingStockByProduct[item.product.id] ?? 0)) : 0;
+      const available = baseAvailable + editAllowance;
       if (requested > available) {
         setCreateSaleError(`Estoque insuficiente para ${item.product.name}. Disponivel: ${available}`);
         return;
@@ -1200,39 +1371,43 @@ export default function SalesPanel({
         return { ...item, unitPrice: adjustedUnit };
       });
 
-      const saleRes = await fetch(`${API_BASE}/sales/checkout`, {
-        method: 'POST',
-        headers: buildMutationHeaders(),
-        body: JSON.stringify({
-          customerId: saleCustomerId || undefined,
-          customerName: saleCustomerId ? undefined : customerNameValue,
-          createdAt: saleDateValue,
-          items: adjustedItems.flatMap((item) =>
-            item.product
+      const isEditing = Boolean(editingSaleId);
+      const saleRes = await fetch(
+        isEditing ? `${API_BASE}/sales/orders/${editingSaleId}` : `${API_BASE}/sales/checkout`,
+        {
+          method: isEditing ? 'PATCH' : 'POST',
+          headers: buildMutationHeaders(),
+          body: JSON.stringify({
+            customerId: saleCustomerId || undefined,
+            customerName: saleCustomerId ? undefined : customerNameValue,
+            createdAt: saleDateValue,
+            items: adjustedItems.flatMap((item) =>
+              item.product
+                ? [
+                    {
+                      sku: item.product.sku,
+                      quantity: item.quantity,
+                      price: item.unitPrice,
+                      origin: item.origin === 'order' ? 'order' : 'stock'
+                    }
+                  ]
+                : []
+            ),
+            payments: paidAtCheckout > 0
               ? [
                   {
-                    sku: item.product.sku,
-                    quantity: item.quantity,
-                    price: item.unitPrice,
-                    origin: item.origin === 'order' ? 'order' : 'stock'
+                    method: paymentMethodValue,
+                    amount: paidAtCheckout
                   }
                 ]
               : []
-          ),
-          payments: paidAtCheckout > 0
-            ? [
-                {
-                  method: paymentMethodValue,
-                  amount: paidAtCheckout
-                }
-              ]
-            : []
-        })
-      });
+          })
+        }
+      );
 
       if (!saleRes.ok) {
         const payload = (await saleRes.json().catch(() => null)) as { message?: string } | null;
-        setCreateSaleError(payload?.message || 'Erro ao registrar a venda');
+        setCreateSaleError(payload?.message || (isEditing ? 'Erro ao atualizar a venda' : 'Erro ao registrar a venda'));
         return;
       }
 
@@ -1240,7 +1415,7 @@ export default function SalesPanel({
         data?: { id?: string; created_at?: string; status?: string; customer_name?: string | null };
       };
 
-      const saleId = payload.data?.id;
+      const saleId = payload.data?.id || editingSaleId || undefined;
       let receivableFailed = false;
 
       if (!salePaid && saleId && normalizedInstallments.length > 0) {
@@ -1274,22 +1449,40 @@ export default function SalesPanel({
         soldByProduct.set(item.product.id, (soldByProduct.get(item.product.id) || 0) + item.quantity);
       }
 
-      setLocalProducts((prev) =>
-        prev.map((product) =>
-          soldByProduct.has(product.id)
-            ? {
-                ...product,
-                quantity: Math.max(0, toNumber(product.quantity ?? 0) - (soldByProduct.get(product.id) || 0))
-              }
-            : product
-        )
-      );
+      if (isEditing) {
+        setLocalProducts((prev) =>
+          prev.map((product) => {
+            const restoredFromPreviousSale = Math.max(0, toNumber(editingStockByProduct[product.id] ?? 0));
+            const soldNow = Math.max(0, toNumber(soldByProduct.get(product.id) ?? 0));
+            if (!restoredFromPreviousSale && !soldNow) return product;
+            return {
+              ...product,
+              quantity: Math.max(0, toNumber(product.quantity ?? 0) + restoredFromPreviousSale - soldNow)
+            };
+          })
+        );
+      } else {
+        setLocalProducts((prev) =>
+          prev.map((product) =>
+            soldByProduct.has(product.id)
+              ? {
+                  ...product,
+                  quantity: Math.max(0, toNumber(product.quantity ?? 0) - (soldByProduct.get(product.id) || 0))
+                }
+              : product
+          )
+        );
+      }
 
       closeCreateSaleModal();
       router.refresh();
-      setToast(receivableFailed ? 'Venda criada, mas houve erro ao registrar parcela' : 'Venda registrada');
+      if (receivableFailed) {
+        setToast(isEditing ? 'Venda atualizada, mas houve erro ao registrar parcela' : 'Venda criada, mas houve erro ao registrar parcela');
+      } else {
+        setToast(isEditing ? 'Venda atualizada' : 'Venda registrada');
+      }
     } catch {
-      setCreateSaleError('Erro ao registrar a venda');
+      setCreateSaleError(editingSaleId ? 'Erro ao atualizar a venda' : 'Erro ao registrar a venda');
     } finally {
       setCreateSaleSaving(false);
     }
@@ -1449,7 +1642,7 @@ export default function SalesPanel({
         <div className="modal-backdrop sale-overlay" onClick={closeCreateSaleModal}>
           <div className="sale-overlay-panel" onClick={(event) => event.stopPropagation()}>
             <div className="sale-overlay-header">
-              <h3>Escolher produtos</h3>
+              <h3>{editingSaleId ? 'Editar venda' : 'Escolher produtos'}</h3>
               <div className="sale-overlay-actions">
                 <button
                   className="sale-link-button"
@@ -1800,12 +1993,17 @@ export default function SalesPanel({
                     onClick={handleCreateSale}
                     disabled={
                       createSaleSaving ||
+                      loadingSaleForEdit ||
                       saleItemsDetailed.length === 0 ||
                       !saleCustomerName ||
                       !saleRegisterMethod.trim()
                     }
                   >
-                    {createSaleSaving ? 'Salvando...' : 'Concluir venda'}
+                    {createSaleSaving
+                      ? 'Salvando...'
+                      : editingSaleId
+                        ? 'Salvar edicao'
+                        : 'Concluir venda'}
                   </button>
                 </div>
               </aside>
@@ -2252,6 +2450,9 @@ export default function SalesPanel({
         }}
         sale={selectedSale}
         onUpdated={handleSaleUpdated}
+        onEditSale={(saleId) => {
+          void openEditSaleModal(saleId);
+        }}
       />
 
       {toast ? <div className="toast">{toast}</div> : null}
