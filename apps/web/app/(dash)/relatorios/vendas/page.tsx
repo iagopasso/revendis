@@ -11,6 +11,7 @@ type Sale = {
   customer_name?: string | null;
   cost_total?: number | string;
   profit?: number | string;
+  brands?: string[];
 };
 
 type Receivable = {
@@ -37,12 +38,6 @@ const formatDate = (value: string) => {
   return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(date);
 };
 
-const deliveryLabel = (status: string) => {
-  if (status === 'delivered' || status === 'confirmed') return 'Entregue';
-  if (status === 'cancelled') return 'Cancelado';
-  return 'Nao entregue';
-};
-
 const paymentLabel = (total: number, paid: number) => {
   if (paid >= total - 0.01) return 'Pago';
   if (paid > 0.01) return 'Parcial';
@@ -63,6 +58,7 @@ export default async function RelatorioVendasPage({
   searchParams?: Promise<ReportSearchParams>;
 }) {
   const resolvedParams = (await searchParams) || {};
+  const selectedBrand = getStringParam(resolvedParams.brand).trim();
   const selectedCustomer = getStringParam(resolvedParams.customer).trim();
   const { periodLabel, rangeQuery } = buildReportRangeContext(resolvedParams);
   const salesQueryParams = new URLSearchParams(rangeQuery.startsWith('?') ? rangeQuery.slice(1) : '');
@@ -78,6 +74,13 @@ export default async function RelatorioVendasPage({
   const sales = selectedCustomer
     ? salesInRange.filter((sale) => getCustomerValue(sale) === selectedCustomer)
     : salesInRange;
+  const brandFilteredSales = selectedBrand
+    ? sales.filter((sale) =>
+        (sale.brands ?? [])
+          .map((brand) => brand?.trim() || '')
+          .some((brand) => brand === selectedBrand)
+      )
+    : sales;
   const receivables = receivablesResponse?.data ?? [];
   const customers = customersResponse?.data ?? [];
   const customerOptionsMap = new Map<string, string>();
@@ -98,6 +101,21 @@ export default async function RelatorioVendasPage({
 
   const customerOptions = Array.from(customerOptionsMap.entries())
     .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+
+  const brandSet = new Set<string>();
+  salesInRange.forEach((sale) => {
+    (sale.brands ?? []).forEach((brand) => {
+      const trimmed = brand?.trim();
+      if (!trimmed) return;
+      brandSet.add(trimmed);
+    });
+  });
+  if (selectedBrand && !brandSet.has(selectedBrand)) {
+    brandSet.add(selectedBrand);
+  }
+  const brandOptions = Array.from(brandSet)
+    .map((value) => ({ value, label: value }))
     .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
 
   const receivablesBySale = new Map<
@@ -124,31 +142,24 @@ export default async function RelatorioVendasPage({
     { key: 'date', label: 'DATA' },
     { key: 'customer', label: 'CLIENTE' },
     { key: 'total', label: 'TOTAL' },
-    { key: 'profit', label: 'LUCRO' },
     { key: 'paid', label: 'VALOR PAGO' },
-    { key: 'delivery', label: 'ENVIO' },
     { key: 'payment', label: 'PAGAMENTO' }
   ];
 
-  const rows = sales.map((sale) => {
+  const totalSalesValue = brandFilteredSales.reduce((sum, sale) => sum + toNumber(sale.total), 0);
+
+  const rows = brandFilteredSales.map((sale) => {
     const total = toNumber(sale.total);
     const summary = receivablesBySale.get(sale.id);
     const outstanding = summary ? Math.max(0, summary.total - summary.paid) : 0;
     const paid = summary ? Math.max(0, total - outstanding) : total;
-    const profit =
-      sale.profit !== undefined
-        ? toNumber(sale.profit)
-        : total - toNumber(sale.cost_total);
-
     return {
       id: sale.id,
       values: {
         date: formatDate(sale.created_at),
         customer: sale.customer_name || 'Cliente nao informado',
         total: formatCurrency(total),
-        profit: formatCurrency(profit),
         paid: formatCurrency(Math.max(0, paid)),
-        delivery: deliveryLabel(sale.status),
         payment: paymentLabel(total, Math.max(0, paid))
       }
     };
@@ -168,6 +179,10 @@ export default async function RelatorioVendasPage({
         selectedCustomer={selectedCustomer}
         customerOptions={customerOptions}
         showCustomerFilter
+        totals={[{ label: 'Total de todas as vendas', value: formatCurrency(totalSalesValue) }]}
+        showBrandFilter
+        brandOptions={brandOptions}
+        selectedBrand={selectedBrand}
       />
     </main>
   );

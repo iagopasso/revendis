@@ -21,6 +21,7 @@ type Sale = {
   cost_total?: number | string;
   profit?: number | string;
   payment_status?: PaymentStatus;
+  brands?: string[];
 };
 
 type SaleDetailsSeed = {

@@ -469,6 +469,12 @@ const resolveRequestedCatalogBrands = async ({
 }): Promise<CatalogBrandSlug[]> => {
   const configured = await resolveConfiguredCatalogBrands(orgId);
   if (configured.length === 0) {
+    if (requestedBrands && requestedBrands.length > 0) {
+      return requestedBrands;
+    }
+    if (allBrands) {
+      return [...CATALOG_BRANDS];
+    }
     return [];
   }
 

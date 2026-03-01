@@ -37,6 +37,10 @@ type ReportDetailPanelProps = {
   selectedCustomer?: string;
   customerOptions?: ReportCustomerOption[];
   showCustomerFilter?: boolean;
+  brandOptions?: ReportCustomerOption[];
+  selectedBrand?: string;
+  showBrandFilter?: boolean;
+  totals?: { label: string; value: string }[];
 };
 
 const csvEscape = (value: string) => `"${value.replace(/"/g, '""')}"`;
@@ -66,7 +70,11 @@ export default function ReportDetailPanel({
   dateRangeDefaultPreset = '28d',
   selectedCustomer = '',
   customerOptions = [],
-  showCustomerFilter = false
+  showCustomerFilter = false,
+  brandOptions = [],
+  selectedBrand = '',
+  showBrandFilter = false,
+  totals = []
 }: ReportDetailPanelProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -79,6 +87,7 @@ export default function ReportDetailPanel({
   const breadcrumbRoot = breadcrumbParts[0] || 'Relatorios';
   const breadcrumbCurrent = breadcrumbParts[1] || title;
   const hasCustomerFilter = showCustomerFilter || customerOptions.length > 0 || selectedCustomer.length > 0;
+  const hasBrandFilter = showBrandFilter || brandOptions.length > 0 || selectedBrand.length > 0;
 
   useEffect(() => {
     if (!downloadOpen) return;
@@ -233,6 +242,17 @@ export default function ReportDetailPanel({
     router.replace(query ? `${pathname}?${query}` : pathname);
   };
 
+  const updateBrandFilter = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set('brand', value);
+    } else {
+      params.delete('brand');
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  };
+
   return (
     <section className="report-detail-shell">
       <div className="report-detail-header-row">
@@ -284,7 +304,31 @@ export default function ReportDetailPanel({
             </select>
           </label>
         ) : null}
+        {hasBrandFilter ? (
+          <label className="report-detail-brand-field">
+            <span>Marca</span>
+            <select value={selectedBrand} onChange={(event) => updateBrandFilter(event.target.value)}>
+              <option value="">Todas as marcas</option>
+              {brandOptions.map((brand) => (
+                <option key={brand.value} value={brand.value}>
+                  {brand.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
+
+      {totals.length ? (
+        <div className="report-detail-totals">
+          {totals.map((total) => (
+            <article key={total.label} className="report-detail-total">
+              <span>{total.label}</span>
+              <strong>{total.value}</strong>
+            </article>
+          ))}
+        </div>
+      ) : null}
 
       {rows.length === 0 ? (
         <div className="reports-empty">

@@ -25,6 +25,7 @@ type Sale = {
   items_count?: number | string;
   cost_total?: number | string;
   profit?: number | string;
+  brands?: string[];
 };
 
 type Customer = {

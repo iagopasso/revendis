@@ -6,6 +6,7 @@ export type ReportSearchParams = {
   from?: string | string[];
   to?: string | string[];
   customer?: string | string[];
+  brand?: string | string[];
 };
 
 type ReportRangeContext = {

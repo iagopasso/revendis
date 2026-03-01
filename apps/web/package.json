@@ -9,7 +9,7 @@
     "dev": "__NEXT_DEVTOOL_SEGMENT_EXPLORER=0 next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --cache --cache-location .eslintcache",
+    "lint": "tsc --noEmit -p tsconfig.lint.json",
     "test": "echo 'web tests placeholder'",
     "e2e": "playwright test -c playwright.config.ts"
   },

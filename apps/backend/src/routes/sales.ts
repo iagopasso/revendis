@@ -84,6 +84,14 @@ router.get(
          FROM inventory_units iu
          INNER JOIN base_sales bs ON bs.id = iu.sale_id
          GROUP BY iu.sale_id
+       ),
+       sale_brands AS (
+         SELECT si.sale_id,
+                array_agg(DISTINCT COALESCE(NULLIF(trim(p.brand), ''), 'Sem marca')) AS brands
+         FROM sale_items si
+         INNER JOIN base_sales bs ON bs.id = si.sale_id
+         LEFT JOIN products p ON p.id = si.product_id
+         GROUP BY si.sale_id
        )
        SELECT bs.id,
               bs.customer_id,
@@ -96,10 +104,12 @@ router.get(
               bs.customer_photo_url,
               COALESCE(items.total_quantity, 0) AS items_count,
               COALESCE(costs.cost_total, 0) AS cost_total,
-              (bs.total - COALESCE(costs.cost_total, 0)) AS profit
-       FROM base_sales bs
-       LEFT JOIN item_totals items ON items.sale_id = bs.id
-       LEFT JOIN cost_totals costs ON costs.sale_id = bs.id
+              (bs.total - COALESCE(costs.cost_total, 0)) AS profit,
+              COALESCE(brand_names.brands, ARRAY['Sem marca']::text[]) AS brands
+        FROM base_sales bs
+        LEFT JOIN item_totals items ON items.sale_id = bs.id
+        LEFT JOIN cost_totals costs ON costs.sale_id = bs.id
+        LEFT JOIN sale_brands brand_names ON brand_names.sale_id = bs.id
        ORDER BY bs.created_at DESC`,
       [storeId, from, to, customerId, customerName, !hasFilters]
     );
