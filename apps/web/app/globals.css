@@ -3498,12 +3498,13 @@ button.dashboard-reminder-card {
 }
 
 .report-section {
-  border: 1px solid #d3ddea;
+  border: 1px solid var(--stroke);
   border-radius: 12px;
-  background: #f4f7fb;
+  background: var(--panel);
   padding: 12px;
   display: grid;
   gap: 12px;
+  color: var(--ink);
 }
 
 .report-section .panel-title {
@@ -3518,13 +3519,14 @@ button.dashboard-reminder-card {
 }
 
 .report-card {
-  background: #ffffff;
+  background: var(--panel-2);
   border-radius: 10px;
-  border: 1px solid #cdd8e8;
+  border: 1px solid var(--stroke);
   padding: 16px 18px;
   display: flex;
   align-items: center;
   gap: 14px;
+  color: var(--ink);
 }
 
 .report-link {
@@ -3532,9 +3534,9 @@ button.dashboard-reminder-card {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.report-link:hover {
-  border-color: #b5c6df;
-  box-shadow: 0 8px 20px rgba(148, 163, 184, 0.2);
+.report-link:is(:hover, :focus-visible) {
+  border-color: rgba(63, 194, 255, 0.8);
+  box-shadow: 0 8px 20px rgba(63, 194, 255, 0.15);
 }
 
 .report-card .icon {
@@ -3543,19 +3545,19 @@ button.dashboard-reminder-card {
   border-radius: 10px;
   display: grid;
   place-items: center;
-  background: #f1e7fb;
-  color: #8b5bd8;
+  background: var(--accent-soft);
+  color: var(--accent);
   font-size: 1.35rem;
 }
 
 .report-card strong {
   font-size: 1.1rem;
-  color: #1f2937;
+  color: var(--ink);
 }
 
 .report-card p {
   margin: 0;
-  color: #6b7a93;
+  color: var(--muted);
   font-size: 0.98rem;
 }
 
@@ -3574,11 +3576,11 @@ button.dashboard-reminder-card {
 .report-detail-title {
   margin: 10px 0 0;
   font-size: 2.1rem;
-  color: #1f2937;
+  color: var(--ink);
 }
 
 .report-detail-breadcrumb {
-  color: #374151;
+  color: var(--muted);
   font-size: 1rem;
   letter-spacing: 0.01em;
   display: inline-flex;
@@ -3587,11 +3589,11 @@ button.dashboard-reminder-card {
 }
 
 .report-detail-breadcrumb-link {
-  color: #374151;
+  color: var(--ink);
   text-decoration: none;
 }
 
-.report-detail-breadcrumb-link:hover {
+.report-detail-breadcrumb-link:is(:hover, :focus-visible) {
   text-decoration: underline;
 }
 
@@ -3602,8 +3604,8 @@ button.dashboard-reminder-card {
 .reports-download-button {
   min-width: 126px;
   justify-content: center;
-  background: #9f67e7;
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #0f0b16;
   border: none;
   font-weight: 600;
 }
@@ -3618,10 +3620,10 @@ button.dashboard-reminder-card {
   right: 0;
   top: calc(100% + 10px);
   width: 220px;
-  border: 1px solid #d6ddeb;
+  border: 1px solid var(--stroke);
   border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.15);
+  background: var(--panel);
+  box-shadow: var(--shadow);
   overflow: hidden;
   z-index: 22;
 }
@@ -3629,9 +3631,9 @@ button.dashboard-reminder-card {
 .reports-download-menu button {
   width: 100%;
   border: none;
-  border-bottom: 1px solid #e5eaf2;
-  background: #ffffff;
-  color: #1f2937;
+  border-bottom: 1px solid var(--stroke);
+  background: transparent;
+  color: var(--ink);
   text-align: left;
   padding: 12px 14px;
   font: inherit;
@@ -3642,8 +3644,8 @@ button.dashboard-reminder-card {
   border-bottom: none;
 }
 
-.reports-download-menu button:hover {
-  background: #edf2f9;
+.reports-download-menu button:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .report-detail-toolbar {
@@ -3655,9 +3657,9 @@ button.dashboard-reminder-card {
 
 .report-detail-toolbar .date-range-trigger {
   border-radius: 8px;
-  border: 1px solid #d6ddeb;
-  background: #e8edf4;
-  color: #1f2937;
+  border: 1px solid var(--stroke);
+  background: var(--panel-2);
+  color: var(--ink);
   padding: 10px 14px;
   font-size: 0.92rem;
   font-weight: 600;
@@ -3667,7 +3669,7 @@ button.dashboard-reminder-card {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #1f2937;
+  color: var(--ink);
   font-size: 0.9rem;
   font-weight: 600;
 }
@@ -3676,9 +3678,9 @@ button.dashboard-reminder-card {
   min-height: 40px;
   min-width: 230px;
   border-radius: 8px;
-  border: 1px solid #d6ddeb;
-  background: #ffffff;
-  color: #1f2937;
+  border: 1px solid var(--stroke);
+  background: var(--panel);
+  color: var(--ink);
   font: inherit;
   font-weight: 500;
   padding: 0 10px;
@@ -3688,7 +3690,7 @@ button.dashboard-reminder-card {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #1f2937;
+  color: var(--ink);
   font-size: 0.9rem;
   font-weight: 600;
 }
@@ -3697,9 +3699,9 @@ button.dashboard-reminder-card {
   min-height: 40px;
   min-width: 220px;
   border-radius: 8px;
-  border: 1px solid #d6ddeb;
-  background: #ffffff;
-  color: #1f2937;
+  border: 1px solid var(--stroke);
+  background: var(--panel);
+  color: var(--ink);
   font: inherit;
   font-weight: 500;
   padding: 0 10px;
@@ -3714,21 +3716,21 @@ button.dashboard-reminder-card {
 .report-detail-total {
   padding: 14px 16px;
   border-radius: 12px;
-  border: 1px solid #e5eaf2;
-  background: #ffffff;
-  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--stroke);
+  background: var(--panel-2);
+  box-shadow: var(--shadow);
 }
 
 .report-detail-total span {
   display: block;
   font-size: 0.85rem;
-  color: #6b7a93;
+  color: var(--muted);
   margin-bottom: 4px;
 }
 
 .report-detail-total strong {
   font-size: 1.9rem;
-  color: #1f2937;
+  color: var(--ink);
   display: block;
 }
 
@@ -3737,9 +3739,9 @@ button.dashboard-reminder-card {
   align-items: center;
   gap: 8px;
   border-radius: 8px;
-  border: 1px solid #d6ddeb;
-  background: #e8edf4;
-  color: #1f2937;
+  border: 1px solid var(--stroke);
+  background: var(--panel-2);
+  color: var(--ink);
   padding: 10px 14px;
   font-size: 0.92rem;
   font-weight: 600;
@@ -3752,30 +3754,30 @@ button.dashboard-reminder-card {
 
 .reports-empty {
   min-height: 260px;
-  border: 1px dashed #d5deea;
+  border: 1px dashed var(--stroke);
   border-radius: 12px;
   display: grid;
   place-items: center;
   text-align: center;
   gap: 10px;
-  color: #64748b;
+  color: var(--muted);
 }
 
 .reports-empty-icon {
   width: 56px;
   height: 56px;
   border-radius: 16px;
-  border: 1px solid #d6deeb;
-  background: #edf2f8;
+  border: 1px solid var(--stroke);
+  background: var(--panel-2);
   display: grid;
   place-items: center;
   font-size: 1.6rem;
 }
 
 .report-table-wrap {
-  border: 1px solid #ccd7e6;
+  border: 1px solid var(--stroke);
   border-radius: 10px;
-  background: #ffffff;
+  background: var(--panel);
   overflow: auto;
 }
 
@@ -3787,8 +3789,8 @@ button.dashboard-reminder-card {
 
 .report-table thead th {
   padding: 14px 18px;
-  border-bottom: 1px solid #d5deea;
-  color: #4b5563;
+  border-bottom: 1px solid var(--stroke);
+  color: var(--muted);
   font-size: 0.76rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -3797,8 +3799,8 @@ button.dashboard-reminder-card {
 
 .report-table tbody td {
   padding: 16px 18px;
-  border-top: 1px solid #e5eaf3;
-  color: #1f2937;
+  border-top: 1px solid var(--stroke);
+  color: var(--ink);
   font-size: 1.02rem;
   white-space: nowrap;
 }
@@ -16505,52 +16507,4 @@ html[data-theme='dark'] .finance-summary-card .stat-value {
 
 html[data-theme='dark'] .finance-summary-card .finance-negative {
   color: #dc2626;
-}
-
-html[data-theme='dark'] .report-section,
-html[data-theme='dark'] .report-card,
-html[data-theme='dark'] .report-table-wrap {
-  background: #ffffff;
-  border-color: #d1dae7;
-}
-
-html[data-theme='dark'] .report-section .panel-title,
-html[data-theme='dark'] .report-card strong,
-html[data-theme='dark'] .report-card .icon,
-html[data-theme='dark'] .report-detail-title,
-html[data-theme='dark'] .report-detail-breadcrumb,
-html[data-theme='dark'] .report-detail-breadcrumb-link,
-html[data-theme='dark'] .report-detail-customer-field,
-html[data-theme='dark'] .report-detail-brand-field,
-html[data-theme='dark'] .report-table tbody td {
-  color: #111827;
-}
-
-html[data-theme='dark'] .report-card p,
-html[data-theme='dark'] .report-table thead th {
-  color: #475569;
-}
-
-html[data-theme='dark'] .report-detail-brand-field select {
-  background: #f8fafc;
-  border-color: #d1dae7;
-  color: #111827;
-}
-
-html[data-theme='dark'] .report-detail-total {
-  background: #f8fafc;
-  border-color: #d1dae7;
-}
-
-html[data-theme='dark'] .report-detail-total span {
-  color: #475569;
-}
-
-html[data-theme='dark'] .report-detail-total strong {
-  color: #111827;
-}
-
-html[data-theme='dark'] .inventory-list .data-row.header {
-  background: #f8fafc;
-  color: #475569;
 }
