@@ -102,14 +102,14 @@ const isBirthdayInNextDays = (value?: string | null, days = 7) => {
 
 const isReceivablePending = (status?: string | null) => normalizeStatus(status) === 'pending';
 
-const getFirstName = (value?: string) => {
-  const raw = (value || '').trim();
-  if (!raw) return 'empreendedor';
-  const first = raw.split(/\s+/)[0] || raw;
-  return first.charAt(0).toUpperCase() + first.slice(1);
+const getDashboardName = (account?: Account) => {
+  const businessName = (account?.businessName || '').trim();
+  if (businessName) return businessName;
+  return 'empreendedor';
 };
 
 const getParamValue = (value?: string | string[]) => (Array.isArray(value) ? value[0] : value) || '';
+const toMonthValue = (value: Date) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}`;
 
 export default async function DashboardPage({
   searchParams
@@ -117,16 +117,22 @@ export default async function DashboardPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const resolvedParams = (await searchParams) ?? {};
-  const dateRange = getDateRangeFromSearchParams(resolvedParams, '7d');
-  const rangeParams = new URLSearchParams();
   const range = getParamValue(resolvedParams.range);
   const month = getParamValue(resolvedParams.month);
   const from = getParamValue(resolvedParams.from);
   const to = getParamValue(resolvedParams.to);
+  const hasRangeFilters = Boolean(range || month || from || to);
+  const defaultMonth = toMonthValue(new Date());
+  const effectiveMonth = hasRangeFilters ? month : defaultMonth;
+  const rangeParams = new URLSearchParams();
   if (range) rangeParams.set('range', range);
-  if (month) rangeParams.set('month', month);
+  if (effectiveMonth) rangeParams.set('month', effectiveMonth);
   if (from) rangeParams.set('from', from);
   if (to) rangeParams.set('to', to);
+  const dateRange = getDateRangeFromSearchParams(
+    hasRangeFilters ? resolvedParams : { ...resolvedParams, month: defaultMonth },
+    '7d'
+  );
 
   const withRange = (path: string, extra?: Record<string, string>) => {
     const params = new URLSearchParams(rangeParams.toString());
@@ -211,14 +217,14 @@ export default async function DashboardPage({
   }).length;
   const pendingDeliveriesCount = pendingStorefrontOrdersCount + pendingSalesCount;
 
-  const ownerName = getFirstName(account?.ownerName || account?.businessName);
+  const dashboardName = getDashboardName(account);
 
   return (
     <main className="page-content dashboard-home">
       <div className="dashboard-home-top">
-        <h1>Olá, {ownerName}</h1>
+        <h1>Olá, {dashboardName}</h1>
         <div className="dashboard-home-top-actions">
-          <DateRangePicker defaultPreset="7d" />
+          <DateRangePicker defaultPreset="7d" defaultMonth={defaultMonth} />
         </div>
       </div>
 

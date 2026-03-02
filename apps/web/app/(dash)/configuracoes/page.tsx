@@ -60,7 +60,7 @@ export default async function ConfiguracoesPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const resolved = (await searchParams) ?? {};
-  const initialSection = getStringParam(resolved.section) || 'marcas';
+  const initialSection = getStringParam(resolved.section) || 'conta';
 
   const [
     brandsResponse,

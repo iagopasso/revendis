@@ -327,7 +327,7 @@ export default function SettingsPanel({
   initialAccessMembers
 }: SettingsPanelProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>(
-    isSection(initialSection) ? initialSection : 'marcas'
+    isSection(initialSection) ? initialSection : 'conta'
   );
   const [brands, setBrands] = useState<ResellerBrand[]>(initialBrands);
   const catalogCreateOptions = useMemo(
@@ -391,7 +391,7 @@ export default function SettingsPanel({
   const [memberToggleLoadingId, setMemberToggleLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
-    setActiveSection(isSection(initialSection) ? initialSection : 'marcas');
+    setActiveSection(isSection(initialSection) ? initialSection : 'conta');
   }, [initialSection]);
 
   useEffect(() => {

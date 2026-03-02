@@ -18,6 +18,7 @@ const presets: Preset[] = [
 
 type DateRangePickerProps = {
   defaultPreset?: string;
+  defaultMonth?: string;
 };
 
 const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -31,14 +32,20 @@ const formatDate = (value: string) => {
   return date.toLocaleDateString('pt-BR');
 };
 
-const getLabelFromParams = (params: URLSearchParams, defaultPreset: string) => {
+const getLabelFromParams = (
+  params: URLSearchParams,
+  defaultPreset: string,
+  defaultMonth?: string
+) => {
   const range = params.get('range');
   const monthValue = params.get('month');
   const from = params.get('from');
   const to = params.get('to');
+  const hasFilters = Boolean(range || monthValue || from || to);
+  const effectiveMonth = hasFilters ? monthValue : defaultMonth || monthValue;
 
-  if (monthValue) {
-    const [year, month] = monthValue.split('-').map((part) => Number(part));
+  if (effectiveMonth) {
+    const [year, month] = effectiveMonth.split('-').map((part) => Number(part));
     if (year && month) {
       const monthLabel = months[month - 1] || 'Mes';
       return `${monthLabel} ${year}`;
@@ -65,7 +72,7 @@ const getInitialYear = (params: URLSearchParams) => {
   return new Date().getFullYear();
 };
 
-export default function DateRangePicker({ defaultPreset = '7d' }: DateRangePickerProps) {
+export default function DateRangePicker({ defaultPreset = '7d', defaultMonth }: DateRangePickerProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -109,7 +116,10 @@ export default function DateRangePicker({ defaultPreset = '7d' }: DateRangePicke
     };
   }, [open]);
 
-  const label = useMemo(() => getLabelFromParams(searchParams, defaultPreset), [defaultPreset, searchParams]);
+  const label = useMemo(
+    () => getLabelFromParams(searchParams, defaultPreset, defaultMonth),
+    [defaultMonth, defaultPreset, searchParams]
+  );
 
   const updateParams = (updater: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(searchParams.toString());
