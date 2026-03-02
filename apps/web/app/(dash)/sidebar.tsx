@@ -184,7 +184,7 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
               <IconBell />
               Alertas
             </Link>
-            <Link href="/configuracoes" onClick={() => setProfileMenuOpen(false)}>
+            <Link href="/configuracoes?section=conta" onClick={() => setProfileMenuOpen(false)}>
               <IconUser />
               Configurações
             </Link>

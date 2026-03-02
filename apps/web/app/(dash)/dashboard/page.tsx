@@ -13,6 +13,7 @@ import {
   formatCurrency,
   getDateRangeFromSearchParams,
   isInDateRange,
+  toMonthValueInTimeZone,
   toNumber
 } from '../lib';
 
@@ -104,12 +105,11 @@ const isReceivablePending = (status?: string | null) => normalizeStatus(status) 
 
 const getDashboardName = (account?: Account) => {
   const businessName = (account?.businessName || '').trim();
-  if (businessName) return businessName;
+  if (businessName && businessName.toLowerCase() !== 'administrador') return businessName;
   return 'empreendedor';
 };
 
 const getParamValue = (value?: string | string[]) => (Array.isArray(value) ? value[0] : value) || '';
-const toMonthValue = (value: Date) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}`;
 
 export default async function DashboardPage({
   searchParams
@@ -122,7 +122,7 @@ export default async function DashboardPage({
   const from = getParamValue(resolvedParams.from);
   const to = getParamValue(resolvedParams.to);
   const hasRangeFilters = Boolean(range || month || from || to);
-  const defaultMonth = toMonthValue(new Date());
+  const defaultMonth = toMonthValueInTimeZone(new Date());
   const effectiveMonth = hasRangeFilters ? month : defaultMonth;
   const rangeParams = new URLSearchParams();
   if (range) rangeParams.set('range', range);

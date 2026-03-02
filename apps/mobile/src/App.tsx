@@ -2183,7 +2183,12 @@ export default function App() {
             {MODULES.map((module) => (
               <Pressable
                 key={module.id}
-                onPress={() => setActiveModule(module.id)}
+                onPress={() => {
+                  if (module.id === 'settings') {
+                    setSettingsSection('account');
+                  }
+                  setActiveModule(module.id);
+                }}
                 accessibilityLabel={module.label}
                 style={[styles.moduleTab, activeModule === module.id ? styles.moduleTabActive : null]}
               >

@@ -88,7 +88,7 @@ export const getNotificationHref = (item: NotificationItem) => {
   }
 
   if (item.entity_type === 'brand' || item.entity_type.startsWith('settings_')) {
-    return '/configuracoes';
+    return '/configuracoes?section=conta';
   }
 
   return '/dashboard';

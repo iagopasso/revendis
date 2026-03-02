@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { toMonthValueInTimeZone } from './lib';
 
 type TabKey = 'presets' | 'months' | 'custom';
 
@@ -63,8 +64,8 @@ const getLabelFromParams = (
   return 'Ultimos 7 dias';
 };
 
-const getInitialYear = (params: URLSearchParams) => {
-  const monthValue = params.get('month');
+const getInitialYear = (params: URLSearchParams, defaultMonth?: string) => {
+  const monthValue = params.get('month') || defaultMonth || toMonthValueInTimeZone(new Date());
   if (monthValue) {
     const [year] = monthValue.split('-').map((part) => Number(part));
     if (year) return year;
@@ -79,17 +80,17 @@ export default function DateRangePicker({ defaultPreset = '7d', defaultMonth }: 
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<TabKey>('presets');
-  const [year, setYear] = useState(getInitialYear(searchParams));
+  const [year, setYear] = useState(getInitialYear(searchParams, defaultMonth));
   const [from, setFrom] = useState(searchParams.get('from') || '');
   const [to, setTo] = useState(searchParams.get('to') || '');
 
   useEffect(() => {
     if (!open) {
-      setYear(getInitialYear(searchParams));
+      setYear(getInitialYear(searchParams, defaultMonth));
       setFrom(searchParams.get('from') || '');
       setTo(searchParams.get('to') || '');
     }
-  }, [open, searchParams]);
+  }, [defaultMonth, open, searchParams]);
 
   useEffect(() => {
     if (!open) return;

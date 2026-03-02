@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   IconCalendar,
   IconClipboard,
@@ -326,6 +327,9 @@ export default function SettingsPanel({
   initialAlerts,
   initialAccessMembers
 }: SettingsPanelProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [activeSection, setActiveSection] = useState<SettingsSection>(
     isSection(initialSection) ? initialSection : 'conta'
   );
@@ -1330,6 +1334,14 @@ export default function SettingsPanel({
     ? resolveBrandLogo(brandEditForm.name, brandEditForm.logoUrl || null)
     : null;
 
+  const handleSelectSection = (nextSection: SettingsSection) => {
+    setActiveSection(nextSection);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('section', nextSection);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
+
   return (
     <>
       <div className="settings-shell">
@@ -1343,7 +1355,7 @@ export default function SettingsPanel({
                   key={item.id}
                   type="button"
                   className={`settings-nav-item${activeSection === item.id ? ' active' : ''}`}
-                  onClick={() => setActiveSection(item.id)}
+                  onClick={() => handleSelectSection(item.id)}
                 >
                   <Icon />
                   <span>{item.label}</span>
