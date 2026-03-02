@@ -165,9 +165,9 @@ export const IconList = ({ className }: IconProps) => (
 
 export const IconDots = ({ className }: IconProps) => (
   <IconBase className={className}>
-    <circle cx="5" cy="12" r="1.5" />
-    <circle cx="12" cy="12" r="1.5" />
-    <circle cx="19" cy="12" r="1.5" />
+    <circle cx="12" cy="6" r="1.5" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="18" r="1.5" fill="currentColor" stroke="none" />
   </IconBase>
 );
 

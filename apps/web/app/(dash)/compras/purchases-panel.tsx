@@ -1434,114 +1434,111 @@ export default function PurchasesPanel({
           </button>
         </div>
       ) : (
-        <div className="data-list">
-          <div className="data-row header purchases-data-head">
-            <span>Numero</span>
-            <span>Marcas</span>
-            <span>Data</span>
-            <span>Total</span>
-            <span>Status</span>
-            <span />
-          </div>
-
+        <div className="purchases-card-grid">
           {filtered.map((purchase) => {
             const purchaseNumber =
               purchase.order_number?.trim() || purchase.id.slice(0, 4).toUpperCase();
             const brandLogo = resolveBrandLogo(purchase.brand || null);
+            const isDraft = purchase.status === 'draft';
             return (
-              <div key={purchase.id} className="data-row purchase-data-row">
-                <div className="purchase-cell purchase-cell-main">
-                  <span className="purchase-cell-label">Numero</span>
-                  <strong className="purchase-cell-value">N.° {purchaseNumber}</strong>
-                </div>
-                <div className="purchase-cell purchase-cell-brand">
-                  <span className="purchase-cell-label">Marca</span>
-                  <span className="purchase-cell-value">
-                    <span className="purchase-brand">
-                      {brandLogo ? (
-                        <img className="purchase-brand-logo" src={brandLogo} alt={purchase.brand || 'Marca'} />
-                      ) : (
-                        <span className="purchase-brand-initials">
-                          {(purchase.brand || '–').slice(0, 2).toUpperCase()}
-                        </span>
-                      )}
-                      <span className="purchase-brand-name">{purchase.brand || '--'}</span>
-                    </span>
-                  </span>
-                </div>
-                <div className="purchase-cell purchase-cell-date">
-                  <span className="purchase-cell-label">Data</span>
-                  <span className="purchase-cell-value data-cell mono">
-                    {formatDateLabel(purchase.purchase_date || purchase.created_at)}
-                  </span>
-                </div>
-                <div className="purchase-cell purchase-cell-total">
-                  <span className="purchase-cell-label">Total</span>
-                  <span className="purchase-cell-value data-cell mono">
-                    {formatCurrency(toNumber(purchase.total))}
-                  </span>
-                </div>
-                <div className="purchase-cell purchase-cell-status">
-                  <span className="purchase-cell-label">Status</span>
-                  <span className={`badge ${statusBadge(purchase.status)}`}>{statusLabel(purchase.status)}</span>
-                </div>
-                <div className="purchase-actions-cell">
-                  <div className="purchase-actions">
-                    {purchase.status !== 'draft' ? (
+              <article key={purchase.id} className="purchase-card">
+                <div className="purchase-card-header">
+                  <div className="purchase-card-number">
+                    <span className="purchase-card-kicker">Pedido</span>
+                    <strong>N.° {purchaseNumber}</strong>
+                  </div>
+                  <div className="purchase-card-header-right">
+                    <span className={`badge ${statusBadge(purchase.status)}`}>{statusLabel(purchase.status)}</span>
+                    <div className="purchase-actions">
                       <button
                         type="button"
-                        className="button ghost small purchase-quick-view"
-                        onClick={() => void openViewPurchase(purchase)}
+                        className={`button icon small${menuOpenId === purchase.id ? ' active' : ''}`}
+                        aria-label="Acoes"
+                        onClick={() => setMenuOpenId((current) => (current === purchase.id ? null : purchase.id))}
                         disabled={processingId === purchase.id}
                       >
-                        Visualizar
+                        <IconDots />
                       </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className={`button icon small${menuOpenId === purchase.id ? ' active' : ''}`}
-                      aria-label="Acoes"
-                      onClick={() => setMenuOpenId((current) => (current === purchase.id ? null : purchase.id))}
-                      disabled={processingId === purchase.id}
-                    >
-                      <IconDots />
-                    </button>
 
-                    {menuOpenId === purchase.id ? (
-                      <div className="purchase-menu">
-                        {purchase.status === 'draft' ? (
-                          <>
-                            <button type="button" onClick={() => continueDraft(purchase)}>
-                              <IconEdit /> Continuar criando
-                            </button>
-                            <button
-                              type="button"
-                              className="danger"
-                              onClick={() => discardDraft(purchase.id)}
-                            >
-                              <IconTrash /> Descartar rascunho
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button type="button" onClick={() => void openViewPurchase(purchase)}>
-                              Visualizar compra
-                            </button>
-                            {purchase.status === 'pending' ? (
-                              <button type="button" onClick={() => void updateStatus(purchase, 'received')}>
-                                Marcar como recebido
+                      {menuOpenId === purchase.id ? (
+                        <div className="purchase-menu">
+                          {isDraft ? (
+                            <>
+                              <button type="button" onClick={() => continueDraft(purchase)}>
+                                <IconEdit /> Continuar criando
                               </button>
-                            ) : null}
-                            <button type="button" className="danger" onClick={() => removePurchase(purchase)}>
-                              <IconTrash /> Excluir pedido
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    ) : null}
+                              <button
+                                type="button"
+                                className="danger"
+                                onClick={() => discardDraft(purchase.id)}
+                              >
+                                <IconTrash /> Descartar rascunho
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button type="button" onClick={() => void openViewPurchase(purchase)}>
+                                Visualizar compra
+                              </button>
+                              {purchase.status === 'pending' ? (
+                                <button type="button" onClick={() => void updateStatus(purchase, 'received')}>
+                                  Marcar como recebido
+                                </button>
+                              ) : null}
+                              <button type="button" className="danger" onClick={() => removePurchase(purchase)}>
+                                <IconTrash /> Excluir pedido
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
-              </div>
+
+                <div className="purchase-card-brand">
+                  <span className="purchase-brand">
+                    {brandLogo ? (
+                      <img className="purchase-brand-logo" src={brandLogo} alt={purchase.brand || 'Marca'} />
+                    ) : (
+                      <span className="purchase-brand-initials">
+                        {(purchase.brand || '–').slice(0, 2).toUpperCase()}
+                      </span>
+                    )}
+                    <span className="purchase-brand-name">{purchase.brand || '--'}</span>
+                  </span>
+                </div>
+
+                <div className="purchase-card-metrics">
+                  <div className="purchase-card-metric">
+                    <span>Data</span>
+                    <strong className="data-cell mono">{formatDateLabel(purchase.purchase_date || purchase.created_at)}</strong>
+                  </div>
+                  <div className="purchase-card-metric">
+                    <span>Total</span>
+                    <strong className="data-cell mono">{formatCurrency(toNumber(purchase.total))}</strong>
+                  </div>
+                  <div className="purchase-card-metric">
+                    <span>Itens</span>
+                    <strong className="data-cell mono">{Math.max(0, Math.trunc(toNumber(purchase.items)))}</strong>
+                  </div>
+                </div>
+
+                <div className="purchase-card-actions">
+                  {isDraft ? (
+                    <span className="purchase-card-draft-note">Rascunho em andamento</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="button ghost small purchase-card-view"
+                      onClick={() => void openViewPurchase(purchase)}
+                      disabled={processingId === purchase.id}
+                    >
+                      Visualizar
+                    </button>
+                  )}
+                </div>
+              </article>
             );
           })}
         </div>
@@ -1986,158 +1983,178 @@ export default function PurchasesPanel({
 
       {viewPurchase ? (
         <div className="modal-backdrop" onClick={closeViewPurchase}>
-          <div className="modal modal-purchase-view" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header purchase-view-header">
-              <h3>Compra N.º {viewPurchase.order_number || viewPurchase.id.slice(0, 6)}</h3>
-              <button className="modal-close" type="button" onClick={closeViewPurchase}>
-                ✕
-              </button>
-            </div>
-
-            <div className="purchase-view-grid">
-              <section className="purchase-view-section">
-                <h4>Informacoes gerais</h4>
-                <div className="divider" />
-                <div className="purchase-view-field">
-                  <span>Marcas</span>
-                  <div className="brand-chip">
-                    {viewBrandLogo ? (
-                      <img className="brand-logo-img" src={viewBrandLogo} alt={viewPurchase.brand || 'Marca'} />
-                    ) : (
-                      <span className="brand-initials">
-                        {(viewPurchase.brand || '–').slice(0, 2).toUpperCase()}
-                      </span>
-                    )}
-                    <strong>{viewPurchase.brand || '—'}</strong>
-                  </div>
-                </div>
-                <div className="purchase-view-field">
-                  <span>N.º do pedido</span>
-                  <strong>{viewPurchase.order_number || viewPurchase.id.slice(0, 6)}</strong>
-                </div>
-                <div className="purchase-view-field">
-                  <span>Data</span>
-                  <strong>{formatDateLabel(viewPurchase.purchase_date || viewPurchase.created_at)}</strong>
-                </div>
-
-                <h4>Produtos</h4>
-                <div className="divider" />
-                <div className="purchase-view-products">
-                  {viewPurchaseLoading ? (
-                    <span className="muted">Carregando produtos...</span>
-                  ) : viewPurchaseDetail?.purchase_items?.length ? (
-                    viewPurchaseDetail.purchase_items.map((item) => {
-                      const product = productById.get(item.product_id) || null;
-                      const imageUrl = item.product_image_url || getProductImage(product);
-                      const code = digitsOnly(
-                        item.sku || item.product_barcode || product?.sku || product?.barcode || ''
-                      );
-                      const name = item.product_name?.trim() || product?.name || 'Produto nao identificado';
-                      const headline = code ? `${code} - ${name}` : name;
-                      const quantity = Math.max(1, Math.trunc(toNumber(item.quantity)));
-                      const unitCost = formatCurrency(Math.max(0, toNumber(item.unit_cost)));
-                      const expiryText = item.expires_at
-                        ? ` • Validade ${formatDateLabel(item.expires_at)}`
-                        : '';
-
-                      return (
-                        <div key={item.id} className="purchase-view-product">
-                          <div className="purchase-view-product-thumb">
-                            {imageUrl ? (
-                              <img className="product-thumb-image" src={imageUrl} alt={name} />
-                            ) : (
-                              <span className="product-thumb-placeholder" aria-hidden="true">
-                                <IconBox />
-                              </span>
-                            )}
-                          </div>
-                          <div className="purchase-view-product-info">
-                            <strong>{headline}</strong>
-                            <span className="muted">
-                              {quantity} un. - {unitCost}
-                              {expiryText}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : draftSnapshots[viewPurchase.id]?.items.length ? (
-                    draftSnapshots[viewPurchase.id].items.map((item) => {
-                      const product = productById.get(item.productId) || null;
-                      return (
-                        <div key={item.id} className="purchase-view-product">
-                          <div className="purchase-view-product-thumb">
-                            {getProductImage(product) ? (
-                              <img className="product-thumb-image" src={getProductImage(product)} alt={product?.name || 'Produto'} />
-                            ) : (
-                              <span className="product-thumb-placeholder" aria-hidden="true">
-                                <IconBox />
-                              </span>
-                            )}
-                          </div>
-                          <div className="purchase-view-product-info">
-                            <strong>{getProductHeadline(product)}</strong>
-                            <span className="muted">
-                              {item.quantity || '1'} un. - {item.price || 'R$ 0,00'}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })
+          <div className="modal modal-purchase-view modal-sale" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div className="sale-header-left">
+                <div className="avatar-circle">
+                  {viewBrandLogo ? (
+                    <img src={viewBrandLogo} alt={viewPurchase.brand || 'Marca'} />
                   ) : (
-                    <span className="muted">{viewPurchaseError || 'Produtos nao disponiveis.'}</span>
+                    (viewPurchase.brand || 'MC').slice(0, 2).toUpperCase()
                   )}
                 </div>
+                <div className="sale-header-text">
+                  <strong>{viewPurchase.brand || 'Marca nao informada'}</strong>
+                  <div className="sale-header-meta">
+                    <span>Pedido #{viewPurchase.order_number || viewPurchase.id.slice(0, 6)}</span>
+                    <span>Data: {formatDateLabel(viewPurchase.purchase_date || viewPurchase.created_at)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="sale-header-actions purchase-view-header-actions">
+                <span className={`badge ${statusBadge(viewPurchase.status)}`}>{statusLabel(viewPurchase.status)}</span>
+                <button className="modal-close" type="button" onClick={closeViewPurchase}>
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="sale-grid">
+              <section className="sale-section sale-items-section purchase-sale-items-section">
+                <div className="sale-section-title">
+                  <span className="section-icon">📦</span>
+                  <h4>
+                    Itens da Compra (
+                    {viewPurchaseDetail?.purchase_items?.length || draftSnapshots[viewPurchase.id]?.items.length || 0}
+                    )
+                  </h4>
+                </div>
+
+                {viewPurchaseLoading ? (
+                  <div className="meta">Carregando produtos...</div>
+                ) : viewPurchaseDetail?.purchase_items?.length ? (
+                  viewPurchaseDetail.purchase_items.map((item) => {
+                    const product = productById.get(item.product_id) || null;
+                    const imageUrl = item.product_image_url || getProductImage(product);
+                    const code = digitsOnly(
+                      item.sku || item.product_barcode || product?.sku || product?.barcode || ''
+                    );
+                    const name = item.product_name?.trim() || product?.name || 'Produto nao identificado';
+                    const headline = code ? `${code} - ${name}` : name;
+                    const quantity = Math.max(1, Math.trunc(toNumber(item.quantity)));
+                    const unitCostValue = Math.max(0, toNumber(item.unit_cost));
+                    const unitCost = formatCurrency(unitCostValue);
+                    const lineTotal = quantity * unitCostValue;
+                    const expiryText = item.expires_at
+                      ? ` • Validade ${formatDateLabel(item.expires_at)}`
+                      : '';
+
+                    return (
+                      <div key={item.id} className="sale-item purchase-sale-item">
+                        <div className="sale-thumb large">
+                          {imageUrl ? (
+                            <img className="product-thumb-image" src={imageUrl} alt={name} />
+                          ) : (
+                            <span className="product-thumb-placeholder" aria-hidden="true">
+                              <IconBox />
+                            </span>
+                          )}
+                        </div>
+                        <div className="sale-item-info">
+                          <strong>{headline}</strong>
+                          <span className="muted">
+                            {quantity} un. - {unitCost}
+                            {expiryText}
+                          </span>
+                        </div>
+                        <span className="sale-price">{formatCurrency(lineTotal)}</span>
+                      </div>
+                    );
+                  })
+                ) : draftSnapshots[viewPurchase.id]?.items.length ? (
+                  draftSnapshots[viewPurchase.id].items.map((item) => {
+                    const product = productById.get(item.productId) || null;
+                    const quantity = Math.max(1, Math.trunc(toNumber(item.quantity)));
+                    const unitAmount = Math.max(0, parseCurrencyInput(item.price || '') || 0);
+                    const lineTotal = quantity * unitAmount;
+                    return (
+                      <div key={item.id} className="sale-item purchase-sale-item">
+                        <div className="sale-thumb large">
+                          {getProductImage(product) ? (
+                            <img
+                              className="product-thumb-image"
+                              src={getProductImage(product)}
+                              alt={product?.name || 'Produto'}
+                            />
+                          ) : (
+                            <span className="product-thumb-placeholder" aria-hidden="true">
+                              <IconBox />
+                            </span>
+                          )}
+                        </div>
+                        <div className="sale-item-info">
+                          <strong>{getProductHeadline(product)}</strong>
+                          <span className="muted">
+                            {quantity} un. - {item.price || 'R$ 0,00'}
+                          </span>
+                        </div>
+                        <span className="sale-price">{formatCurrency(lineTotal)}</span>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="meta">{viewPurchaseError || 'Produtos nao disponiveis.'}</div>
+                )}
               </section>
 
-              <section className="purchase-view-section purchase-view-summary">
-                <h4>Resumo Financeiro</h4>
-                <div className="divider" />
-                <div className="purchase-view-field">
-                  <span>Subtotal dos produtos</span>
-                  <strong>{formatCurrency(toNumber(viewPurchase.total))}</strong>
-                </div>
-                <div className="purchase-view-field">
-                  <span>Frete</span>
-                  <strong>R$ 0,00</strong>
-                </div>
-                <div className="purchase-view-field">
-                  <span>Desconto</span>
-                  <strong>R$ 0,00</strong>
-                </div>
-                <div className="purchase-view-field">
-                  <span>Adicional</span>
-                  <strong>R$ 0,00</strong>
-                </div>
-                <div className="divider" />
-                <div className="purchase-view-field total">
-                  <span>Total</span>
-                  <strong className="accent">{formatCurrency(toNumber(viewPurchase.total))}</strong>
+              <section className="sale-section purchase-sale-summary-section">
+                <div className="sale-payment-header">
+                  <div className="sale-section-title">
+                    <span className="section-icon">📊</span>
+                    <h4>Resumo Financeiro</h4>
+                  </div>
+                  <div className="payment-progress" />
                 </div>
 
-                <h4>Pagamento</h4>
-                <div className="divider" />
-                <div className="purchase-payment-card">
-                  <div>
-                    <strong>Cartao de Credito</strong>
-                    <span className="muted">Parcela 1 de 1</span>
-                    <div className="purchase-payment-date">
+                <div className="sale-summary-card">
+                  <div className="sale-summary">
+                    <div>
+                      <span>Subtotal dos produtos</span>
+                      <strong>{formatCurrency(toNumber(viewPurchase.total))}</strong>
+                    </div>
+                    <div>
+                      <span>Frete</span>
+                      <strong>R$ 0,00</strong>
+                    </div>
+                    <div>
+                      <span>Desconto</span>
+                      <strong>R$ 0,00</strong>
+                    </div>
+                    <div>
+                      <span>Adicional</span>
+                      <strong>R$ 0,00</strong>
+                    </div>
+                    <div>
+                      <span>Total</span>
+                      <strong className="purchase-sale-total">{formatCurrency(toNumber(viewPurchase.total))}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="sale-section-title">
+                  <span className="section-icon">💳</span>
+                  <h4>Pagamento</h4>
+                </div>
+
+                <div className={`payment-item ${viewPurchase.status === 'received' ? 'paid' : 'pending'}`}>
+                  <div className="payment-item-header">
+                    <div className="payment-item-left">
+                      <span className="payment-status-icon">{viewPurchase.status === 'received' ? '✓' : '📅'}</span>
+                      <span className="payment-amount">{formatCurrency(toNumber(viewPurchase.total))}</span>
+                    </div>
+                    <span className={`badge ${statusBadge(viewPurchase.status)}`}>{statusLabel(viewPurchase.status)}</span>
+                  </div>
+                  <div className="payment-item-meta">
+                    <span className="payment-method-pill">CARTAO DE CREDITO</span>
+                    <span className="payment-item-date">
+                      {viewPurchase.status === 'received' ? 'Pago em ' : 'Vence em '}
                       {formatDateLabel(
                         viewPurchaseDetail?.payment_due_date ||
                           viewPurchase.payment_due_date ||
                           viewPurchase.purchase_date ||
                           viewPurchase.created_at
                       )}
-                    </div>
-                  </div>
-                  <div className="purchase-payment-right">
-                    <strong>{formatCurrency(toNumber(viewPurchase.total))}</strong>
-                    <span className={`badge ${statusBadge(viewPurchase.status)}`}>
-                      {viewPurchase.status === 'pending'
-                        ? 'PENDENTE'
-                        : viewPurchase.status === 'received'
-                          ? 'RECEBIDO'
-                          : 'CANCELADO'}
                     </span>
                   </div>
                 </div>

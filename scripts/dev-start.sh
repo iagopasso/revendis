@@ -3,11 +3,32 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$ROOT_DIR/.logs"
+SERVICE_START_TIMEOUT="${SERVICE_START_TIMEOUT:-20}"
 mkdir -p "$LOG_DIR"
 
 port_listener_pid() {
   local port="$1"
   lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -n 1 || true
+}
+
+wait_for_port_listener() {
+  local port="$1"
+  local timeout="$2"
+  local elapsed=0
+  local listener_pid=""
+
+  while [ "$elapsed" -lt "$timeout" ]; do
+    listener_pid="$(port_listener_pid "$port")"
+    if [ -n "$listener_pid" ]; then
+      echo "$listener_pid"
+      return 0
+    fi
+
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  return 1
 }
 
 start_service() {
@@ -37,6 +58,12 @@ start_service() {
   sleep 1
   if ! kill -0 "$(cat "$pid_file")" 2>/dev/null; then
     echo "Failed to start $name. Last log lines:"
+    tail -n 40 "$log_file" || true
+    return 1
+  fi
+
+  if ! wait_for_port_listener "$port" "$SERVICE_START_TIMEOUT" >/dev/null; then
+    echo "Failed to start $name (timeout ${SERVICE_START_TIMEOUT}s waiting for port $port). Last log lines:"
     tail -n 40 "$log_file" || true
     return 1
   fi
@@ -80,10 +107,8 @@ start_service_tmux() {
     echo "$pane_pid" > "$pid_file"
   fi
 
-  sleep 2
-  listener_pid="$(port_listener_pid "$port")"
-  if [ -z "$listener_pid" ]; then
-    echo "Failed to start $name in tmux. Last log lines:"
+  if ! wait_for_port_listener "$port" "$SERVICE_START_TIMEOUT" >/dev/null; then
+    echo "Failed to start $name in tmux (timeout ${SERVICE_START_TIMEOUT}s waiting for port $port). Last log lines:"
     tail -n 40 "$log_file" || true
     return 1
   fi

@@ -69,7 +69,7 @@ export default async function ClientesPage({
   const cityFilter = getStringParam(resolvedParams.city) || 'all';
   const tagFilter = getStringParam(resolvedParams.tag) || 'all';
   const birthdayFilter = getStringParam(resolvedParams.birthday) || 'all';
-  const viewFilter = getStringParam(resolvedParams.view) === 'grid' ? 'grid' : 'table';
+  const viewFilter = getStringParam(resolvedParams.view) === 'grid' ? 'grid' : 'list';
   const normalizedQuery = query.toLowerCase();
 
   const cities = Array.from(
@@ -113,16 +113,18 @@ export default async function ClientesPage({
     return matchesQuery && matchesCity && matchesTag && matchesBirthday;
   });
 
-  const buildViewHref = (view: 'table' | 'grid') => {
+  const buildViewHref = (view: 'list' | 'grid') => {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     if (cityFilter !== 'all') params.set('city', cityFilter);
     if (tagFilter !== 'all') params.set('tag', tagFilter);
     if (birthdayFilter !== 'all') params.set('birthday', birthdayFilter);
-    params.set('view', view);
+    if (view === 'grid') params.set('view', view);
     const queryString = params.toString();
     return queryString ? `/clientes?${queryString}` : '/clientes';
   };
+
+  const nextView = viewFilter === 'grid' ? 'list' : 'grid';
 
   return (
     <main className="page-content">
@@ -133,22 +135,14 @@ export default async function ClientesPage({
           <p>Centralize informacoes de relacionamento e historico.</p>
         </section>
         <div className="actions">
-          <div className="toggle-group customers-view-toggle">
-            <Link
-              href={buildViewHref('grid')}
-              className={`button icon view-toggle${viewFilter === 'grid' ? ' active' : ''}`}
-              aria-label="Visualizacao em grade"
-            >
-              <IconGrid />
-            </Link>
-            <Link
-              href={buildViewHref('table')}
-              className={`button icon view-toggle${viewFilter === 'table' ? ' active' : ''}`}
-              aria-label="Visualizacao em tabela"
-            >
-              <IconList />
-            </Link>
-          </div>
+          <Link
+            href={buildViewHref(nextView)}
+            className={`button icon view-toggle${viewFilter === 'grid' ? ' active' : ''}`}
+            title={viewFilter === 'grid' ? 'Alternar para lista' : 'Alternar para grade'}
+            aria-label={viewFilter === 'grid' ? 'Alternar para lista' : 'Alternar para grade'}
+          >
+            {viewFilter === 'grid' ? <IconGrid /> : <IconList />}
+          </Link>
           <Link className="button primary" href="/vendas?newCustomer=1&returnTo=%2Fclientes">
             + Cadastrar cliente
           </Link>
@@ -166,6 +160,7 @@ export default async function ClientesPage({
             {cityFilter !== 'all' ? <input type="hidden" name="city" value={cityFilter} /> : null}
             {tagFilter !== 'all' ? <input type="hidden" name="tag" value={tagFilter} /> : null}
             {birthdayFilter !== 'all' ? <input type="hidden" name="birthday" value={birthdayFilter} /> : null}
+            {viewFilter === 'grid' ? <input type="hidden" name="view" value={viewFilter} /> : null}
           </form>
           <div className="toolbar-group">
             <FilterSelect

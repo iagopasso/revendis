@@ -66,7 +66,7 @@ export default function ReportDetailPanel({
   emptyTitle,
   emptyMessage,
   backHref = '/relatorios',
-  periodLabel = 'Ultimos 28 dias',
+  periodLabel = 'Mes atual',
   dateRangeDefaultPreset = '28d',
   selectedCustomer = '',
   customerOptions = [],

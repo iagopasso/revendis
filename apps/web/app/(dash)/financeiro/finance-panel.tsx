@@ -946,7 +946,6 @@ export default function FinancePanel({
               <span>Valor</span>
               <span>Situacao</span>
               <span>Data de pagamento</span>
-              <span />
             </div>
 
             {visibleEntries.map((entry) => {
@@ -961,14 +960,57 @@ export default function FinancePanel({
                     <span className={`finance-entry-dot ${entry.kind === 'expense' ? 'expense' : 'income'}`}>
                       {entry.kind === 'expense' ? '↓' : '↑'}
                     </span>
-                    <div>
-                      {entryLink ? (
-                        <button type="button" className="finance-entry-link" onClick={() => openEntryLink(entry)}>
-                          {entry.description}
-                        </button>
-                      ) : (
-                        <strong>{entry.description}</strong>
-                      )}
+                    <div className="finance-desc-main">
+                      <div className="finance-desc-header">
+                        <div className="finance-desc-title">
+                          {entryLink ? (
+                            <button type="button" className="finance-entry-link" onClick={() => openEntryLink(entry)}>
+                              {entry.description}
+                            </button>
+                          ) : (
+                            <strong>{entry.description}</strong>
+                          )}
+                        </div>
+                        {hasMenu ? (
+                          <div className="finance-entry-actions">
+                            <button
+                              type="button"
+                              className={`button icon small${menuOpenId === entry.id ? ' active' : ''}`}
+                              onClick={() => setMenuOpenId((current) => (current === entry.id ? null : entry.id))}
+                              aria-label="Acoes"
+                              disabled={processingId === entry.id}
+                            >
+                              <IconDots />
+                            </button>
+
+                            {menuOpenId === entry.id ? (
+                              <div className="finance-entry-menu">
+                                {entryLink ? (
+                                  <button type="button" onClick={() => openEntryLink(entry)}>
+                                    {entryLink.label}
+                                  </button>
+                                ) : null}
+                                {canToggleStatus ? (
+                                  entry.status === 'paid' ? (
+                                    <button type="button" onClick={() => markAsPending(entry)}>
+                                      Marcar como pendente
+                                    </button>
+                                  ) : (
+                                    <button type="button" onClick={() => markAsPaid(entry)}>
+                                      Marcar como pago
+                                    </button>
+                                  )
+                                ) : null}
+                                {canDelete ? (
+                                  <button type="button" className="danger" onClick={() => deleteExpense(entry)}>
+                                    Excluir
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
                       <div className="meta">{entry.subtitle}</div>
                     </div>
                   </div>
@@ -979,49 +1021,6 @@ export default function FinancePanel({
                     </span>
                   </div>
                   <div className="mono">{formatDate(getEntryDisplayDate(entry))}</div>
-                  <div className="finance-entry-actions">
-                    {hasMenu ? (
-                      <>
-                        <button
-                          type="button"
-                          className={`button icon small${menuOpenId === entry.id ? ' active' : ''}`}
-                          onClick={() => setMenuOpenId((current) => (current === entry.id ? null : entry.id))}
-                          aria-label="Acoes"
-                          disabled={processingId === entry.id}
-                        >
-                          <IconDots />
-                        </button>
-
-                        {menuOpenId === entry.id ? (
-                          <div className="finance-entry-menu">
-                            {entryLink ? (
-                              <button type="button" onClick={() => openEntryLink(entry)}>
-                                {entryLink.label}
-                              </button>
-                            ) : null}
-                            {canToggleStatus ? (
-                              entry.status === 'paid' ? (
-                                <button type="button" onClick={() => markAsPending(entry)}>
-                                  Marcar como pendente
-                                </button>
-                              ) : (
-                                <button type="button" onClick={() => markAsPaid(entry)}>
-                                  Marcar como pago
-                                </button>
-                              )
-                            ) : null}
-                            {canDelete ? (
-                              <button type="button" className="danger" onClick={() => deleteExpense(entry)}>
-                                Excluir
-                              </button>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </>
-                    ) : (
-                      <span className="finance-entry-action-placeholder">--</span>
-                    )}
-                  </div>
                 </div>
               );
             })}

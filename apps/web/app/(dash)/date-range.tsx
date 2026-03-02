@@ -61,7 +61,7 @@ const getLabelFromParams = (
 
   const preset = presets.find((item) => item.value === range || (!range && item.value === defaultPreset));
   if (preset) return preset.label;
-  return 'Ultimos 7 dias';
+  return 'Mes atual';
 };
 
 const getInitialYear = (params: URLSearchParams, defaultMonth?: string) => {
@@ -77,20 +77,33 @@ export default function DateRangePicker({ defaultPreset = '7d', defaultMonth }: 
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const resolvedDefaultMonth = useMemo(() => defaultMonth || toMonthValueInTimeZone(new Date()), [defaultMonth]);
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<TabKey>('presets');
-  const [year, setYear] = useState(getInitialYear(searchParams, defaultMonth));
+  const [year, setYear] = useState(getInitialYear(searchParams, resolvedDefaultMonth));
   const [from, setFrom] = useState(searchParams.get('from') || '');
   const [to, setTo] = useState(searchParams.get('to') || '');
 
   useEffect(() => {
     if (!open) {
-      setYear(getInitialYear(searchParams, defaultMonth));
+      setYear(getInitialYear(searchParams, resolvedDefaultMonth));
       setFrom(searchParams.get('from') || '');
       setTo(searchParams.get('to') || '');
     }
-  }, [defaultMonth, open, searchParams]);
+  }, [open, resolvedDefaultMonth, searchParams]);
+
+  useEffect(() => {
+    const hasDateFilters = Boolean(
+      searchParams.get('range') || searchParams.get('month') || searchParams.get('from') || searchParams.get('to')
+    );
+    if (hasDateFilters || !resolvedDefaultMonth) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('month', resolvedDefaultMonth);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  }, [pathname, resolvedDefaultMonth, router, searchParams]);
 
   useEffect(() => {
     if (!open) return;
@@ -118,8 +131,8 @@ export default function DateRangePicker({ defaultPreset = '7d', defaultMonth }: 
   }, [open]);
 
   const label = useMemo(
-    () => getLabelFromParams(searchParams, defaultPreset, defaultMonth),
-    [defaultMonth, defaultPreset, searchParams]
+    () => getLabelFromParams(searchParams, defaultPreset, resolvedDefaultMonth),
+    [defaultPreset, resolvedDefaultMonth, searchParams]
   );
 
   const updateParams = (updater: (params: URLSearchParams) => void) => {

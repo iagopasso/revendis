@@ -3220,55 +3220,60 @@ export default function InventoryPanel({
                       )}
                     </button>
                     <div className="inventory-info">
-                      <div className="inventory-meta">
-                        <strong>{getProductHeadline(product)}</strong>
-                        <span>{getProductMetaLine(product)}</span>
+                      <div className="inventory-info-top">
+                        <div className="inventory-meta">
+                          <strong>{getProductHeadline(product)}</strong>
+                          <span>{getProductMetaLine(product)}</span>
+                        </div>
+                        <div className="inventory-card-actions">
+                          <button
+                            className={`button icon small inventory-menu${menuOpenId === product.id ? ' active' : ''}`}
+                            type="button"
+                            title="Acoes"
+                            aria-label="Acoes"
+                            onClick={() => setMenuOpenId((prev) => (prev === product.id ? null : product.id))}
+                          >
+                            <IconDots />
+                          </button>
+                          {menuOpenId === product.id ? (
+                            <div className="inventory-dropdown">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMenuOpenId(null);
+                                  openEditForm(product);
+                                }}
+                              >
+                                <IconEdit /> Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMenuOpenId(null);
+                                  setAdjustProduct(product);
+                                  setUnitQuantity('1');
+                                  setUnitCost('');
+                                  setUnitExpiry('');
+                                }}
+                              >
+                                <IconPlus /> Adicionar unidades
+                              </button>
+                              <button
+                                type="button"
+                                className="danger"
+                                onClick={() => {
+                                  setMenuOpenId(null);
+                                  setDeleteProduct(product);
+                                }}
+                              >
+                                <IconTrash /> Excluir
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="inventory-price">{priceLabel}</div>
                     </div>
-                    <button
-                      className="inventory-menu"
-                      type="button"
-                      title="Acoes"
-                      onClick={() => setMenuOpenId((prev) => (prev === product.id ? null : product.id))}
-                    >
-                      <IconDots />
-                    </button>
-                    {menuOpenId === product.id ? (
-                      <div className="inventory-dropdown">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMenuOpenId(null);
-                            openEditForm(product);
-                          }}
-                        >
-                          <IconEdit /> Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMenuOpenId(null);
-                            setAdjustProduct(product);
-                            setUnitQuantity('1');
-                            setUnitCost('');
-                            setUnitExpiry('');
-                          }}
-                        >
-                          <IconPlus /> Adicionar unidades
-                        </button>
-                        <button
-                          type="button"
-                          className="danger"
-                          onClick={() => {
-                            setMenuOpenId(null);
-                            setDeleteProduct(product);
-                          }}
-                        >
-                          <IconTrash /> Excluir
-                        </button>
-                      </div>
-                    ) : null}
                   </div>
                 );
               })}

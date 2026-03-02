@@ -51,7 +51,7 @@ type CustomerForm = {
   state: string;
 };
 
-type ViewMode = 'table' | 'grid';
+type ViewMode = 'list' | 'grid';
 
 type CustomersListEditorProps = {
   customers: Customer[];

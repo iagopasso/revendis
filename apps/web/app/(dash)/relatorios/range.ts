@@ -47,8 +47,8 @@ export const buildReportRangeContext = (searchParams?: ReportSearchParams): Repo
   const from = getStringParam(resolved.from);
   const to = getStringParam(resolved.to);
 
-  let periodLabel = 'Ultimos 28 dias';
-  if (month && dateRange.from) {
+  let periodLabel = 'Mes atual';
+  if ((month || dateRange.source === 'default') && dateRange.from) {
     periodLabel = `${monthNames[dateRange.from.getMonth()]} ${dateRange.from.getFullYear()}`;
   } else if (from || to) {
     if (dateRange.from && dateRange.to) {

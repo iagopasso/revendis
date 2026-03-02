@@ -217,6 +217,13 @@ export const getDateRangeFromSearchParams = (
     }
   }
 
+  if (!range && !month && !fromParam && !toParam) {
+    const currentMonth = parseMonthValue(toMonthValueInTimeZone(new Date(), BUSINESS_TIMEZONE));
+    if (currentMonth) {
+      return { from: startOfDay(currentMonth.start), to: currentMonth.end, source: 'default' };
+    }
+  }
+
   const effectiveRange = range || defaultPreset;
 
   if (effectiveRange === 'all') {

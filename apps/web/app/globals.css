@@ -1608,6 +1608,10 @@ html[data-theme='dark'] .dashboard-home-top h1 {
   color: #eaf3ff;
 }
 
+html[data-theme='dark'] .dashboard-reminders-section h2 {
+  color: #eaf3ff;
+}
+
 html[data-theme='dark'] .data-row {
   color: #e7eff9;
 }
@@ -1704,6 +1708,188 @@ html[data-theme='dark'] .purchase-create-product-row,
 html[data-theme='dark'] .purchase-view-section .divider,
 html[data-theme='dark'] .purchase-view-product {
   border-color: #2e455f;
+}
+
+html[data-theme='dark'] .purchases-filters-panel,
+html[data-theme='dark'] .purchases-filters-panel .toolbar,
+html[data-theme='dark'] .purchases-filters-panel .search,
+html[data-theme='dark'] .purchases-filters-panel .select,
+html[data-theme='dark'] .purchases-filters-panel .date-range-trigger {
+  background: #132233;
+  border-color: #35516e;
+  color: #e7f1fd;
+}
+
+html[data-theme='dark'] .purchases-filters-panel .search-field-label,
+html[data-theme='dark'] .purchases-filters-panel .meta,
+html[data-theme='dark'] .purchases-filters-panel .select span,
+html[data-theme='dark'] .purchases-data-head {
+  color: #b9cbe1;
+}
+
+html[data-theme='dark'] .purchases-filters-panel .search input,
+html[data-theme='dark'] .purchases-filters-panel .select select,
+html[data-theme='dark'] .purchase-cell-value,
+html[data-theme='dark'] .purchase-brand-name {
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .purchase-data-row {
+  background: #132233;
+  border-color: #35516e;
+  box-shadow: none;
+}
+
+html[data-theme='dark'] .purchase-cell,
+html[data-theme='dark'] .purchase-cell-status {
+  background: #122132;
+  border-color: #35516e;
+}
+
+html[data-theme='dark'] .purchase-cell-main {
+  border-bottom-color: #35516e;
+}
+
+html[data-theme='dark'] .purchase-quick-view {
+  color: #e5effc;
+  border-color: #35516e;
+  background: #16283b;
+}
+
+html[data-theme='dark'] .purchase-menu {
+  background: #122132;
+  border-color: #35516e;
+}
+
+html[data-theme='dark'] .purchase-menu button {
+  background: #122132;
+  color: #e5effc;
+  border-bottom-color: #2e455f;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create,
+html[data-theme='dark'] .modal.modal-purchase-view {
+  background: #0f1b2a;
+  border-color: #35516e;
+  color: #e7f1fd;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .modal-header,
+html[data-theme='dark'] .modal.modal-purchase-view .modal-header,
+html[data-theme='dark'] .modal.modal-purchase-create .modal-footer,
+html[data-theme='dark'] .modal.modal-purchase-view .modal-footer {
+  border-color: #35516e;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .modal-header h3,
+html[data-theme='dark'] .modal.modal-purchase-view .modal-header h3 {
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .modal-close,
+html[data-theme='dark'] .modal.modal-purchase-view .modal-close {
+  color: #c7d9ee;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .modal-field > span,
+html[data-theme='dark'] .modal.modal-purchase-create .input-field-label,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-product-label,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-products-head,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-summary-row,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-installment-row label {
+  color: #b9cbe1;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .store-search,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-search-field,
+html[data-theme='dark'] .modal.modal-purchase-create .store-modal-list,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-search-results,
+html[data-theme='dark'] .modal.modal-purchase-create .store-checkbox-row,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-search-result,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-products-empty,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-products-empty-icon {
+  background: #122132;
+  border-color: #35516e;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .store-search input,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-search-field input,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-product-input input,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-product-qty input,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-installment-row input,
+html[data-theme='dark'] .modal.modal-purchase-create .modal-field input,
+html[data-theme='dark'] .modal.modal-purchase-create .modal-field select {
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .store-search input::placeholder,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-search-field input::placeholder {
+  color: #97aec7;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .store-search .search-icon,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-search-field .search-icon {
+  color: #9fb4cb;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .store-checkbox-row strong,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-search-result-copy strong,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-products-empty strong {
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .store-checkbox-row span,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-search-result-copy span,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-products-empty span {
+  color: #b9cbe1;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .store-checkbox-price,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-search-result-price {
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-product-qty-actions,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-product-qty-actions button + button {
+  border-color: #35516e;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-product-qty-actions button {
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-product-remove:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-col,
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-section,
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-payment-card {
+  background: #122132;
+  border-color: #35516e;
+  box-shadow: none;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-section h4,
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-field,
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-product-info {
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-row .label,
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-product-info .muted,
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-payment-date-edit > span {
+  color: #b9cbe1;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-input {
+  background: #16283b;
+  border-color: #35516e;
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-product {
+  border-bottom-color: #2e455f;
 }
 
 .reminders-panel {
@@ -3924,7 +4110,7 @@ button.dashboard-reminder-card {
 
 .finance-list-head {
   display: grid;
-  grid-template-columns: 1.8fr 0.7fr 0.7fr 0.6fr 60px;
+  grid-template-columns: 1.8fr 0.7fr 0.7fr 0.6fr;
   gap: 12px;
   padding: 0 12px 12px;
   color: #4b5563;
@@ -3935,7 +4121,7 @@ button.dashboard-reminder-card {
 
 .finance-list-row {
   display: grid;
-  grid-template-columns: 1.8fr 0.7fr 0.7fr 0.6fr 60px;
+  grid-template-columns: 1.8fr 0.7fr 0.7fr 0.6fr;
   gap: 12px;
   align-items: center;
   border-top: 1px solid #dde5f0;
@@ -3944,8 +4130,33 @@ button.dashboard-reminder-card {
 
 .finance-desc-cell {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
+  min-width: 0;
+}
+
+.finance-desc-main {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.finance-desc-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.finance-desc-title {
+  min-width: 0;
+}
+
+.finance-desc-title strong {
+  display: block;
+  color: #111827;
+  line-height: 1.2;
 }
 
 .finance-entry-link {
@@ -4016,6 +4227,27 @@ button.dashboard-reminder-card {
   position: relative;
   display: flex;
   justify-content: flex-end;
+  align-items: flex-start;
+  flex: 0 0 auto;
+}
+
+.finance-entry-actions .button.icon.small,
+.inventory-row-actions .button.icon.small,
+.unit-actions .button.icon.small,
+.purchase-actions .button.icon.small {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: #475569;
+}
+
+.finance-entry-actions .button.icon.small.active,
+.inventory-row-actions .button.icon.small.active,
+.unit-actions .button.icon.small.active,
+.purchase-actions .button.icon.small.active {
+  border: none;
+  background: transparent;
+  color: #0f172a;
 }
 
 .finance-entry-action-placeholder {
@@ -4106,6 +4338,130 @@ button.dashboard-reminder-card {
 
 .purchase-row {
   align-items: center;
+}
+
+.purchases-card-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.purchase-card {
+  border: 1px solid #d6deeb;
+  border-radius: 16px;
+  background: #f7fafd;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+  transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.purchase-card:hover {
+  border-color: #c2d0e2;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1);
+}
+
+.purchase-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.purchase-card-header-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.purchase-card-number {
+  display: grid;
+  gap: 2px;
+}
+
+.purchase-card-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.66rem;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.purchase-card-number strong {
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.purchase-card-brand {
+  padding: 2px 0 0;
+}
+
+.purchase-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.purchase-card-metric {
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.purchase-card-metric span {
+  color: #64748b;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.purchase-card-metric strong {
+  color: #0f172a;
+  font-size: 0.95rem;
+  line-height: 1.25;
+}
+
+.purchase-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  border-top: 1px solid #d9e3ef;
+  padding-top: 10px;
+}
+
+.purchase-card-view {
+  border-color: #c9d6e7;
+  background: transparent;
+  color: #1f2937;
+}
+
+.purchase-card-view:hover {
+  border-color: #95abc7;
+  background: #eef3fa;
+}
+
+.purchase-card-draft-note {
+  color: #60758f;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.purchase-card-header .button.icon.small {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  color: #334155;
+  box-shadow: none;
 }
 
 .purchases-data-head,
@@ -4266,6 +4622,34 @@ button.dashboard-reminder-card {
 .purchases-toolbar-group {
   margin-left: auto;
   justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .purchases-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .purchase-card-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .purchase-card-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .purchase-card-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 390px) {
+  .purchase-card-metrics {
+    grid-template-columns: 1fr;
+  }
 }
 
 .modal-purchase-create {
@@ -4909,6 +5293,31 @@ button.dashboard-reminder-card {
   padding: 18px 20px 20px;
 }
 
+.modal.modal-purchase-view.modal-sale {
+  width: min(980px, calc(100vw - 32px));
+  display: block;
+}
+
+.purchase-view-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.purchase-view-header-actions .badge {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+.purchase-sale-summary-section {
+  align-content: start;
+}
+
+.purchase-sale-total {
+  color: #16a34a;
+}
+
 .purchase-view-grid {
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
@@ -5359,24 +5768,24 @@ button.dashboard-reminder-card {
 }
 
 .inventory-menu {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
   border-radius: 9px;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  background: rgba(255, 255, 255, 0.95);
+  border: none;
+  background: transparent;
   color: #0f172a;
   display: grid;
   place-items: center;
   cursor: pointer;
+  box-shadow: none;
 }
 
 .inventory-dropdown {
   position: absolute;
-  right: 12px;
-  top: 52px;
+  right: 0;
+  top: calc(100% + 6px);
   background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: 12px;
@@ -5443,13 +5852,22 @@ button.dashboard-reminder-card {
 .inventory-info {
   padding: 12px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
   align-content: space-between;
   background: var(--panel);
   min-height: 92px;
 }
 
+.inventory-info-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .inventory-meta {
+  flex: 1;
+  min-width: 0;
   padding: 0;
   display: grid;
   gap: 4px;
@@ -5482,6 +5900,24 @@ button.dashboard-reminder-card {
   color: #475569;
   font-size: 0.96rem;
   font-weight: 600;
+}
+
+.inventory-card-actions {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+
+.inventory-card-actions .inventory-dropdown {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.inventory-card-actions .button.icon.small .app-icon,
+.inventory-card-actions .button.icon.small svg {
+  width: 14px !important;
+  height: 14px !important;
 }
 
 .inventory-list {
@@ -9558,7 +9994,7 @@ button.dashboard-reminder-card {
 
   .finance-list-head,
   .finance-list-row {
-    grid-template-columns: 1.4fr 0.8fr 0.7fr 0.7fr 50px;
+    grid-template-columns: 1.4fr 0.9fr 0.8fr 0.8fr;
   }
 
   .settings-shell {
@@ -10189,7 +10625,10 @@ button.dashboard-reminder-card {
 
   .topbar {
     flex-direction: column;
+    justify-content: flex-start;
     align-items: flex-start;
+    min-height: 0;
+    height: auto;
   }
 
   .page-content > .topbar + .filters-panel-static {
@@ -10433,7 +10872,7 @@ button.dashboard-reminder-card {
   }
 
   .finance-entry-actions {
-    justify-content: flex-start;
+    justify-content: flex-end;
   }
 
   .report-detail-header-row {
@@ -15440,6 +15879,12 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
     border-radius: 14px;
   }
 
+  .modal.modal-purchase-view.modal-sale {
+    display: block;
+    grid-template-rows: none;
+    overflow-y: auto;
+  }
+
   .modal.modal-sale .sale-items-section {
     max-height: none;
     overflow: visible;
@@ -16364,10 +16809,15 @@ html[data-theme='dark'] .finance-list-row {
 }
 
 html[data-theme='dark'] .finance-entry-link,
+html[data-theme='dark'] .finance-desc-title strong,
 html[data-theme='dark'] .finance-value-cell,
 html[data-theme='dark'] .finance-month-current,
 html[data-theme='dark'] .finance-summary-card .stat-value {
   color: #eaf3ff;
+}
+
+html[data-theme='dark'] .finance-desc-main .meta {
+  color: #b9cbe1;
 }
 
 html[data-theme='dark'] .finance-entry-action-placeholder {
@@ -16451,6 +16901,87 @@ html[data-theme='dark'] .payment-badge.cancelled {
   color: #ffabab;
   border-color: rgba(239, 68, 68, 0.55);
   background: rgba(239, 68, 68, 0.2);
+}
+
+/* Dark-mode contrast fixes: inventory */
+html[data-theme='dark'] .inventory-filters-panel,
+html[data-theme='dark'] .inventory-list,
+html[data-theme='dark'] .inventory-card {
+  background: #132233;
+  border-color: #35516e;
+}
+
+html[data-theme='dark'] .inventory-filters-panel .search,
+html[data-theme='dark'] .inventory-filters-panel .pill,
+html[data-theme='dark'] .inventory-filters-panel .select-trigger,
+html[data-theme='dark'] .inventory-filters-panel .select-menu {
+  background: #122132;
+  border-color: #35516e;
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .inventory-filters-panel .search input,
+html[data-theme='dark'] .inventory-filters-panel .select-trigger span,
+html[data-theme='dark'] .inventory-filters-panel .select-trigger strong {
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .inventory-filters-panel .search input::placeholder {
+  color: #97aec7;
+}
+
+html[data-theme='dark'] .inventory-filters-panel .search-field-label,
+html[data-theme='dark'] .inventory-filters-panel .meta {
+  color: #b9cbe1;
+}
+
+html[data-theme='dark'] .inventory-filters-panel .pill.active {
+  background: #233a53;
+  border-color: #5b8fd6;
+  color: #eaf3ff;
+}
+
+html[data-theme='dark'] .inventory-filters-panel .select-menu a {
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .inventory-filters-panel .select-menu a:hover,
+html[data-theme='dark'] .inventory-filters-panel .select-menu a.active {
+  background: #22374f;
+  color: #f2f8ff;
+}
+
+html[data-theme='dark'] .inventory-list .data-row.header {
+  background: #1b3046;
+  border-bottom-color: #35516e;
+  color: #cfe0f4;
+}
+
+html[data-theme='dark'] .inventory-row,
+html[data-theme='dark'] .inventory-row-main,
+html[data-theme='dark'] .inventory-row-title,
+html[data-theme='dark'] .inventory-price {
+  color: #eaf3ff;
+}
+
+html[data-theme='dark'] .inventory-row-meta,
+html[data-theme='dark'] .inventory-meta span {
+  color: #b9cbe1;
+}
+
+html[data-theme='dark'] .inventory-thumb,
+html[data-theme='dark'] .inventory-dropdown {
+  background: #122132;
+  border-color: #35516e;
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .inventory-dropdown button {
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .inventory-dropdown button:hover {
+  background: #1c3045;
 }
 
 html[data-theme='dark'] .sale-item,
@@ -16546,6 +17077,60 @@ html[data-theme='dark'] .menu-select-option:hover,
 html[data-theme='dark'] .menu-select-option.active {
   background: #22374f;
   color: #f2f8ff;
+}
+
+/* Dark-mode contrast fixes: date range picker */
+html[data-theme='dark'] .date-range-trigger {
+  background: #122132;
+  border-color: #35516e;
+  color: #e5effc;
+  box-shadow: none;
+}
+
+html[data-theme='dark'] .date-range-trigger:hover {
+  border-color: #5b8fd6;
+  background: #16283b;
+}
+
+html[data-theme='dark'] .date-range-popover {
+  background: #122132;
+  border-color: #35516e;
+  box-shadow: 0 16px 36px rgba(1, 6, 12, 0.62);
+}
+
+html[data-theme='dark'] .date-range-tabs {
+  background: #122132;
+  border-color: #35516e;
+}
+
+html[data-theme='dark'] .date-range-tab {
+  color: #b9cbe1;
+}
+
+html[data-theme='dark'] .date-range-tab.active {
+  background: #22374f;
+  color: #f2f8ff;
+}
+
+html[data-theme='dark'] .date-range-option {
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .date-range-option:hover {
+  background: #1c3045;
+  border-color: #35516e;
+}
+
+html[data-theme='dark'] .date-range-year,
+html[data-theme='dark'] .date-range-month,
+html[data-theme='dark'] .date-range-field input {
+  background: #16283b;
+  border-color: #35516e;
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .date-range-field {
+  color: #b9cbe1;
 }
 
 html[data-theme='dark'] .sale-overlay-panel,
@@ -16690,4 +17275,146 @@ html[data-theme='dark'] .modal.modal-sale .store-checkbox-thumb {
     background: #122132;
     color: #e5effc;
   }
+}
+
+/* Dark-mode hardening: purchases */
+html[data-theme='dark'] .purchases-filters-panel,
+html[data-theme='dark'] .purchases-filters-panel .toolbar,
+html[data-theme='dark'] .purchases-filters-panel .search,
+html[data-theme='dark'] .purchases-filters-panel .search-inline,
+html[data-theme='dark'] .purchases-filters-panel .select,
+html[data-theme='dark'] .purchases-filters-panel .date-range-trigger,
+html[data-theme='dark'] .purchase-card,
+html[data-theme='dark'] .purchase-data-row,
+html[data-theme='dark'] .purchase-menu,
+html[data-theme='dark'] .purchase-menu button,
+html[data-theme='dark'] .modal.modal-purchase-create,
+html[data-theme='dark'] .modal.modal-purchase-view,
+html[data-theme='dark'] .modal.modal-purchase-create > .modal-header,
+html[data-theme='dark'] .modal.modal-purchase-view > .modal-header,
+html[data-theme='dark'] .modal.modal-purchase-create > .modal-footer,
+html[data-theme='dark'] .modal.modal-purchase-view > .modal-footer,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-search-results,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-search-result,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-products-empty,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-products-empty-icon,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-financial-summary,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-installments,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-installments-actions,
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-section,
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-payment-card {
+  background: #122132;
+  border-color: #35516e;
+}
+
+html[data-theme='dark'] .purchases-filters-panel,
+html[data-theme='dark'] .modal.modal-purchase-create,
+html[data-theme='dark'] .modal.modal-purchase-view,
+html[data-theme='dark'] .purchase-card,
+html[data-theme='dark'] .modal.modal-purchase-create :is(h3, h4, strong),
+html[data-theme='dark'] .modal.modal-purchase-view :is(h3, h4, strong),
+html[data-theme='dark'] .purchase-card-number strong,
+html[data-theme='dark'] .purchase-card-metric strong,
+html[data-theme='dark'] .purchase-cell-value,
+html[data-theme='dark'] .purchase-brand-name {
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .purchases-filters-panel .search-field-label,
+html[data-theme='dark'] .purchases-filters-panel .meta,
+html[data-theme='dark'] .purchases-filters-panel .select span,
+html[data-theme='dark'] .purchase-card-kicker,
+html[data-theme='dark'] .purchase-card-metric span,
+html[data-theme='dark'] .purchase-card-draft-note,
+html[data-theme='dark'] .purchases-data-head,
+html[data-theme='dark'] .purchase-cell-label,
+html[data-theme='dark'] .modal.modal-purchase-create :is(.input-field-label, .purchase-summary-row, .purchase-installment-row label),
+html[data-theme='dark'] .modal.modal-purchase-view :is(.muted, .purchase-view-field > span, .purchase-payment-date-edit > span) {
+  color: #b9cbe1;
+}
+
+html[data-theme='dark'] .purchase-card-view {
+  background: transparent;
+  border-color: #3a5674;
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .purchase-sale-total {
+  color: #a7f3c0;
+}
+
+html[data-theme='dark'] .purchase-card-brand,
+html[data-theme='dark'] .purchase-card-metric {
+  background: transparent;
+  border: none;
+}
+
+html[data-theme='dark'] .purchase-card-actions {
+  border-top-color: #2e455f;
+}
+
+html[data-theme='dark'] .purchase-card-header .button.icon.small {
+  background: transparent;
+  border: none;
+  color: #dbe9fb;
+}
+
+html[data-theme='dark'] .finance-entry-actions .button.icon.small,
+html[data-theme='dark'] .inventory-row-actions .button.icon.small,
+html[data-theme='dark'] .unit-actions .button.icon.small,
+html[data-theme='dark'] .purchase-actions .button.icon.small,
+html[data-theme='dark'] .inventory-menu {
+  border: none;
+  background: transparent;
+  color: #dbe9fb;
+}
+
+html[data-theme='dark'] .finance-entry-actions .button.icon.small.active,
+html[data-theme='dark'] .inventory-row-actions .button.icon.small.active,
+html[data-theme='dark'] .unit-actions .button.icon.small.active,
+html[data-theme='dark'] .purchase-actions .button.icon.small.active,
+html[data-theme='dark'] .inventory-menu.active {
+  background: transparent;
+  border: none;
+  color: #f2f8ff;
+}
+
+html[data-theme='dark'] .purchase-card:hover {
+  border-color: #5b8fd6;
+  box-shadow: 0 12px 24px rgba(1, 6, 12, 0.46);
+}
+
+html[data-theme='dark'] .purchase-card-view:hover {
+  background: #1c3045;
+  border-color: #5b8fd6;
+}
+
+html[data-theme='dark'] .purchases-filters-panel :is(input, select),
+html[data-theme='dark'] .modal.modal-purchase-create :is(input, select, textarea),
+html[data-theme='dark'] .modal.modal-purchase-view :is(input, select, textarea) {
+  background: #16283b;
+  border-color: #35516e;
+  color: #ecf4ff;
+  color-scheme: dark;
+}
+
+html[data-theme='dark'] .purchases-filters-panel :is(input, select)::placeholder,
+html[data-theme='dark'] .modal.modal-purchase-create :is(input, textarea)::placeholder,
+html[data-theme='dark'] .modal.modal-purchase-view :is(input, textarea)::placeholder {
+  color: #97aec7;
+}
+
+html[data-theme='dark'] .purchases-filters-panel select option,
+html[data-theme='dark'] .modal.modal-purchase-create select option,
+html[data-theme='dark'] .modal.modal-purchase-view select option {
+  background: #122132;
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-product-qty-actions,
+html[data-theme='dark'] .modal.modal-purchase-create .purchase-create-product-qty-actions button + button,
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-section .divider,
+html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-product,
+html[data-theme='dark'] .modal-purchase-view .purchase-view-actions {
+  border-color: #35516e;
 }
