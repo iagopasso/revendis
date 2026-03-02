@@ -16508,3 +16508,186 @@ html[data-theme='dark'] .finance-summary-card .stat-value {
 html[data-theme='dark'] .finance-summary-card .finance-negative {
   color: #dc2626;
 }
+
+html[data-theme='dark'] .menu-select-trigger {
+  border-color: #35516e;
+  background: #122132;
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .menu-select-trigger span {
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .menu-select-trigger.placeholder span {
+  color: #9bb1c9;
+}
+
+html[data-theme='dark'] .menu-select-trigger strong {
+  border-left-color: #35516e;
+  color: #c9d9ec;
+}
+
+html[data-theme='dark'] .menu-select.open .menu-select-trigger {
+  box-shadow: 0 0 0 2px rgba(91, 143, 214, 0.25);
+}
+
+html[data-theme='dark'] .menu-select-menu {
+  background: #122132;
+  border-color: #35516e;
+  box-shadow: 0 14px 34px rgba(1, 6, 12, 0.56);
+}
+
+html[data-theme='dark'] .menu-select-option {
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .menu-select-option:hover,
+html[data-theme='dark'] .menu-select-option.active {
+  background: #22374f;
+  color: #f2f8ff;
+}
+
+html[data-theme='dark'] .sale-overlay-panel,
+html[data-theme='dark'] .sale-cart-column,
+html[data-theme='dark'] .sale-product-card,
+html[data-theme='dark'] .sale-cart-item,
+html[data-theme='dark'] .sale-cart-empty,
+html[data-theme='dark'] .add-product-summary,
+html[data-theme='dark'] .sale-customer-picker,
+html[data-theme='dark'] .customer-picker-item,
+html[data-theme='dark'] .origin-toggle {
+  border-color: #35516e;
+  background: #122132;
+}
+
+html[data-theme='dark'] .sale-product-card.selected,
+html[data-theme='dark'] .customer-picker-item.active {
+  border-color: #5b8fd6;
+  background: #1b3047;
+}
+
+html[data-theme='dark'] .sale-overlay-header h3,
+html[data-theme='dark'] .sale-product-meta strong,
+html[data-theme='dark'] .sale-product-price,
+html[data-theme='dark'] .sale-cart-title,
+html[data-theme='dark'] .add-product-meta strong,
+html[data-theme='dark'] .customer-picker-text strong,
+html[data-theme='dark'] .sale-customer-name,
+html[data-theme='dark'] .modal.modal-sale .store-checkbox-row strong,
+html[data-theme='dark'] .modal.modal-sale .store-checkbox-price {
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .sale-product-meta span,
+html[data-theme='dark'] .sale-cart-meta,
+html[data-theme='dark'] .add-product-meta span,
+html[data-theme='dark'] .customer-picker-text span,
+html[data-theme='dark'] .modal.modal-sale .store-checkbox-row span,
+html[data-theme='dark'] .modal.modal-sale .store-modal-footer {
+  color: #b0c5dd;
+}
+
+html[data-theme='dark'] .sale-product-search,
+html[data-theme='dark'] .customer-picker-search {
+  border-color: #35516e;
+  background: #16283b;
+}
+
+html[data-theme='dark'] .sale-product-search input,
+html[data-theme='dark'] .customer-picker-search input {
+  color: #e5effc;
+}
+
+html[data-theme='dark'] .sale-product-search input::placeholder,
+html[data-theme='dark'] .customer-picker-search input::placeholder,
+html[data-theme='dark'] .sale-cart-price input::placeholder {
+  color: #97aec7;
+}
+
+html[data-theme='dark'] .sale-product-search .input-field-label,
+html[data-theme='dark'] .customer-picker-search .input-field-label,
+html[data-theme='dark'] .sale-product-search .search-icon,
+html[data-theme='dark'] .customer-picker-search .search-icon {
+  color: #9fb4cb;
+}
+
+html[data-theme='dark'] .sale-cart-price input {
+  border-color: #35516e;
+  background: #16283b;
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .sale-qty-stepper {
+  border-color: #35516e;
+  background: #16283b;
+}
+
+html[data-theme='dark'] .sale-qty-stepper button,
+html[data-theme='dark'] .sale-qty-stepper span {
+  color: #ecf4ff;
+}
+
+html[data-theme='dark'] .sale-qty-stepper button:disabled {
+  color: #7e95b1;
+}
+
+html[data-theme='dark'] .sale-icon-button {
+  border-color: #35516e;
+  background: #16283b;
+  color: #d2e4f8;
+}
+
+html[data-theme='dark'] .sale-icon-button.ghost {
+  background: transparent;
+}
+
+html[data-theme='dark'] .sale-customer-chip {
+  border-color: #5a6f90;
+  background: #1f3249;
+}
+
+html[data-theme='dark'] .sale-customer-ghost {
+  border-color: #7752cb;
+  background: #1a2d44;
+  color: #d9c9ff;
+}
+
+html[data-theme='dark'] .modal.modal-sale .store-checkbox-row,
+html[data-theme='dark'] .modal.modal-sale .store-modal-list.promotion-products {
+  border-color: #35516e;
+  background: #122132;
+}
+
+html[data-theme='dark'] .modal.modal-sale .store-checkbox-thumb {
+  border-color: #35516e;
+  background: #1c3047;
+}
+
+@media (max-width: 768px) {
+  html[data-theme='dark'] .toolbar-sales .date-range-trigger {
+    border-color: #35516e;
+    background: #122132;
+    color: #e5effc;
+  }
+
+  html[data-theme='dark'] .modal.modal-sale .store-modal-footer {
+    background: #0f1d2e;
+    border-top-color: #35516e;
+  }
+
+  html[data-theme='dark'] .page :is(
+      .store-form-grid input,
+      .store-subdomain input,
+      .store-config-field input,
+      .store-config-block input,
+      .store-order-accept-field input,
+      .store-order-accept-field select,
+      .store-order-accept-add-product select,
+      .store-order-accept-price input
+    ) {
+    border-color: #35516e;
+    background: #122132;
+    color: #e5effc;
+  }
+}
