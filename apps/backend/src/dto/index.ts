@@ -241,6 +241,14 @@ export type SettingsStorefrontInput = {
   priceFrom?: string;
   priceTo?: string;
   logoUrl?: string;
+  creditCardLink?: string;
+  boletoLink?: string;
+};
+
+export type StorefrontOrderPaymentInput = {
+  method: 'pix' | 'credit_card';
+  reference?: string;
+  installments?: number;
 };
 
 export type AccessMemberInput = {
@@ -269,4 +277,5 @@ export type StorefrontOrderInput = {
     address?: string;
     price?: number;
   };
+  payment?: StorefrontOrderPaymentInput;
 };

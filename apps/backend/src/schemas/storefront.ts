@@ -21,6 +21,14 @@ export const storefrontOrderSchema = z
         price: z.number().nonnegative().optional()
       })
       .strict()
+      .optional(),
+    payment: z
+      .object({
+        method: z.enum(['pix', 'credit_card']),
+        reference: z.string().trim().max(4000).optional(),
+        installments: z.number().int().min(1).max(12).optional()
+      })
+      .strict()
       .optional()
   })
   .strict();

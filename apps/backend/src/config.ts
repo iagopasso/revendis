@@ -8,3 +8,11 @@ export const DATABASE_URL =
   process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/revendis';
 
 export const MUTATION_AUTH_TOKEN = process.env.MUTATION_AUTH_TOKEN || '';
+
+export const MERCADO_PAGO_ACCESS_TOKEN = (process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
+
+export const MERCADO_PAGO_PUBLIC_BASE_URL = (process.env.MERCADO_PAGO_PUBLIC_BASE_URL || '')
+  .trim()
+  .replace(/\/+$/, '');
+
+export const MERCADO_PAGO_WEBHOOK_URL = (process.env.MERCADO_PAGO_WEBHOOK_URL || '').trim();

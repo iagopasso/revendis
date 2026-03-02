@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { IconArrowLeft, IconCart, IconSearch, IconTrash, IconWhatsapp } from '../../(dash)/icons';
+import { IconArrowLeft, IconCart, IconCopy, IconSearch, IconTrash, IconWhatsapp } from '../../(dash)/icons';
 import { API_BASE, buildMutationHeaders } from '../../(dash)/lib';
 import {
   DEFAULT_STOREFRONT_SETTINGS,
@@ -26,6 +26,10 @@ type StoreProduct = {
 
 type PublicStoreSettings = Partial<StorefrontSettings> & {
   logoUrl?: string;
+  pixKey?: string;
+  creditCardLink?: string;
+  boletoLink?: string;
+  mercadoPagoEnabled?: boolean;
 };
 
 type NormalizedProduct = {
@@ -54,6 +58,19 @@ type CartItem = {
 };
 
 type PublicView = 'catalog' | 'product' | 'checkout' | 'success';
+type CheckoutPaymentMethod = 'pix' | 'credit_card';
+
+type CheckoutResponse = {
+  data?: {
+    payment?: {
+      method?: CheckoutPaymentMethod;
+      reference?: string;
+      checkoutUrl?: string;
+      provider?: string;
+    };
+  };
+  message?: string;
+};
 
 const toNumber = (value: unknown) => {
   if (typeof value === 'number') return value;
@@ -66,6 +83,73 @@ const toNumber = (value: unknown) => {
 
 const formatPrice = (value: number) =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const toTlv = (id: string, value: string) => `${id}${String(value.length).padStart(2, '0')}${value}`;
+
+const computeCrc16 = (payload: string) => {
+  let crc = 0xffff;
+  for (let index = 0; index < payload.length; index += 1) {
+    crc ^= payload.charCodeAt(index) << 8;
+    for (let bit = 0; bit < 8; bit += 1) {
+      if (crc & 0x8000) {
+        crc = (crc << 1) ^ 0x1021;
+      } else {
+        crc <<= 1;
+      }
+      crc &= 0xffff;
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, '0');
+};
+
+const normalizePixText = (value: string, fallback: string, maxLength: number) => {
+  const clean = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9 $%*+\-./:]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (clean || fallback).slice(0, maxLength);
+};
+
+const buildPixCopyPasteCode = ({
+  key,
+  amount,
+  merchantName,
+  merchantCity,
+  txid
+}: {
+  key: string;
+  amount: number;
+  merchantName: string;
+  merchantCity: string;
+  txid: string;
+}) => {
+  const pixKey = key.trim();
+  if (!pixKey) return '';
+
+  const merchantAccountInfo = `${toTlv('00', 'br.gov.bcb.pix')}${toTlv('01', pixKey.slice(0, 77))}`;
+  const merchantNameField = normalizePixText(merchantName, 'LOJA', 25);
+  const merchantCityField = normalizePixText(merchantCity, 'SAO PAULO', 15);
+  const txidField = normalizePixText(txid, 'PEDIDO', 25);
+  const safeAmount = Math.max(0, amount);
+
+  const payloadWithoutCrc = [
+    toTlv('00', '01'),
+    toTlv('26', merchantAccountInfo),
+    toTlv('52', '0000'),
+    toTlv('53', '986'),
+    toTlv('54', safeAmount.toFixed(2)),
+    toTlv('58', 'BR'),
+    toTlv('59', merchantNameField),
+    toTlv('60', merchantCityField),
+    toTlv('62', toTlv('05', txidField)),
+    '6304'
+  ].join('');
+
+  return `${payloadWithoutCrc}${computeCrc16(payloadWithoutCrc)}`;
+};
 
 const normalizeToken = (value: string) =>
   value
@@ -94,6 +178,49 @@ const toWhatsappPhone = (value: string) => {
   if (digits.startsWith('55')) return digits;
   if (digits.length === 10 || digits.length === 11) return `55${digits}`;
   return digits;
+};
+
+const fallbackCopyText = (text: string) => {
+  if (typeof document === 'undefined') return false;
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch {
+    copied = false;
+  } finally {
+    document.body.removeChild(textarea);
+  }
+  return copied;
+};
+
+const copyText = async (text: string) => {
+  const canUseClipboardApi =
+    typeof navigator !== 'undefined' &&
+    typeof window !== 'undefined' &&
+    window.isSecureContext &&
+    Boolean(navigator.clipboard?.writeText);
+
+  if (canUseClipboardApi) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fallback below
+    }
+  }
+
+  return fallbackCopyText(text);
 };
 
 const isValidCustomerPhone = (value: string) => {
@@ -184,6 +311,9 @@ export default function PublicStorefront({
   );
 
   const logoUrl = initialStoreSettings?.logoUrl?.trim() || '';
+  const pixKey = initialStoreSettings?.pixKey?.trim() || '';
+  const creditCardLink = initialStoreSettings?.creditCardLink?.trim() || '';
+  const mercadoPagoEnabled = Boolean(initialStoreSettings?.mercadoPagoEnabled);
   const initialProductFromQuery = (initialProductId || '').trim();
 
   const [view, setView] = useState<PublicView>(initialProductFromQuery ? 'product' : 'catalog');
@@ -208,12 +338,21 @@ export default function PublicStorefront({
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<CheckoutPaymentMethod | ''>(
+    pixKey ? 'pix' : mercadoPagoEnabled || creditCardLink ? 'credit_card' : ''
+  );
+  const [creditCardInstallments, setCreditCardInstallments] = useState(1);
+  const [paymentHelperMessage, setPaymentHelperMessage] = useState('');
+  const [paymentHelperError, setPaymentHelperError] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState('');
   const [checkoutError, setCheckoutError] = useState(false);
   const [submittingCheckout, setSubmittingCheckout] = useState(false);
   const [hiddenProductIds, setHiddenProductIds] = useState<string[]>([]);
   const [productDescriptions, setProductDescriptions] = useState<Record<string, string>>({});
   const [storePriceOverrides, setStorePriceOverrides] = useState<Record<string, number>>({});
+  const [successPaymentUrl, setSuccessPaymentUrl] = useState('');
+  const [successPaymentMethod, setSuccessPaymentMethod] = useState<CheckoutPaymentMethod | ''>('');
+  const [successPaymentProvider, setSuccessPaymentProvider] = useState('');
 
   const viewStateSubdomain = useMemo(
     () => sanitizeSubdomain(subdomain) || DEFAULT_STOREFRONT_SETTINGS.subdomain,
@@ -278,6 +417,16 @@ export default function PublicStorefront({
     () => uniqueTextValues(settings.selectedCategories || []).map(normalizeToken),
     [settings.selectedCategories]
   );
+  const availablePaymentMethods = useMemo<CheckoutPaymentMethod[]>(() => {
+    const methods: CheckoutPaymentMethod[] = [];
+    if (pixKey) {
+      methods.push('pix');
+    }
+    if (mercadoPagoEnabled || creditCardLink) {
+      methods.push('credit_card');
+    }
+    return methods;
+  }, [creditCardLink, mercadoPagoEnabled, pixKey]);
 
   const productsByStockRule = useMemo(
     () =>
@@ -338,6 +487,23 @@ export default function PublicStorefront({
     const timer = window.setTimeout(() => setToastMessage(''), 2600);
     return () => window.clearTimeout(timer);
   }, [toastMessage]);
+
+  useEffect(() => {
+    if (!paymentHelperMessage) return;
+    const timer = window.setTimeout(() => {
+      setPaymentHelperMessage('');
+      setPaymentHelperError(false);
+    }, 2200);
+    return () => window.clearTimeout(timer);
+  }, [paymentHelperMessage]);
+
+  useEffect(() => {
+    if (availablePaymentMethods.length === 0) {
+      setSelectedPaymentMethod('');
+      return;
+    }
+    setSelectedPaymentMethod((prev) => (prev && availablePaymentMethods.includes(prev) ? prev : availablePaymentMethods[0]));
+  }, [availablePaymentMethods]);
 
   useEffect(() => {
     if (view !== 'product') return;
@@ -415,6 +581,35 @@ export default function PublicStorefront({
     () => cartDisplayItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
     [cartDisplayItems]
   );
+  const pixCopyPasteCode = useMemo(
+    () =>
+      buildPixCopyPasteCode({
+        key: pixKey,
+        amount: cartTotal,
+        merchantName: settings.shopName || 'Loja',
+        merchantCity: 'Sao Paulo',
+        txid: `PEDIDO${Math.round(cartTotal * 100) || 1}`
+      }),
+    [cartTotal, pixKey, settings.shopName]
+  );
+  const pixQrCodeUrl = useMemo(
+    () =>
+      pixCopyPasteCode
+        ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(pixCopyPasteCode)}`
+        : '',
+    [pixCopyPasteCode]
+  );
+  const installmentOptions = useMemo(() => {
+    const maxInstallments = Math.min(6, Math.max(1, Math.floor(cartTotal / 30)));
+    return Array.from({ length: maxInstallments }, (_, index) => index + 1);
+  }, [cartTotal]);
+
+  useEffect(() => {
+    setCreditCardInstallments((prev) => {
+      if (installmentOptions.length === 0) return 1;
+      return installmentOptions.includes(prev) ? prev : installmentOptions[0];
+    });
+  }, [installmentOptions]);
 
   const syncProductQueryParam = (productId: string | null) => {
     if (typeof window === 'undefined') return;
@@ -509,6 +704,8 @@ export default function PublicStorefront({
     setCartOpen(false);
     setCheckoutMessage('');
     setCheckoutError(false);
+    setPaymentHelperMessage('');
+    setPaymentHelperError(false);
   };
 
   const handleFinalizeOrder = async () => {
@@ -529,6 +726,35 @@ export default function PublicStorefront({
 
     if (cartDisplayItems.length === 0) {
       setCheckoutMessage('Seu carrinho esta vazio.');
+      setCheckoutError(true);
+      return;
+    }
+
+    if (availablePaymentMethods.length === 0) {
+      setCheckoutMessage('Esta loja ainda nao configurou forma de pagamento.');
+      setCheckoutError(true);
+      return;
+    }
+
+    if (!selectedPaymentMethod) {
+      setCheckoutMessage('Selecione uma forma de pagamento.');
+      setCheckoutError(true);
+      return;
+    }
+
+    const paymentReference =
+      selectedPaymentMethod === 'pix'
+        ? pixCopyPasteCode || pixKey
+        : mercadoPagoEnabled
+          ? ''
+          : creditCardLink;
+    if (selectedPaymentMethod === 'pix' && !paymentReference) {
+      setCheckoutMessage('A chave Pix da loja nao esta configurada.');
+      setCheckoutError(true);
+      return;
+    }
+    if (selectedPaymentMethod !== 'pix' && !mercadoPagoEnabled && !paymentReference) {
+      setCheckoutMessage('A forma de pagamento selecionada nao esta disponivel agora.');
       setCheckoutError(true);
       return;
     }
@@ -558,13 +784,33 @@ export default function PublicStorefront({
           customer: {
             name: trimmedName,
             phone: trimmedPhone
+          },
+          payment: {
+            method: selectedPaymentMethod,
+            reference: paymentReference,
+            installments: selectedPaymentMethod === 'credit_card' ? creditCardInstallments : undefined
           }
         })
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        const payload = (await response.json().catch(() => null)) as CheckoutResponse | null;
         throw new Error(payload?.message || 'Nao foi possivel finalizar o pedido agora.');
+      }
+      const payload = (await response.json().catch(() => null)) as CheckoutResponse | null;
+      const responsePaymentReference = payload?.data?.payment?.reference || '';
+      const checkoutUrl =
+        payload?.data?.payment?.checkoutUrl ||
+        (/^https?:\/\//i.test(responsePaymentReference) ? responsePaymentReference : '');
+      const method = payload?.data?.payment?.method || selectedPaymentMethod;
+      const paymentProvider = payload?.data?.payment?.provider || '';
+
+      // When Mercado Pago returns a checkout URL, continue directly to payment.
+      if (paymentProvider === 'mercado_pago' && checkoutUrl) {
+        setCheckoutMessage('Redirecionando para o pagamento...');
+        setCheckoutError(false);
+        window.location.assign(checkoutUrl);
+        return;
       }
 
       setCartItems([]);
@@ -577,6 +823,11 @@ export default function PublicStorefront({
       syncProductQueryParam(null);
       setCheckoutMessage('');
       setCheckoutError(false);
+      setPaymentHelperMessage('');
+      setPaymentHelperError(false);
+      setSuccessPaymentUrl(checkoutUrl);
+      setSuccessPaymentMethod(method);
+      setSuccessPaymentProvider(paymentProvider);
     } catch (error) {
       setCheckoutMessage(error instanceof Error ? error.message : 'Nao foi possivel finalizar o pedido agora.');
       setCheckoutError(true);
@@ -586,9 +837,15 @@ export default function PublicStorefront({
   };
 
   const whatsappPhone = toWhatsappPhone(settings.whatsapp || '');
+  const isPixAvailable = Boolean(pixKey);
+  const isCreditCardAvailable = mercadoPagoEnabled || Boolean(creditCardLink);
 
   return (
-    <main className="public-stock-link" style={{ ['--public-accent' as string]: settings.shopColor }}>
+    <main
+      suppressHydrationWarning
+      className="public-stock-link"
+      style={{ ['--public-accent' as string]: settings.shopColor }}
+    >
       <header className="public-stock-topbar">
         <div className="public-stock-brand">
           {logoUrl ? <img src={logoUrl} alt={settings.shopName} className="public-stock-brand-logo" /> : null}
@@ -946,6 +1203,136 @@ export default function PublicStorefront({
                 />
               </label>
 
+              <div className="public-stock-payment-box">
+                <div className="public-stock-payment-head">Forma de pagamento</div>
+
+                {availablePaymentMethods.length === 0 ? (
+                  <p className="public-stock-payment-note">Nenhuma forma de pagamento disponivel para esta loja.</p>
+                ) : (
+                  <>
+                    <section className="public-stock-payment-group">
+                      <strong className="public-stock-payment-group-title">Pix</strong>
+                      <label
+                        className={
+                          !isPixAvailable
+                            ? 'public-stock-payment-option disabled'
+                            : selectedPaymentMethod === 'pix'
+                              ? 'public-stock-payment-option active'
+                              : 'public-stock-payment-option'
+                        }
+                      >
+                        <input
+                          type="radio"
+                          name="checkout-payment-method"
+                          value="pix"
+                          checked={selectedPaymentMethod === 'pix'}
+                          disabled={!isPixAvailable}
+                          onChange={() => {
+                            setSelectedPaymentMethod('pix');
+                            setCheckoutMessage('');
+                          }}
+                        />
+                        <span className="public-stock-payment-logo pix">PIX</span>
+                        <span className="public-stock-payment-option-text">
+                          {isPixAvailable ? 'Pagamento instantaneo' : 'Indisponivel no momento'}
+                        </span>
+                      </label>
+
+                      {selectedPaymentMethod === 'pix' && isPixAvailable ? (
+                        <div className="public-stock-payment-reference">
+                          <span>Chave Pix: {pixKey}</span>
+                          {pixQrCodeUrl ? (
+                            <div className="public-stock-pix-qr">
+                              <img src={pixQrCodeUrl} alt="QR Code Pix" />
+                            </div>
+                          ) : null}
+                          <span>Pix copia e cola:</span>
+                          <code className="public-stock-pix-code">{pixCopyPasteCode || pixKey}</code>
+                          <button
+                            type="button"
+                            className="public-stock-payment-copy"
+                            onClick={() =>
+                              void copyText(pixCopyPasteCode || pixKey).then((copied) => {
+                                setPaymentHelperMessage(
+                                  copied ? 'Codigo Pix copiado.' : 'Nao foi possivel copiar o codigo Pix.'
+                                );
+                                setPaymentHelperError(!copied);
+                              })
+                            }
+                          >
+                            <IconCopy />
+                            Copiar codigo Pix
+                          </button>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="public-stock-payment-group">
+                      <strong className="public-stock-payment-group-title">Cartao de credito</strong>
+                      <label
+                        className={
+                          !isCreditCardAvailable
+                            ? 'public-stock-payment-option disabled'
+                            : selectedPaymentMethod === 'credit_card'
+                              ? 'public-stock-payment-option active'
+                              : 'public-stock-payment-option'
+                        }
+                      >
+                        <input
+                          type="radio"
+                          name="checkout-payment-method"
+                          value="credit_card"
+                          checked={selectedPaymentMethod === 'credit_card'}
+                          disabled={!isCreditCardAvailable}
+                          onChange={() => {
+                            setSelectedPaymentMethod('credit_card');
+                            setCheckoutMessage('');
+                          }}
+                        />
+                        <span className="public-stock-payment-logo card">CC</span>
+                        <span className="public-stock-payment-option-text">
+                          {isCreditCardAvailable
+                            ? `Em ate ${installmentOptions[installmentOptions.length - 1] || 1}x`
+                            : 'Indisponivel no momento'}
+                        </span>
+                      </label>
+
+                      {selectedPaymentMethod === 'credit_card' && isCreditCardAvailable ? (
+                        <div className="public-stock-payment-reference">
+                          <label className="public-stock-payment-installments">
+                            <span>Parcelamento</span>
+                            <select
+                              value={creditCardInstallments}
+                              onChange={(event) => setCreditCardInstallments(Math.max(1, Number(event.target.value) || 1))}
+                            >
+                              {installmentOptions.map((installment) => (
+                                <option key={installment} value={installment}>
+                                  {installment}x de {formatPrice(cartTotal / installment)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {mercadoPagoEnabled ? (
+                            <span>Ao finalizar o pedido, voce sera redirecionado para pagar com cartao no Mercado Pago.</span>
+                          ) : (
+                            <a href={creditCardLink} target="_blank" rel="noreferrer" className="public-stock-payment-link">
+                              Abrir link de pagamento
+                            </a>
+                          )}
+                        </div>
+                      ) : null}
+                    </section>
+
+                  </>
+                )}
+
+                {paymentHelperMessage ? (
+                  <p className={paymentHelperError ? 'public-stock-payment-feedback error' : 'public-stock-payment-feedback'}>
+                    {paymentHelperMessage}
+                  </p>
+                ) : null}
+              </div>
+
               {checkoutMessage ? (
                 <p className={checkoutError ? 'public-stock-checkout-feedback error' : 'public-stock-checkout-feedback'}>
                   {checkoutMessage}
@@ -959,7 +1346,9 @@ export default function PublicStorefront({
                 disabled={
                   submittingCheckout ||
                   cartDisplayItems.length === 0 ||
-                  cartDisplayItems.some((item) => item.available <= 0 || item.quantity > item.available)
+                  cartDisplayItems.some((item) => item.available <= 0 || item.quantity > item.available) ||
+                  availablePaymentMethods.length === 0 ||
+                  !selectedPaymentMethod
                 }
               >
                 {submittingCheckout ? 'Finalizando...' : 'Finalizar pedido'}
@@ -973,16 +1362,30 @@ export default function PublicStorefront({
         <section className="public-stock-success-page">
           <div className="public-stock-success-icon">✓</div>
           <h1>Compra realizada com sucesso!</h1>
-          <p>Obrigado por comprar em meu site! Em breve entrarei em contato com você para finalizar a compra.</p>
-          <button
-            type="button"
-            onClick={() => {
-              backToCatalog();
-              setSearch('');
-            }}
-          >
-            Voltar para a loja
-          </button>
+          <p>
+            {successPaymentProvider === 'mercado_pago'
+              ? 'Pedido registrado. Agora finalize o pagamento com seguranca pelo Mercado Pago.'
+              : 'Obrigado por comprar em meu site! Em breve entrarei em contato com voce para finalizar a compra.'}
+          </p>
+          <div className="public-stock-success-actions">
+            {successPaymentUrl ? (
+              <a href={successPaymentUrl} target="_blank" rel="noreferrer" className="public-stock-success-pay">
+                {successPaymentMethod === 'pix' ? 'Pagar com Pix' : 'Pagar com cartao'}
+              </a>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                backToCatalog();
+                setSearch('');
+                setSuccessPaymentUrl('');
+                setSuccessPaymentMethod('');
+                setSuccessPaymentProvider('');
+              }}
+            >
+              Voltar para a loja
+            </button>
+          </div>
         </section>
       ) : null}
 

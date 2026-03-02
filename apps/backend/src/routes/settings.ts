@@ -9,7 +9,7 @@ import type {
   SettingsStorefrontInput,
   SettingsSubscriptionInput
 } from '../dto';
-import { DEFAULT_ORG_ID, DEFAULT_STORE_ID } from '../config';
+import { DEFAULT_ORG_ID, DEFAULT_STORE_ID, MERCADO_PAGO_ACCESS_TOKEN } from '../config';
 import { query, withTransaction } from '../db';
 import { validateRequest } from '../middleware/validate';
 import { idParamSchema } from '../schemas/common';
@@ -75,6 +75,9 @@ type StorefrontSettingsRow = {
   storefront_price_from: string | null;
   storefront_price_to: string | null;
   storefront_logo_url: string | null;
+  storefront_credit_card_link: string | null;
+  storefront_boleto_link: string | null;
+  pix_key_value: string | null;
 };
 
 type StorefrontSettingsData = {
@@ -93,6 +96,10 @@ type StorefrontSettingsData = {
   priceFrom: string;
   priceTo: string;
   logoUrl: string;
+  creditCardLink: string;
+  boletoLink: string;
+  pixKey: string;
+  mercadoPagoEnabled: boolean;
 };
 
 type AccessMemberRow = {
@@ -159,6 +166,30 @@ const toAmount = (value: unknown) => {
 const isUniqueConstraintError = (error: unknown): error is { code: string } =>
   Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === '23505');
 
+const isPermissionDeniedError = (error: unknown): error is { code: string } =>
+  Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === '42501');
+
+const isUndefinedColumnError = (error: unknown): error is { code: string } =>
+  Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === '42703');
+
+const hasOrganizationSettingsColumn = async (db: DbExecutor, columnName: string) => {
+  try {
+    const result = await db.query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'organization_settings'
+           AND column_name = $1
+       ) AS exists`,
+      [columnName]
+    );
+    return Boolean(result.rows[0]?.exists);
+  } catch {
+    return false;
+  }
+};
+
 let ensureStorefrontColumnsPromise: Promise<void> | null = null;
 
 const ensureStorefrontColumns = async () => {
@@ -168,30 +199,40 @@ const ensureStorefrontColumns = async () => {
   }
 
   ensureStorefrontColumnsPromise = (async () => {
-    await query(
-      `ALTER TABLE organization_settings
-         ADD COLUMN IF NOT EXISTS storefront_subdomain text,
-         ADD COLUMN IF NOT EXISTS storefront_color text NOT NULL DEFAULT '#7D58D4',
-         ADD COLUMN IF NOT EXISTS storefront_only_stock boolean NOT NULL DEFAULT false,
-         ADD COLUMN IF NOT EXISTS storefront_show_out_of_stock boolean NOT NULL DEFAULT true,
-         ADD COLUMN IF NOT EXISTS storefront_filter_category boolean NOT NULL DEFAULT true,
-         ADD COLUMN IF NOT EXISTS storefront_filter_brand boolean NOT NULL DEFAULT true,
-         ADD COLUMN IF NOT EXISTS storefront_filter_price boolean NOT NULL DEFAULT true,
-         ADD COLUMN IF NOT EXISTS storefront_whatsapp text,
-         ADD COLUMN IF NOT EXISTS storefront_show_whatsapp_button boolean NOT NULL DEFAULT false,
-         ADD COLUMN IF NOT EXISTS storefront_selected_brands text[] NOT NULL DEFAULT '{}',
-         ADD COLUMN IF NOT EXISTS storefront_selected_categories text[] NOT NULL DEFAULT '{}',
-         ADD COLUMN IF NOT EXISTS storefront_price_from text NOT NULL DEFAULT '',
-         ADD COLUMN IF NOT EXISTS storefront_price_to text NOT NULL DEFAULT '',
-         ADD COLUMN IF NOT EXISTS storefront_logo_url text,
-         ADD COLUMN IF NOT EXISTS storefront_catalog_snapshot jsonb`
-    );
+    try {
+      await query(
+        `ALTER TABLE organization_settings
+           ADD COLUMN IF NOT EXISTS storefront_subdomain text,
+           ADD COLUMN IF NOT EXISTS storefront_color text NOT NULL DEFAULT '#7D58D4',
+           ADD COLUMN IF NOT EXISTS storefront_only_stock boolean NOT NULL DEFAULT false,
+           ADD COLUMN IF NOT EXISTS storefront_show_out_of_stock boolean NOT NULL DEFAULT true,
+           ADD COLUMN IF NOT EXISTS storefront_filter_category boolean NOT NULL DEFAULT true,
+           ADD COLUMN IF NOT EXISTS storefront_filter_brand boolean NOT NULL DEFAULT true,
+           ADD COLUMN IF NOT EXISTS storefront_filter_price boolean NOT NULL DEFAULT true,
+           ADD COLUMN IF NOT EXISTS storefront_whatsapp text,
+           ADD COLUMN IF NOT EXISTS storefront_show_whatsapp_button boolean NOT NULL DEFAULT false,
+           ADD COLUMN IF NOT EXISTS storefront_selected_brands text[] NOT NULL DEFAULT '{}',
+           ADD COLUMN IF NOT EXISTS storefront_selected_categories text[] NOT NULL DEFAULT '{}',
+           ADD COLUMN IF NOT EXISTS storefront_price_from text NOT NULL DEFAULT '',
+           ADD COLUMN IF NOT EXISTS storefront_price_to text NOT NULL DEFAULT '',
+           ADD COLUMN IF NOT EXISTS storefront_logo_url text,
+           ADD COLUMN IF NOT EXISTS storefront_credit_card_link text,
+           ADD COLUMN IF NOT EXISTS storefront_boleto_link text,
+           ADD COLUMN IF NOT EXISTS storefront_catalog_snapshot jsonb`
+      );
+    } catch (error) {
+      if (!isPermissionDeniedError(error)) throw error;
+    }
 
-    await query(
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_organization_settings_storefront_subdomain
-         ON organization_settings (lower(storefront_subdomain))
-         WHERE storefront_subdomain IS NOT NULL`
-    );
+    try {
+      await query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_organization_settings_storefront_subdomain
+           ON organization_settings (lower(storefront_subdomain))
+           WHERE storefront_subdomain IS NOT NULL`
+      );
+    } catch (error) {
+      if (!isPermissionDeniedError(error)) throw error;
+    }
   })().catch((error) => {
     ensureStorefrontColumnsPromise = null;
     throw error;
@@ -300,7 +341,10 @@ const selectStorefrontSettings = async (db: DbExecutor, orgId: string): Promise<
             os.storefront_selected_categories,
             os.storefront_price_from,
             os.storefront_price_to,
-            os.storefront_logo_url
+            os.storefront_logo_url,
+            to_jsonb(os) ->> 'storefront_credit_card_link' AS storefront_credit_card_link,
+            to_jsonb(os) ->> 'storefront_boleto_link' AS storefront_boleto_link,
+            os.pix_key_value
      FROM organizations o
      LEFT JOIN organization_settings os ON os.organization_id = o.id
      WHERE o.id = $1
@@ -328,7 +372,11 @@ const selectStorefrontSettings = async (db: DbExecutor, orgId: string): Promise<
     selectedCategories: toUniqueTrimmedArray(row?.storefront_selected_categories || []),
     priceFrom: row?.storefront_price_from || '',
     priceTo: row?.storefront_price_to || '',
-    logoUrl: row?.storefront_logo_url || ''
+    logoUrl: row?.storefront_logo_url || '',
+    creditCardLink: row?.storefront_credit_card_link || '',
+    boletoLink: row?.storefront_boleto_link || '',
+    pixKey: row?.pix_key_value || '',
+    mercadoPagoEnabled: Boolean(MERCADO_PAGO_ACCESS_TOKEN)
   };
 };
 
@@ -363,6 +411,10 @@ const buildStorefrontCatalogSnapshot = async (db: DbExecutor, orgId: string) => 
        INNER JOIN storefront_orders so ON so.id = soi.storefront_order_id
        WHERE so.store_id = $2
          AND lower(COALESCE(so.status, 'pending')) IN ('pending', 'confirmed')
+         AND (
+           to_jsonb(so) ->> 'payment_method' IS NULL
+           OR NULLIF(btrim(COALESCE(to_jsonb(so) ->> 'payment_reference', '')), '') IS NOT NULL
+         )
        GROUP BY soi.product_id
      ) pending ON pending.product_id = p.id
      LEFT JOIN categories c ON c.id = p.category_id
@@ -528,6 +580,12 @@ router.patch(
     try {
       await withTransaction(async (client) => {
         await ensureSettingsRow(client, orgId);
+        const hasCreditCardColumn =
+          payload.creditCardLink === undefined
+            ? true
+            : await hasOrganizationSettingsColumn(client, 'storefront_credit_card_link');
+        const hasBoletoColumn =
+          payload.boletoLink === undefined ? true : await hasOrganizationSettingsColumn(client, 'storefront_boleto_link');
 
         const fields: string[] = [];
         const values: Array<string | number | boolean | string[] | null> = [];
@@ -599,17 +657,32 @@ router.patch(
           fields.push(`storefront_logo_url = $${fields.length + 1}`);
           values.push(normalizeOptional(payload.logoUrl));
         }
+        if (payload.creditCardLink !== undefined && hasCreditCardColumn) {
+          fields.push(`storefront_credit_card_link = $${fields.length + 1}`);
+          values.push(normalizeOptional(payload.creditCardLink));
+        }
+        if (payload.boletoLink !== undefined && hasBoletoColumn) {
+          fields.push(`storefront_boleto_link = $${fields.length + 1}`);
+          values.push(normalizeOptional(payload.boletoLink));
+        }
 
         await updateSettingsFields(client, orgId, fields, values);
 
-        const storefrontCatalogSnapshot = await buildStorefrontCatalogSnapshot(client, orgId);
-        await client.query(
-          `UPDATE organization_settings
-           SET storefront_catalog_snapshot = $1::jsonb,
-               updated_at = now()
-           WHERE organization_id = $2`,
-          [JSON.stringify(storefrontCatalogSnapshot), orgId]
-        );
+        const hasCatalogSnapshotColumn = await hasOrganizationSettingsColumn(client, 'storefront_catalog_snapshot');
+        if (hasCatalogSnapshotColumn) {
+          const storefrontCatalogSnapshot = await buildStorefrontCatalogSnapshot(client, orgId);
+          try {
+            await client.query(
+              `UPDATE organization_settings
+               SET storefront_catalog_snapshot = $1::jsonb,
+                   updated_at = now()
+               WHERE organization_id = $2`,
+              [JSON.stringify(storefrontCatalogSnapshot), orgId]
+            );
+          } catch (error) {
+            if (!isPermissionDeniedError(error) && !isUndefinedColumnError(error)) throw error;
+          }
+        }
 
         await writeAudit(client, {
           organizationId: orgId,

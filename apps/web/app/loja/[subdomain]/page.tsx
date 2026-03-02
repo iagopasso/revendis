@@ -28,6 +28,10 @@ type StorefrontSettings = {
   priceFrom?: string;
   priceTo?: string;
   logoUrl?: string;
+  pixKey?: string;
+  creditCardLink?: string;
+  boletoLink?: string;
+  mercadoPagoEnabled?: boolean;
 };
 
 type StorefrontPayload = {

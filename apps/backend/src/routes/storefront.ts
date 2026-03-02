@@ -5,6 +5,7 @@ import { query, withTransaction } from '../db';
 import { validateRequest } from '../middleware/validate';
 import { idParamSchema } from '../schemas/common';
 import { storefrontOrderAcceptSchema, storefrontOrderSchema } from '../schemas/storefront';
+import { createMercadoPagoPreference, isMercadoPagoEnabled } from '../services/mercado-pago';
 import { asyncHandler } from '../utils/async-handler';
 import { writeAudit } from '../utils/audit';
 import { parseSaleCreatedAt } from '../utils/sale-date';
@@ -31,10 +32,15 @@ type PublicStoreSettingsRow = {
   storefront_price_from: string | null;
   storefront_price_to: string | null;
   storefront_logo_url: string | null;
+  storefront_credit_card_link: string | null;
+  storefront_boleto_link: string | null;
+  pix_key_value: string | null;
   storefront_catalog_snapshot: unknown | null;
 };
 
 type StorefrontOrderStatus = 'pending' | 'accepted' | 'cancelled';
+
+type StorefrontPaymentProvider = 'mercado_pago' | null;
 
 type StorefrontOrderRow = {
   id: string;
@@ -49,6 +55,8 @@ type StorefrontOrderRow = {
   sale_id: string | null;
   accepted_at: string | null;
   cancelled_at: string | null;
+  payment_method?: string | null;
+  payment_reference?: string | null;
 };
 
 type StorefrontOrderItemRow = {
@@ -104,6 +112,8 @@ const mapOrder = (row: StorefrontOrderRow, items: StorefrontOrderItemRow[]) => (
   sale_id: row.sale_id,
   accepted_at: row.accepted_at,
   cancelled_at: row.cancelled_at,
+  payment_method: row.payment_method || '',
+  payment_reference: row.payment_reference || '',
   items: items.map(mapOrderItem)
 });
 
@@ -122,6 +132,9 @@ const normalizeOptional = (value?: string | null) => {
   const next = value?.trim();
   return next ? next : null;
 };
+
+const isPermissionDeniedError = (error: unknown): error is { code: string } =>
+  Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === '42501');
 
 const toUniqueTrimmedArray = (value: unknown) => {
   if (!Array.isArray(value)) return [];
@@ -180,6 +193,10 @@ const loadPublicStoreCatalog = async (orgId: string, storefrontStoreId: string) 
        INNER JOIN storefront_orders so ON so.id = soi.storefront_order_id
        WHERE so.store_id = $2
          AND lower(COALESCE(so.status, 'pending')) IN ('pending', 'confirmed')
+         AND (
+           to_jsonb(so) ->> 'payment_method' IS NULL
+           OR NULLIF(btrim(COALESCE(to_jsonb(so) ->> 'payment_reference', '')), '') IS NOT NULL
+         )
        GROUP BY soi.product_id
      ) pending ON pending.product_id = p.id
      LEFT JOIN categories c ON c.id = p.category_id
@@ -200,30 +217,40 @@ const ensureStorefrontColumns = async () => {
   }
 
   ensureStorefrontColumnsPromise = (async () => {
-    await query(
-      `ALTER TABLE organization_settings
-         ADD COLUMN IF NOT EXISTS storefront_subdomain text,
-         ADD COLUMN IF NOT EXISTS storefront_color text NOT NULL DEFAULT '#7D58D4',
-         ADD COLUMN IF NOT EXISTS storefront_only_stock boolean NOT NULL DEFAULT false,
-         ADD COLUMN IF NOT EXISTS storefront_show_out_of_stock boolean NOT NULL DEFAULT true,
-         ADD COLUMN IF NOT EXISTS storefront_filter_category boolean NOT NULL DEFAULT true,
-         ADD COLUMN IF NOT EXISTS storefront_filter_brand boolean NOT NULL DEFAULT true,
-         ADD COLUMN IF NOT EXISTS storefront_filter_price boolean NOT NULL DEFAULT true,
-         ADD COLUMN IF NOT EXISTS storefront_whatsapp text,
-         ADD COLUMN IF NOT EXISTS storefront_show_whatsapp_button boolean NOT NULL DEFAULT false,
-         ADD COLUMN IF NOT EXISTS storefront_selected_brands text[] NOT NULL DEFAULT '{}',
-         ADD COLUMN IF NOT EXISTS storefront_selected_categories text[] NOT NULL DEFAULT '{}',
-         ADD COLUMN IF NOT EXISTS storefront_price_from text NOT NULL DEFAULT '',
-         ADD COLUMN IF NOT EXISTS storefront_price_to text NOT NULL DEFAULT '',
-         ADD COLUMN IF NOT EXISTS storefront_logo_url text,
-         ADD COLUMN IF NOT EXISTS storefront_catalog_snapshot jsonb`
-    );
+    try {
+      await query(
+        `ALTER TABLE organization_settings
+           ADD COLUMN IF NOT EXISTS storefront_subdomain text,
+           ADD COLUMN IF NOT EXISTS storefront_color text NOT NULL DEFAULT '#7D58D4',
+           ADD COLUMN IF NOT EXISTS storefront_only_stock boolean NOT NULL DEFAULT false,
+           ADD COLUMN IF NOT EXISTS storefront_show_out_of_stock boolean NOT NULL DEFAULT true,
+           ADD COLUMN IF NOT EXISTS storefront_filter_category boolean NOT NULL DEFAULT true,
+           ADD COLUMN IF NOT EXISTS storefront_filter_brand boolean NOT NULL DEFAULT true,
+           ADD COLUMN IF NOT EXISTS storefront_filter_price boolean NOT NULL DEFAULT true,
+           ADD COLUMN IF NOT EXISTS storefront_whatsapp text,
+           ADD COLUMN IF NOT EXISTS storefront_show_whatsapp_button boolean NOT NULL DEFAULT false,
+           ADD COLUMN IF NOT EXISTS storefront_selected_brands text[] NOT NULL DEFAULT '{}',
+           ADD COLUMN IF NOT EXISTS storefront_selected_categories text[] NOT NULL DEFAULT '{}',
+           ADD COLUMN IF NOT EXISTS storefront_price_from text NOT NULL DEFAULT '',
+           ADD COLUMN IF NOT EXISTS storefront_price_to text NOT NULL DEFAULT '',
+           ADD COLUMN IF NOT EXISTS storefront_logo_url text,
+           ADD COLUMN IF NOT EXISTS storefront_credit_card_link text,
+           ADD COLUMN IF NOT EXISTS storefront_boleto_link text,
+           ADD COLUMN IF NOT EXISTS storefront_catalog_snapshot jsonb`
+      );
+    } catch (error) {
+      if (!isPermissionDeniedError(error)) throw error;
+    }
 
-    await query(
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_organization_settings_storefront_subdomain
-         ON organization_settings (lower(storefront_subdomain))
-         WHERE storefront_subdomain IS NOT NULL`
-    );
+    try {
+      await query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_organization_settings_storefront_subdomain
+           ON organization_settings (lower(storefront_subdomain))
+           WHERE storefront_subdomain IS NOT NULL`
+      );
+    } catch (error) {
+      if (!isPermissionDeniedError(error)) throw error;
+    }
   })().catch((error) => {
     ensureStorefrontColumnsPromise = null;
     throw error;
@@ -243,7 +270,9 @@ const ensureStorefrontOrderColumns = async () => {
       `ALTER TABLE storefront_orders
          ADD COLUMN IF NOT EXISTS sale_id uuid REFERENCES sales(id) ON DELETE SET NULL,
          ADD COLUMN IF NOT EXISTS accepted_at timestamptz,
-         ADD COLUMN IF NOT EXISTS cancelled_at timestamptz`
+         ADD COLUMN IF NOT EXISTS cancelled_at timestamptz,
+         ADD COLUMN IF NOT EXISTS payment_method text,
+         ADD COLUMN IF NOT EXISTS payment_reference text`
     );
 
     await query(
@@ -295,6 +324,10 @@ router.get(
          INNER JOIN storefront_orders so ON so.id = soi.storefront_order_id
          WHERE so.store_id = $2
            AND lower(COALESCE(so.status, 'pending')) IN ('pending', 'confirmed')
+           AND (
+             to_jsonb(so) ->> 'payment_method' IS NULL
+             OR NULLIF(btrim(COALESCE(to_jsonb(so) ->> 'payment_reference', '')), '') IS NOT NULL
+           )
          GROUP BY soi.product_id
        ) pending ON pending.product_id = p.id
        LEFT JOIN categories c ON c.id = p.category_id
@@ -337,7 +370,10 @@ router.get(
               os.storefront_price_from,
               os.storefront_price_to,
               os.storefront_logo_url,
-              os.storefront_catalog_snapshot
+              to_jsonb(os) ->> 'storefront_credit_card_link' AS storefront_credit_card_link,
+              to_jsonb(os) ->> 'storefront_boleto_link' AS storefront_boleto_link,
+              os.pix_key_value,
+              to_jsonb(os) -> 'storefront_catalog_snapshot' AS storefront_catalog_snapshot
        FROM organization_settings os
        INNER JOIN organizations o ON o.id = os.organization_id
        WHERE lower(os.storefront_subdomain) = lower($1)
@@ -402,7 +438,11 @@ router.get(
           selectedCategories: toUniqueTrimmedArray(settingsRow.storefront_selected_categories || []),
           priceFrom: settingsRow.storefront_price_from || '',
           priceTo: settingsRow.storefront_price_to || '',
-          logoUrl: settingsRow.storefront_logo_url || ''
+          logoUrl: settingsRow.storefront_logo_url || '',
+          creditCardLink: settingsRow.storefront_credit_card_link || '',
+          boletoLink: settingsRow.storefront_boleto_link || '',
+          pixKey: settingsRow.pix_key_value || '',
+          mercadoPagoEnabled: isMercadoPagoEnabled()
         },
         products
       }
@@ -416,7 +456,7 @@ router.post(
   asyncHandler(async (req, res) => {
     let orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     let storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
-    const { items = [], customer, shipping, subdomain } = req.body as StorefrontOrderInput;
+    const { items = [], customer, shipping, subdomain, payment } = req.body as StorefrontOrderInput;
     const requestedSubdomain = normalizeSubdomain(subdomain);
     await ensureStorefrontOrderColumns();
 
@@ -476,6 +516,10 @@ router.post(
            INNER JOIN storefront_orders so ON so.id = soi.storefront_order_id
            WHERE so.store_id = $2
              AND lower(COALESCE(so.status, 'pending')) IN ('pending', 'confirmed')
+             AND (
+               to_jsonb(so) ->> 'payment_method' IS NULL
+               OR NULLIF(btrim(COALESCE(to_jsonb(so) ->> 'payment_reference', '')), '') IS NOT NULL
+             )
            GROUP BY soi.product_id
          ) pending ON pending.product_id = p.id
          WHERE p.organization_id = $1
@@ -530,6 +574,10 @@ router.post(
       });
 
       const total = resolvedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      const paymentMethod =
+        payment?.method === 'pix' || payment?.method === 'credit_card' ? payment.method : null;
+      const paymentReference = normalizeOptional(payment?.reference);
+      const installments = Math.min(12, Math.max(1, Math.trunc(toNumeric(payment?.installments) || 1)));
 
       const order = await withTransaction(async (client): Promise<StorefrontOrderRow> => {
         const userId = req.header('x-user-id') || null;
@@ -540,9 +588,11 @@ router.post(
              customer_phone,
              customer_email,
              status,
-             total
+             total,
+             payment_method,
+             payment_reference
            )
-           VALUES ($1, $2, $3, $4, 'pending', $5)
+           VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7)
            RETURNING id,
                      store_id,
                      customer_name,
@@ -554,8 +604,10 @@ router.post(
                      0::int AS items_count,
                      sale_id,
                      accepted_at,
-                     cancelled_at`,
-          [storeId, customer.name, customer.phone || null, customer.email || null, total]
+                     cancelled_at,
+                     payment_method,
+                     payment_reference`,
+          [storeId, customer.name, customer.phone || null, customer.email || null, total, paymentMethod, paymentReference]
         );
         const orderId = orderRes.rows[0].id;
 
@@ -574,11 +626,61 @@ router.post(
           entityType: 'storefront_order',
           entityId: orderId,
           action: 'created',
-          payload: { total, items: resolvedItems.length }
+          payload: {
+            total,
+            items: resolvedItems.length,
+            paymentMethod: paymentMethod || undefined
+          }
         });
 
         return orderRes.rows[0];
       });
+
+      let paymentProvider: StorefrontPaymentProvider = null;
+      let paymentCheckoutUrl = '';
+      if (paymentMethod && paymentMethod !== 'pix' && isMercadoPagoEnabled()) {
+        try {
+          const paymentPreference = await createMercadoPagoPreference({
+            orderId: order.id,
+            subdomain: requestedSubdomain || DEFAULT_STOREFRONT_SUBDOMAIN,
+            method: paymentMethod,
+            installments,
+            customerName: customer.name,
+            customerPhone: customer.phone || '',
+            customerEmail: customer.email || '',
+            items: resolvedItems.map((item) => ({
+              title: productBySku.get(item.sku)?.name || item.sku,
+              quantity: item.quantity,
+              unitPrice: item.price
+            }))
+          });
+          paymentProvider = 'mercado_pago';
+          paymentCheckoutUrl = paymentPreference.checkoutUrl;
+          order.payment_reference = paymentCheckoutUrl;
+          await query(
+            `UPDATE storefront_orders
+             SET payment_reference = $1
+             WHERE id = $2`,
+            [paymentCheckoutUrl, order.id]
+          );
+        } catch (error) {
+          await query(
+            `UPDATE storefront_orders
+             SET status = 'cancelled',
+                 cancelled_at = now()
+             WHERE id = $1`,
+            [order.id]
+          ).catch(() => null);
+          throw buildError(
+            502,
+            'payment_provider_error',
+            error instanceof Error ? error.message : 'Nao foi possivel gerar pagamento no Mercado Pago.'
+          );
+        }
+      }
+
+      const resolvedPaymentReference = paymentCheckoutUrl || paymentReference || order.payment_reference || '';
+      order.payment_reference = resolvedPaymentReference;
 
       const orderItemsRes = await query<StorefrontOrderItemRow>(
         `SELECT soi.id,
@@ -601,7 +703,15 @@ router.post(
         data: {
           ...mapOrder(order, orderItemsRes.rows),
           customer,
-          shipping
+          shipping,
+          payment: paymentMethod
+            ? {
+                method: paymentMethod,
+                reference: resolvedPaymentReference,
+                checkoutUrl: paymentCheckoutUrl || undefined,
+                provider: paymentProvider || undefined
+              }
+            : undefined
         }
       });
     } catch (error) {
@@ -646,7 +756,9 @@ router.get(
               COALESCE(SUM(soi.quantity), 0)::int AS items_count,
               so.sale_id,
               so.accepted_at,
-              so.cancelled_at
+              so.cancelled_at,
+              so.payment_method,
+              so.payment_reference
        FROM storefront_orders so
        LEFT JOIN storefront_order_items soi ON soi.storefront_order_id = so.id
        WHERE so.store_id = $1
@@ -709,7 +821,9 @@ router.get(
               COALESCE(SUM(soi.quantity), 0)::int AS items_count,
               so.sale_id,
               so.accepted_at,
-              so.cancelled_at
+              so.cancelled_at,
+              so.payment_method,
+              so.payment_reference
        FROM storefront_orders so
        LEFT JOIN storefront_order_items soi ON soi.storefront_order_id = so.id
        WHERE so.id = $1 AND so.store_id = $2

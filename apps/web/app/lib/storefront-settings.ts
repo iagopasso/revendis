@@ -13,6 +13,8 @@ export type StorefrontSettings = {
   selectedCategories: string[];
   priceFrom: string;
   priceTo: string;
+  creditCardLink: string;
+  boletoLink: string;
 };
 
 export type StorefrontSettingsPayload = StorefrontSettings & {
@@ -61,7 +63,9 @@ export const DEFAULT_STOREFRONT_SETTINGS: StorefrontSettings = {
   selectedBrands: [],
   selectedCategories: [],
   priceFrom: '',
-  priceTo: ''
+  priceTo: '',
+  creditCardLink: '',
+  boletoLink: ''
 };
 
 export const DEFAULT_STOREFRONT_RUNTIME_STATE: StorefrontRuntimeState = {
@@ -132,7 +136,10 @@ export const normalizeStorefrontSettings = (
     selectedBrands: toStringArray(next.selectedBrands),
     selectedCategories: toStringArray(next.selectedCategories),
     priceFrom: typeof next.priceFrom === 'string' ? next.priceFrom : DEFAULT_STOREFRONT_SETTINGS.priceFrom,
-    priceTo: typeof next.priceTo === 'string' ? next.priceTo : DEFAULT_STOREFRONT_SETTINGS.priceTo
+    priceTo: typeof next.priceTo === 'string' ? next.priceTo : DEFAULT_STOREFRONT_SETTINGS.priceTo,
+    creditCardLink:
+      typeof next.creditCardLink === 'string' ? next.creditCardLink : DEFAULT_STOREFRONT_SETTINGS.creditCardLink,
+    boletoLink: typeof next.boletoLink === 'string' ? next.boletoLink : DEFAULT_STOREFRONT_SETTINGS.boletoLink
   };
 };
 

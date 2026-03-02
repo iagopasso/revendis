@@ -38,11 +38,73 @@ test('creates storefront order', async () => {
     .post('/api/storefront/orders')
     .send({
       items: [{ sku, quantity: 1, price: 49.9 }],
-      customer: { name: 'Cliente Web', phone: '(98) 97026-8723', email: 'cliente@exemplo.com' }
+      customer: { name: 'Cliente Web', phone: '(98) 97026-8723', email: 'cliente@exemplo.com' },
+      payment: { method: 'pix', reference: 'chave-pix-teste' }
     });
 
   expect(response.status).toBe(201);
   expect(response.body.data.status).toBe('pending');
+  expect(response.body.data.payment_method).toBe('pix');
+  expect(response.body.data.payment_reference).toBe('chave-pix-teste');
+});
+
+test('rejects storefront order with boleto payment', async () => {
+  if (!dbReady) {
+    return;
+  }
+
+  const sku = `SKU-STOREFRONT-BOLETO-${Date.now()}`;
+  const createProduct = await request(app)
+    .post('/api/inventory/products')
+    .send({
+      name: 'Produto Storefront Boleto',
+      sku,
+      price: 39.9,
+      stock: 2
+    });
+
+  expect(createProduct.status).toBe(201);
+
+  const response = await request(app)
+    .post('/api/storefront/orders')
+    .send({
+      items: [{ sku, quantity: 1, price: 39.9 }],
+      customer: { name: 'Cliente Boleto', phone: '(98) 97026-8723' },
+      payment: { method: 'boleto', reference: 'https://pagamentos.exemplo.com/boleto/123' }
+    });
+
+  expect(response.status).toBe(400);
+  expect(response.body.code).toBe('validation_error');
+});
+
+test('creates storefront order with credit card installments', async () => {
+  if (!dbReady) {
+    return;
+  }
+
+  const sku = `SKU-STOREFRONT-CARD-${Date.now()}`;
+  const createProduct = await request(app)
+    .post('/api/inventory/products')
+    .send({
+      name: 'Produto Storefront Cartao',
+      sku,
+      price: 59.9,
+      stock: 2
+    });
+
+  expect(createProduct.status).toBe(201);
+
+  const response = await request(app)
+    .post('/api/storefront/orders')
+    .send({
+      items: [{ sku, quantity: 1, price: 59.9 }],
+      customer: { name: 'Cliente Cartao', phone: '(11) 98999-1111' },
+      payment: { method: 'credit_card', reference: 'https://pagamentos.exemplo.com/card/123', installments: 3 }
+    });
+
+  expect(response.status).toBe(201);
+  expect(response.body.data.payment_method).toBe('credit_card');
+  expect(response.body.data.payment_reference).toBe('https://pagamentos.exemplo.com/card/123');
 });
 
 test('accepts and cancels storefront orders', async () => {

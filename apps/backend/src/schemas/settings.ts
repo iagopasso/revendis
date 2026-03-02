@@ -73,7 +73,9 @@ export const settingsStorefrontUpdateSchema = z
     selectedCategories: z.array(z.string().trim().min(1).max(160)).max(40).optional(),
     priceFrom: z.string().trim().max(30).optional(),
     priceTo: z.string().trim().max(30).optional(),
-    logoUrl: z.string().trim().max(4000).optional()
+    logoUrl: z.string().trim().max(4000).optional(),
+    creditCardLink: z.string().trim().max(4000).optional(),
+    boletoLink: z.string().trim().max(4000).optional()
   })
   .strict()
   .refine((payload) => Object.keys(payload).length > 0, {

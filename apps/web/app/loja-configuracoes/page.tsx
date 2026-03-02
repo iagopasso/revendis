@@ -92,6 +92,23 @@ const normalizeApiMessage = (value: unknown, fallback: string) => {
   return fallback;
 };
 
+const extractErrorMessageFromResponse = async (response: Response, fallback: string) => {
+  const rawText = await response.text().catch(() => '');
+  if (!rawText) return `${fallback} (HTTP ${response.status})`;
+
+  try {
+    const parsed = JSON.parse(rawText) as unknown;
+    const message = normalizeApiMessage(parsed, '');
+    if (message) return message;
+  } catch {
+    // keep raw text fallback
+  }
+
+  const plainText = rawText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (plainText) return plainText.slice(0, 220);
+  return `${fallback} (HTTP ${response.status})`;
+};
+
 const uniqueValues = (list: string[]) =>
   Array.from(new Set(list.map((item) => item.trim()).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b, 'pt-BR')
@@ -131,6 +148,9 @@ export default function LojaConfiguracoesPage() {
   const [filterByPrice, setFilterByPrice] = useState(DEFAULT_STOREFRONT_SETTINGS.filterByPrice);
   const [whatsapp, setWhatsapp] = useState(DEFAULT_STOREFRONT_SETTINGS.whatsapp);
   const [showWhatsappButton, setShowWhatsappButton] = useState(DEFAULT_STOREFRONT_SETTINGS.showWhatsappButton);
+  const [creditCardLink, setCreditCardLink] = useState(DEFAULT_STOREFRONT_SETTINGS.creditCardLink);
+  const [boletoLink, setBoletoLink] = useState(DEFAULT_STOREFRONT_SETTINGS.boletoLink);
+  const [mercadoPagoEnabled, setMercadoPagoEnabled] = useState(false);
   const [catalogProducts, setCatalogProducts] = useState<PreviewProduct[]>(previewFallbackProducts);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveMessage, setSaveMessage] = useState('');
@@ -151,6 +171,8 @@ export default function LojaConfiguracoesPage() {
     setFilterByPrice(settings.filterByPrice);
     setWhatsapp(settings.whatsapp);
     setShowWhatsappButton(settings.showWhatsappButton);
+    setCreditCardLink(settings.creditCardLink);
+    setBoletoLink(settings.boletoLink);
   };
 
   useEffect(() => {
@@ -179,6 +201,7 @@ export default function LojaConfiguracoesPage() {
             data?: Partial<ReturnType<typeof storefrontSettingsToPayload>>;
           };
           const merged = storefrontSettingsFromPayload(payload?.data);
+          setMercadoPagoEnabled(Boolean((payload?.data as { mercadoPagoEnabled?: unknown } | undefined)?.mercadoPagoEnabled));
           applySettings(merged);
           saveStorefrontSettings(merged);
           emitStorefrontSettingsUpdated(merged);
@@ -229,6 +252,8 @@ export default function LojaConfiguracoesPage() {
       filterByPrice,
       whatsapp,
       showWhatsappButton,
+      creditCardLink,
+      boletoLink,
       // The right panel is preview-only; no preselected filters are configured here.
       selectedBrands: [],
       selectedCategories: [],
@@ -252,14 +277,15 @@ export default function LojaConfiguracoesPage() {
       });
 
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(normalizeApiMessage(body, 'Nao foi possivel salvar no servidor.'));
+        const message = await extractErrorMessageFromResponse(response, 'Nao foi possivel salvar no servidor.');
+        throw new Error(message);
       }
 
       const payload = (await response.json()) as {
         data?: Partial<ReturnType<typeof storefrontSettingsToPayload>>;
       };
       const synced = storefrontSettingsFromPayload(payload?.data || settings);
+      setMercadoPagoEnabled(Boolean((payload?.data as { mercadoPagoEnabled?: unknown } | undefined)?.mercadoPagoEnabled));
       saveStorefrontSettings(synced);
       emitStorefrontSettingsUpdated(synced);
       applySettings(synced);
@@ -441,11 +467,25 @@ export default function LojaConfiguracoesPage() {
                 role="switch"
                 aria-checked={showWhatsappButton}
                 aria-label="Mostrar botão de WhatsApp"
-                onClick={() => setShowWhatsappButton((prev) => !prev)}
+              onClick={() => setShowWhatsappButton((prev) => !prev)}
               >
                 <span />
               </button>
             </label>
+          </div>
+
+          <div className="store-config-block">
+            <strong>Pagamento por cartão</strong>
+            <span className="store-config-hint">
+              {mercadoPagoEnabled
+                ? 'Mercado Pago ativo para cartao. Pix usa a chave configurada na conta.'
+                : 'A chave Pix e carregada automaticamente das configuracoes gerais.'}
+            </span>
+            <input
+              value={creditCardLink}
+              onChange={(event) => setCreditCardLink(event.target.value)}
+              placeholder="https://seu-link-de-pagamento"
+            />
           </div>
         </aside>
 
