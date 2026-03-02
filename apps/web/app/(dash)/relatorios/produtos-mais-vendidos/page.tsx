@@ -36,6 +36,7 @@ export default async function RelatorioProdutosMaisVendidosPage({
   searchParams?: Promise<ReportSearchParams>;
 }) {
   const resolvedParams = (await searchParams) || {};
+  const selectedBrand = getStringParam(resolvedParams.brand).trim();
   const selectedCustomer = getStringParam(resolvedParams.customer).trim();
   const { periodLabel, rangeQuery } = buildReportRangeContext(resolvedParams);
   const reportQueryParams = new URLSearchParams(rangeQuery.startsWith('?') ? rangeQuery.slice(1) : '');
@@ -75,6 +76,23 @@ export default async function RelatorioProdutosMaisVendidosPage({
     .map(([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
 
+  const brandSet = new Set<string>();
+  products.forEach((product) => {
+    const brand = (product.brand || 'Sem marca').trim();
+    if (!brand) return;
+    brandSet.add(brand);
+  });
+  if (selectedBrand && !brandSet.has(selectedBrand)) {
+    brandSet.add(selectedBrand);
+  }
+  const brandOptions = Array.from(brandSet)
+    .map((value) => ({ value, label: value }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+
+  const filteredProducts = selectedBrand
+    ? products.filter((product) => (product.brand || 'Sem marca').trim() === selectedBrand)
+    : products;
+
   const columns = [
     { key: 'rank', label: '#' },
     { key: 'code', label: 'CÓDIGO' },
@@ -84,7 +102,7 @@ export default async function RelatorioProdutosMaisVendidosPage({
     { key: 'total', label: 'TOTAL VENDAS' }
   ];
 
-  const rows = products.map((product, index) => {
+  const rows = filteredProducts.map((product, index) => {
     const qty = toNumber(product.sold_qty);
     const numericCode = digitsOnly(product.sku);
     return {
@@ -114,6 +132,9 @@ export default async function RelatorioProdutosMaisVendidosPage({
         selectedCustomer={selectedCustomer}
         customerOptions={customerOptions}
         showCustomerFilter
+        selectedBrand={selectedBrand}
+        brandOptions={brandOptions}
+        showBrandFilter
       />
     </main>
   );
