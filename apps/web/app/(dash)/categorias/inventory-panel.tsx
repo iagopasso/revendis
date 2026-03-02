@@ -3397,23 +3397,24 @@ export default function InventoryPanel({
               <>
                 <label className="modal-field">
                   <span>Nome ou codigo</span>
-                  <input
-                    placeholder="Busque pelo nome ou codigo do produto"
-                    value={catalogQuery}
-                    onChange={(event) => setCatalogQuery(event.target.value)}
-                  />
+                  <div className="inventory-scan-inline">
+                    <input
+                      placeholder="Busque pelo nome ou codigo do produto"
+                      value={catalogQuery}
+                      onChange={(event) => setCatalogQuery(event.target.value)}
+                    />
+                    <button
+                      className="button icon small scan-trigger"
+                      type="button"
+                      onClick={() => openBarcodeScanner('search')}
+                      title="Ler codigo de barras"
+                      aria-label="Ler codigo de barras"
+                    >
+                      <IconScan />
+                      <span>Ler codigo</span>
+                    </button>
+                  </div>
                 </label>
-                <div className="inventory-scan-actions">
-                  <button
-                    className="button icon small"
-                    type="button"
-                    onClick={() => openBarcodeScanner('search')}
-                    title="Ler codigo de barras"
-                    aria-label="Ler codigo de barras"
-                  >
-                    <IconScan />
-                  </button>
-                </div>
                 <div className="modal-suggestions">
                   <div className="modal-suggestions-title">Produtos do catalogo</div>
                   {catalogSourceInfo ? <div className="meta">{catalogSourceInfo}</div> : null}
@@ -3602,24 +3603,25 @@ export default function InventoryPanel({
                       </label>
                       <label className="modal-field">
                         <span>Codigo de barras</span>
-                        <input
-                          value={formDraft.barcode}
-                          onChange={(event) =>
-                            setFormDraft((prev) => ({ ...prev, barcode: event.target.value }))
-                          }
-                        />
+                        <div className="inventory-scan-inline">
+                          <input
+                            value={formDraft.barcode}
+                            onChange={(event) =>
+                              setFormDraft((prev) => ({ ...prev, barcode: event.target.value }))
+                            }
+                          />
+                          <button
+                            className="button icon small scan-trigger"
+                            type="button"
+                            onClick={() => openBarcodeScanner('form')}
+                            title="Ler codigo de barras"
+                            aria-label="Ler codigo de barras"
+                          >
+                            <IconScan />
+                            <span>Escanear</span>
+                          </button>
+                        </div>
                       </label>
-                    </div>
-                    <div className="inventory-scan-actions compact">
-                      <button
-                        className="button icon small"
-                        type="button"
-                        onClick={() => openBarcodeScanner('form')}
-                        title="Ler codigo de barras"
-                        aria-label="Ler codigo de barras"
-                      >
-                        <IconScan />
-                      </button>
                     </div>
                     <div className="toggle-row">
                       <label className="switch">

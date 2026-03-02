@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { IconArrowLeft, IconCart, IconSearch, IconUpload, IconWhatsapp } from '../(dash)/icons';
+import { IconArrowLeft, IconCart, IconSearch, IconWhatsapp } from '../(dash)/icons';
 import { API_BASE, buildMutationHeaders } from '../(dash)/lib';
 import {
   buildPublicStoreUrl,
@@ -351,15 +351,6 @@ export default function LojaConfiguracoesPage() {
                 />
               ))}
             </div>
-          </div>
-
-          <div className="store-upload-row">
-            <button type="button" aria-label="Enviar logo">
-              <IconUpload />
-            </button>
-            <p>
-              <strong>Dica:</strong> Seu logo ficará melhor apresentado caso tenha um fundo transparente.
-            </p>
           </div>
 
           <div className="store-config-block">

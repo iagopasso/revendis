@@ -2171,7 +2171,7 @@ export default function PurchasesPanel({
                 onClick={() => void startEditPurchase(viewPurchase)}
                 disabled={processingId === viewPurchase.id}
               >
-                Editar compra
+                Editar
               </button>
               {viewPurchase.status === 'pending' ? (
                 <button
@@ -2180,7 +2180,7 @@ export default function PurchasesPanel({
                   onClick={() => void updateStatus(viewPurchase, 'received')}
                   disabled={processingId === viewPurchase.id}
                 >
-                  {processingId === viewPurchase.id ? 'Atualizando...' : 'Marcar como recebido'}
+                  {processingId === viewPurchase.id ? 'Recebendo...' : 'Marcar recebido'}
                 </button>
               ) : null}
               <button
@@ -2192,7 +2192,7 @@ export default function PurchasesPanel({
                 }}
                 disabled={processingId === viewPurchase.id}
               >
-                {processingId === viewPurchase.id ? 'Excluindo...' : 'Excluir pedido'}
+                {processingId === viewPurchase.id ? 'Excluindo...' : 'Excluir'}
               </button>
             </div>
           </div>
