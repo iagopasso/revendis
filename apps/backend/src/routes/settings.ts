@@ -144,10 +144,17 @@ type AccessMemberRow = {
 const router = Router();
 const DEFAULT_STOREFRONT_COLOR = '#7D58D4';
 const DEFAULT_STOREFRONT_SUBDOMAIN = 'revendis-prime';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const normalizeOptional = (value?: string) => {
   const next = value?.trim();
   return next ? next : null;
+};
+
+const normalizeUuid = (value?: string | null) => {
+  const normalized = `${value || ''}`.trim();
+  if (!normalized) return '';
+  return UUID_PATTERN.test(normalized) ? normalized : '';
 };
 
 const normalizeSubdomain = (value?: string | null) => {
@@ -611,14 +618,15 @@ const selectCurrentUserForAccount = async (
   currentUserId: string,
   currentUserEmail: string
 ) => {
-  if (currentUserId) {
+  const normalizedUserId = normalizeUuid(currentUserId);
+  if (normalizedUserId) {
     const byIdResult = await db.query<{ name: string; email: string }>(
       `SELECT name, email
        FROM users
        WHERE organization_id = $1
          AND id = $2
        LIMIT 1`,
-      [orgId, currentUserId]
+      [orgId, normalizedUserId]
     );
     const byIdUser = byIdResult.rows[0];
     if (byIdUser) return byIdUser;
@@ -642,7 +650,7 @@ router.get(
   '/settings/account',
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
-    const currentUserId = `${req.header('x-user-id') || ''}`.trim();
+    const currentUserId = normalizeUuid(req.header('x-user-id'));
     const currentUserEmail = `${req.header('x-user-email') || ''}`.trim().toLowerCase();
     await ensureSettingsRow({ query }, orgId);
     const account = await selectAccount({ query }, orgId);
@@ -667,7 +675,7 @@ router.patch(
   validateRequest({ body: settingsAccountUpdateSchema }),
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
-    const currentUserId = `${req.header('x-user-id') || ''}`.trim();
+    const currentUserId = normalizeUuid(req.header('x-user-id'));
     const userId = currentUserId || null;
     const currentUserEmail = `${req.header('x-user-email') || ''}`.trim().toLowerCase();
     const payload = req.body as SettingsAccountInput;

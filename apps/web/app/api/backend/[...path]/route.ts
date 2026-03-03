@@ -140,7 +140,7 @@ const proxyToBackend = async (
   if (hasStore) {
     headers.set('x-store-id', tenantContext.storeId);
   }
-  if (tenantContext.userId) {
+  if (UUID_PATTERN.test(tenantContext.userId)) {
     headers.set('x-user-id', tenantContext.userId);
   }
   if (tenantContext.userEmail) {

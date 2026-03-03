@@ -15,6 +15,7 @@ export const SALES_SYNC_STORAGE_KEY = 'revendis:sales-sync-at';
 export const BUSINESS_TIMEZONE = process.env.NEXT_PUBLIC_BUSINESS_TIMEZONE || 'America/Sao_Paulo';
 const MUTATION_AUTH_TOKEN = process.env.NEXT_PUBLIC_MUTATION_AUTH_TOKEN || '';
 const API_TIMEOUT_MS = Math.max(2000, Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 10000));
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const buildMutationHeaders = (extra?: HeadersInit) => {
   const headers = new Headers(extra || {});
@@ -45,7 +46,7 @@ const resolveTenantHeaders = async (): Promise<HeadersInit | null> => {
       'x-org-id': orgId,
       'x-store-id': storeId
     };
-    if (userId) {
+    if (UUID_PATTERN.test(userId)) {
       headers['x-user-id'] = userId;
     }
     if (userEmail) {
