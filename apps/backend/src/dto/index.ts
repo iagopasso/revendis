@@ -296,6 +296,7 @@ export type AccessMemberUpdateInput = {
 
 export type StorefrontOrderInput = {
   subdomain?: string;
+  publicOrigin?: string;
   items: SaleItem[];
   customer: {
     name: string;

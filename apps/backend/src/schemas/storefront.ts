@@ -4,6 +4,7 @@ import { saleItemSchema } from './sales';
 export const storefrontOrderSchema = z
   .object({
     subdomain: z.string().trim().min(1).optional(),
+    publicOrigin: z.string().trim().max(300).optional(),
     items: z.array(saleItemSchema).min(1),
     customer: z
       .object({

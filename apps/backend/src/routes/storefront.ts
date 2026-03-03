@@ -12,6 +12,8 @@ import {
   storefrontOrderSchema
 } from '../schemas/storefront';
 import {
+  getLatestMercadoPagoPaymentByExternalReference,
+  getMercadoPagoMerchantOrder,
   createMercadoPagoPixPayment,
   createMercadoPagoPreference,
   getMercadoPagoPayment,
@@ -308,6 +310,98 @@ const resolveGatewayPaymentStatus = (value: string): StorefrontPaymentStatus => 
     return 'failed';
   }
   return 'pending';
+};
+
+const resolveGatewayPaidAtIso = (approvedAt?: string, createdAt?: string) => {
+  const source = normalizeOptional(approvedAt || createdAt || '');
+  if (!source) return null;
+  const parsed = new Date(source);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+};
+
+const reconcileMercadoPagoOrderPayment = async (order: StorefrontOrderRow) => {
+  const provider = (order.payment_provider || '').trim().toLowerCase();
+  const currentPaymentStatus = normalizePaymentStatus(order.payment_status);
+  const currentOrderStatus = normalizeOrderStatus(order.status);
+
+  if (provider !== 'mercado_pago' || currentPaymentStatus === 'paid' || currentOrderStatus === 'cancelled') {
+    return false;
+  }
+
+  const orderMethod = normalizeStorefrontPaymentMethod(order.payment_method);
+  const paymentReference = normalizeOptional(order.payment_reference);
+  let gatewayPayment: Awaited<ReturnType<typeof getMercadoPagoPayment>> | null = null;
+
+  if (paymentReference && /^\d+$/.test(paymentReference)) {
+    try {
+      gatewayPayment = await getMercadoPagoPayment(paymentReference);
+    } catch {
+      gatewayPayment = null;
+    }
+  }
+
+  if (!gatewayPayment) {
+    try {
+      gatewayPayment = await getLatestMercadoPagoPaymentByExternalReference(order.id);
+    } catch {
+      gatewayPayment = null;
+    }
+  }
+
+  if (!gatewayPayment) {
+    return false;
+  }
+
+  const gatewayMethod = mapMercadoPagoMethodToStorefront({
+    paymentMethodId: gatewayPayment.paymentMethodId,
+    paymentTypeId: gatewayPayment.paymentTypeId
+  });
+  if (orderMethod && gatewayMethod && gatewayMethod !== orderMethod) {
+    return false;
+  }
+
+  let nextPaymentStatus = resolveGatewayPaymentStatus(gatewayPayment.status);
+  if (nextPaymentStatus === 'pending' && orderMethod === 'pix') {
+    const expiresAt = order.payment_expires_at ? new Date(order.payment_expires_at) : null;
+    if (expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() < Date.now()) {
+      nextPaymentStatus = 'expired';
+    }
+  }
+
+  if (nextPaymentStatus !== 'paid') {
+    if (nextPaymentStatus === currentPaymentStatus) {
+      return false;
+    }
+    await query(
+      `UPDATE storefront_orders
+       SET payment_status = $2
+       WHERE id = $1
+         AND lower(COALESCE(payment_status, 'pending')) <> 'paid'`,
+      [order.id, nextPaymentStatus]
+    );
+    return true;
+  }
+
+  const paidAtIso = resolveGatewayPaidAtIso(gatewayPayment.dateApproved, gatewayPayment.dateCreated);
+  await query(
+    `UPDATE storefront_orders
+     SET payment_status = 'paid',
+         payment_provider = 'mercado_pago',
+         payment_paid_at = COALESCE(payment_paid_at, $2::timestamptz)
+     WHERE id = $1`,
+    [order.id, paidAtIso]
+  );
+
+  const orgId = await resolveOrganizationByStoreId(order.store_id || DEFAULT_STORE_ID);
+  await finalizePaidStorefrontOrder({
+    orgId,
+    storeId: order.store_id || DEFAULT_STORE_ID,
+    orderId: order.id,
+    userId: null
+  });
+
+  return true;
 };
 
 const releaseStorefrontOrderReservations = async (
@@ -1212,7 +1306,8 @@ router.post(
     const topic = `${payload.type || payload.topic || req.query.topic || ''}`.trim().toLowerCase();
     const action = `${payload.action || req.query.type || ''}`.trim().toLowerCase();
     const isPaymentTopic = !topic || topic === 'payment' || action.startsWith('payment.');
-    if (!isPaymentTopic) {
+    const isMerchantOrderTopic = topic === 'merchant_order' || action.startsWith('merchant_order.');
+    if (!isPaymentTopic && !isMerchantOrderTopic) {
       return res.status(200).json({ received: true });
     }
 
@@ -1222,9 +1317,23 @@ router.post(
         ? ((req.query.data as { id?: unknown }).id as string | undefined)
         : undefined) ||
       req.query.id;
-    const paymentId = normalizeOptional(`${payload.data?.id || queryDataId || ''}`);
-    if (!paymentId) {
+    const receivedDataId = normalizeOptional(`${payload.data?.id || queryDataId || ''}`);
+    if (!receivedDataId) {
       return res.status(200).json({ received: true });
+    }
+
+    let merchantOrderExternalReference = '';
+    let paymentId = receivedDataId;
+    if (isMerchantOrderTopic) {
+      const merchantOrder = await getMercadoPagoMerchantOrder(receivedDataId);
+      merchantOrderExternalReference = normalizeOptional(merchantOrder.externalReference) || '';
+      const selectedPayment =
+        merchantOrder.payments.find((entry) => isApprovedGatewayStatus(entry.status)) || merchantOrder.payments[0];
+      const selectedPaymentId = normalizeOptional(selectedPayment?.id);
+      if (!selectedPaymentId) {
+        return res.status(200).json({ received: true });
+      }
+      paymentId = selectedPaymentId;
     }
 
     const gatewayPayment = await getMercadoPagoPayment(paymentId);
@@ -1232,7 +1341,8 @@ router.post(
       gatewayPayment.metadata && typeof gatewayPayment.metadata.storefront_order_id === 'string'
         ? normalizeOptional(gatewayPayment.metadata.storefront_order_id)
         : null;
-    const orderId = normalizeOptional(gatewayPayment.externalReference) || metadataOrderId;
+    const orderId =
+      normalizeOptional(gatewayPayment.externalReference) || metadataOrderId || merchantOrderExternalReference || null;
     if (!orderId) {
       return res.status(200).json({ received: true });
     }
@@ -1308,7 +1418,7 @@ router.post(
   asyncHandler(async (req, res) => {
     let orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     let storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
-    const { items = [], customer, shipping, subdomain, payment } = req.body as StorefrontOrderInput;
+    const { items = [], customer, shipping, subdomain, publicOrigin, payment } = req.body as StorefrontOrderInput;
     await ensureStorefrontOrderColumns();
 
     const buildError = (status: number, code: string, message: string) => {
@@ -1542,7 +1652,7 @@ router.post(
       let mercadoPagoPaymentId = '';
       let pixCopyPasteCode = '';
       let pixQrCodeBase64 = '';
-      const paymentPublicBaseUrl = resolveStorefrontPublicBaseUrl(req);
+      const paymentPublicBaseUrl = normalizeHttpOrigin(publicOrigin) || resolveStorefrontPublicBaseUrl(req);
 
       if (paymentMethod === 'credit_card' && isMercadoPagoEnabled()) {
         try {
@@ -2125,36 +2235,61 @@ router.get(
       statusClause = '';
     }
 
-    const ordersRes = await query<StorefrontOrderRow>(
-      `SELECT so.id,
-              so.store_id,
-              so.customer_name,
-              so.customer_phone,
-              so.customer_email,
-              so.status,
-              so.total,
-              so.created_at,
-              COALESCE(SUM(soi.quantity), 0)::int AS items_count,
-              so.sale_id,
-              so.accepted_at,
-              so.cancelled_at,
-              so.payment_method,
-              so.payment_reference,
-              so.payment_provider,
-              so.payment_status,
-              so.payment_expires_at,
-              so.payment_paid_at,
-              so.payment_token,
-              so.payment_installments
-       FROM storefront_orders so
-       LEFT JOIN storefront_order_items soi ON soi.storefront_order_id = so.id
-       WHERE so.store_id = $1
-         ${statusClause}
-       GROUP BY so.id
-       ORDER BY so.created_at DESC
-       LIMIT 120`,
-      [storeId]
-    );
+    const loadOrders = () =>
+      query<StorefrontOrderRow>(
+        `SELECT so.id,
+                so.store_id,
+                so.customer_name,
+                so.customer_phone,
+                so.customer_email,
+                so.status,
+                so.total,
+                so.created_at,
+                COALESCE(SUM(soi.quantity), 0)::int AS items_count,
+                so.sale_id,
+                so.accepted_at,
+                so.cancelled_at,
+                so.payment_method,
+                so.payment_reference,
+                so.payment_provider,
+                so.payment_status,
+                so.payment_expires_at,
+                so.payment_paid_at,
+                so.payment_token,
+                so.payment_installments
+         FROM storefront_orders so
+         LEFT JOIN storefront_order_items soi ON soi.storefront_order_id = so.id
+         WHERE so.store_id = $1
+           ${statusClause}
+         GROUP BY so.id
+         ORDER BY so.created_at DESC
+         LIMIT 120`,
+        [storeId]
+      );
+
+    let ordersRes = await loadOrders();
+    const pendingGatewayOrders = ordersRes.rows
+      .filter((row) => {
+        const provider = (row.payment_provider || '').trim().toLowerCase();
+        const paymentStatus = normalizePaymentStatus(row.payment_status);
+        const orderStatus = normalizeOrderStatus(row.status);
+        return provider === 'mercado_pago' && paymentStatus !== 'paid' && orderStatus !== 'cancelled';
+      })
+      .slice(0, 10);
+
+    let hasReconciledOrder = false;
+    for (const order of pendingGatewayOrders) {
+      try {
+        if (await reconcileMercadoPagoOrderPayment(order)) {
+          hasReconciledOrder = true;
+        }
+      } catch {
+        // Ignore reconciliation failures and keep listing current data.
+      }
+    }
+    if (hasReconciledOrder) {
+      ordersRes = await loadOrders();
+    }
 
     const orderIds = ordersRes.rows.map((row) => row.id);
     const itemsByOrderId = new Map<string, StorefrontOrderItemRow[]>();
@@ -2225,9 +2360,54 @@ router.get(
       [id, storeId]
     );
 
-    const order = orderRes.rows[0];
+    let order = orderRes.rows[0];
     if (!order) {
       return res.status(404).json({ code: 'not_found', message: 'Pedido nao encontrado.' });
+    }
+
+    const shouldReconcileMercadoPago =
+      (order.payment_provider || '').trim().toLowerCase() === 'mercado_pago' &&
+      normalizePaymentStatus(order.payment_status) !== 'paid' &&
+      normalizeOrderStatus(order.status) !== 'cancelled';
+    if (shouldReconcileMercadoPago) {
+      try {
+        const hasReconciled = await reconcileMercadoPagoOrderPayment(order);
+        if (hasReconciled) {
+          const refreshedOrderRes = await query<StorefrontOrderRow>(
+            `SELECT so.id,
+                    so.store_id,
+                    so.customer_name,
+                    so.customer_phone,
+                    so.customer_email,
+                    so.status,
+                    so.total,
+                    so.created_at,
+                    COALESCE(SUM(soi.quantity), 0)::int AS items_count,
+                    so.sale_id,
+                    so.accepted_at,
+                    so.cancelled_at,
+                    so.payment_method,
+                    so.payment_reference,
+                    so.payment_provider,
+                    so.payment_status,
+                    so.payment_expires_at,
+                    so.payment_paid_at,
+                    so.payment_token,
+                    so.payment_installments
+             FROM storefront_orders so
+             LEFT JOIN storefront_order_items soi ON soi.storefront_order_id = so.id
+             WHERE so.id = $1 AND so.store_id = $2
+             GROUP BY so.id
+             LIMIT 1`,
+            [id, storeId]
+          );
+          if (refreshedOrderRes.rows[0]) {
+            order = refreshedOrderRes.rows[0];
+          }
+        }
+      } catch {
+        // Ignore reconciliation errors and return current stored order.
+      }
     }
 
     const itemsRes = await query<StorefrontOrderItemRow>(

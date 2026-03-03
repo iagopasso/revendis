@@ -1406,6 +1406,7 @@ export default function PublicStorefront({
         headers: buildMutationHeaders(),
         body: JSON.stringify({
           subdomain: viewStateSubdomain,
+          publicOrigin: typeof window !== 'undefined' ? window.location.origin : '',
           items: cartDisplayItems.map((item) => ({
             sku: item.sku,
             quantity: item.quantity,

@@ -90,6 +90,42 @@ type MercadoPagoPaymentResponse = {
   cause?: Array<{ description?: string }>;
 };
 
+type MercadoPagoSearchPaymentsResponse = {
+  results?: MercadoPagoPaymentResponse[];
+  message?: string;
+  error?: string;
+  cause?: Array<{ description?: string }>;
+};
+
+type MercadoPagoMerchantOrderResponse = {
+  id?: string | number;
+  external_reference?: string;
+  payments?: Array<{
+    id?: string | number;
+    status?: string;
+    payment_type_id?: string;
+    payment_method_id?: string;
+    date_approved?: string;
+    date_created?: string;
+  }>;
+  message?: string;
+  error?: string;
+  cause?: Array<{ description?: string }>;
+};
+
+type MercadoPagoMerchantOrderResult = {
+  id: string;
+  externalReference: string;
+  payments: Array<{
+    id: string;
+    status: string;
+    paymentTypeId: string;
+    paymentMethodId: string;
+    dateApproved: string;
+    dateCreated: string;
+  }>;
+};
+
 const MERCADO_PAGO_API_BASE_URL = 'https://api.mercadopago.com';
 
 const toDigits = (value: string) => value.replace(/\D/g, '');
@@ -452,30 +488,88 @@ const fetchMercadoPagoJson = async <T>(path: string): Promise<T> => {
   return (payload || {}) as T;
 };
 
+const mapMercadoPagoPaymentResult = (
+  payload: MercadoPagoPaymentResponse | null | undefined,
+  fallbackPaymentId = ''
+): MercadoPagoPaymentResult => {
+  const metadata =
+    payload?.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+      ? payload.metadata
+      : {};
+
+  return {
+    id: `${payload?.id || fallbackPaymentId}`.trim(),
+    status: `${payload?.status || ''}`.trim().toLowerCase(),
+    statusDetail: `${payload?.status_detail || ''}`.trim(),
+    externalReference: `${payload?.external_reference || ''}`.trim(),
+    paymentTypeId: `${payload?.payment_type_id || ''}`.trim().toLowerCase(),
+    paymentMethodId: `${payload?.payment_method_id || ''}`.trim().toLowerCase(),
+    dateApproved: `${payload?.date_approved || ''}`.trim(),
+    dateCreated: `${payload?.date_created || ''}`.trim(),
+    qrCode: `${payload?.point_of_interaction?.transaction_data?.qr_code || ''}`.trim(),
+    qrCodeBase64: `${payload?.point_of_interaction?.transaction_data?.qr_code_base64 || ''}`.trim(),
+    ticketUrl: `${payload?.point_of_interaction?.transaction_data?.ticket_url || ''}`.trim(),
+    metadata
+  };
+};
+
 export const getMercadoPagoPayment = async (paymentId: string): Promise<MercadoPagoPaymentResult> => {
   const normalizedPaymentId = `${paymentId || ''}`.trim();
   if (!normalizedPaymentId) {
     throw new Error('Pagamento Mercado Pago invalido.');
   }
 
-  const payload = await fetchMercadoPagoJson<MercadoPagoPaymentResponse>(`/v1/payments/${encodeURIComponent(normalizedPaymentId)}`);
-  const metadata =
-    payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
-      ? payload.metadata
-      : {};
+  const payload = await fetchMercadoPagoJson<MercadoPagoPaymentResponse>(
+    `/v1/payments/${encodeURIComponent(normalizedPaymentId)}`
+  );
+  return mapMercadoPagoPaymentResult(payload, normalizedPaymentId);
+};
+
+export const getLatestMercadoPagoPaymentByExternalReference = async (
+  externalReference: string
+): Promise<MercadoPagoPaymentResult | null> => {
+  const normalizedExternalReference = `${externalReference || ''}`.trim();
+  if (!normalizedExternalReference) return null;
+
+  const payload = await fetchMercadoPagoJson<MercadoPagoSearchPaymentsResponse>(
+    `/v1/payments/search?external_reference=${encodeURIComponent(
+      normalizedExternalReference
+    )}&sort=date_created&criteria=desc&limit=1`
+  );
+
+  const payment = Array.isArray(payload.results) ? payload.results[0] : null;
+  if (!payment) return null;
+  return mapMercadoPagoPaymentResult(payment);
+};
+
+export const getMercadoPagoMerchantOrder = async (
+  merchantOrderId: string
+): Promise<MercadoPagoMerchantOrderResult> => {
+  const normalizedMerchantOrderId = `${merchantOrderId || ''}`.trim();
+  if (!normalizedMerchantOrderId) {
+    throw new Error('Merchant order Mercado Pago invalido.');
+  }
+
+  const payload = await fetchMercadoPagoJson<MercadoPagoMerchantOrderResponse>(
+    `/merchant_orders/${encodeURIComponent(normalizedMerchantOrderId)}`
+  );
+
+  const payments = Array.isArray(payload.payments)
+    ? payload.payments
+        .map((entry) => ({
+          id: `${entry?.id || ''}`.trim(),
+          status: `${entry?.status || ''}`.trim().toLowerCase(),
+          paymentTypeId: `${entry?.payment_type_id || ''}`.trim().toLowerCase(),
+          paymentMethodId: `${entry?.payment_method_id || ''}`.trim().toLowerCase(),
+          dateApproved: `${entry?.date_approved || ''}`.trim(),
+          dateCreated: `${entry?.date_created || ''}`.trim()
+        }))
+        .filter((entry) => Boolean(entry.id))
+    : [];
 
   return {
-    id: `${payload.id || normalizedPaymentId}`.trim(),
-    status: `${payload.status || ''}`.trim().toLowerCase(),
-    statusDetail: `${payload.status_detail || ''}`.trim(),
+    id: `${payload.id || normalizedMerchantOrderId}`.trim(),
     externalReference: `${payload.external_reference || ''}`.trim(),
-    paymentTypeId: `${payload.payment_type_id || ''}`.trim().toLowerCase(),
-    paymentMethodId: `${payload.payment_method_id || ''}`.trim().toLowerCase(),
-    dateApproved: `${payload.date_approved || ''}`.trim(),
-    dateCreated: `${payload.date_created || ''}`.trim(),
-    qrCode: `${payload.point_of_interaction?.transaction_data?.qr_code || ''}`.trim(),
-    qrCodeBase64: `${payload.point_of_interaction?.transaction_data?.qr_code_base64 || ''}`.trim(),
-    ticketUrl: `${payload.point_of_interaction?.transaction_data?.ticket_url || ''}`.trim(),
-    metadata
+    payments
   };
 };
