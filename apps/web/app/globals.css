@@ -16291,7 +16291,9 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
     border-left: none;
     background: #f3f4f6;
     z-index: 90;
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .page > .sidebar > .logo,
@@ -16308,7 +16310,8 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
     justify-content: flex-start;
     gap: 8px;
     width: 100%;
-    padding: 0 56px 0 0;
+    padding: 0;
+    flex: 1 1 auto;
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
@@ -16328,10 +16331,12 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
 
   .page > .sidebar > .sidebar-footer.profile-menu-wrapper {
     display: grid;
-    position: absolute;
-    top: 50%;
-    right: calc(10px + env(safe-area-inset-right));
-    transform: translateY(-50%);
+    place-items: center;
+    position: relative;
+    flex: 0 0 auto;
+    margin-left: 4px;
+    padding-left: 8px;
+    border-left: 1px solid #d6dce7;
     z-index: 2;
   }
 
@@ -16352,6 +16357,10 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
     right: 0;
     bottom: calc(100% + 8px);
     width: min(280px, calc(100vw - 20px));
+  }
+
+  html[data-theme='dark'] .page > .sidebar > .sidebar-footer.profile-menu-wrapper {
+    border-left-color: #304a66;
   }
 
   .page > .content {
@@ -17261,7 +17270,7 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
 
   .page > .sidebar .nav.sidebar-main-nav {
     gap: 6px;
-    padding: 0 56px 0 2px;
+    padding: 0 0 0 2px;
     scroll-snap-type: x mandatory;
   }
 

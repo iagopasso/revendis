@@ -27,24 +27,6 @@ type AccountSettings = {
   businessName?: string;
 };
 
-type SubscriptionSettings = {
-  plan?: string;
-  status?: string;
-  renewalDate?: string;
-  monthlyPrice?: number | string;
-};
-
-type PixSettings = {
-  keyType?: string;
-  keyValue?: string;
-  holderName?: string;
-};
-
-type AlertSettings = {
-  enabled?: boolean;
-  daysBeforeDue?: number | string;
-};
-
 type AccessMember = {
   id: string;
   name: string;
@@ -66,17 +48,11 @@ export default async function ConfiguracoesPage({
     brandsResponse,
     catalogBrandsResponse,
     accountResponse,
-    subscriptionResponse,
-    pixResponse,
-    alertsResponse,
     accessResponse
   ] = await Promise.all([
     fetchList<ResellerBrand>('/settings/brands'),
     fetchList<CatalogBrandOption>('/catalog/brands'),
     fetchItem<AccountSettings>('/settings/account'),
-    fetchItem<SubscriptionSettings>('/settings/subscription'),
-    fetchItem<PixSettings>('/settings/pix'),
-    fetchItem<AlertSettings>('/settings/alerts'),
     fetchList<AccessMember>('/settings/access')
   ]);
 
@@ -92,9 +68,6 @@ export default async function ConfiguracoesPage({
         initialBrands={configuredBrands}
         catalogBrandOptions={catalogBrandOptions}
         initialAccount={accountResponse?.data ?? {}}
-        initialSubscription={subscriptionResponse?.data ?? {}}
-        initialPix={pixResponse?.data ?? {}}
-        initialAlerts={alertsResponse?.data ?? {}}
         initialAccessMembers={accessResponse?.data ?? []}
       />
     </main>

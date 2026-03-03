@@ -3,11 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
-  IconCalendar,
   IconClipboard,
-  IconDiamond,
   IconDots,
-  IconDollar,
   IconEdit,
   IconLock,
   IconPlus,
@@ -23,8 +20,6 @@ import { readThemePreference, setThemePreference, type ThemeMode } from '../../t
 
 type BrandSource = 'existing' | 'catalog' | 'manual';
 type BrandCreateMode = 'catalog' | 'manual';
-type SubscriptionStatus = 'active' | 'trial' | 'overdue' | 'canceled';
-type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
 
 type ResellerBrand = {
   id: string;
@@ -41,24 +36,6 @@ type AccountSettings = {
   ownerEmail?: string;
   ownerPhone?: string;
   businessName?: string;
-};
-
-type SubscriptionSettings = {
-  plan?: string;
-  status?: string;
-  renewalDate?: string;
-  monthlyPrice?: number | string;
-};
-
-type PixSettings = {
-  keyType?: string;
-  keyValue?: string;
-  holderName?: string;
-};
-
-type AlertSettings = {
-  enabled?: boolean;
-  daysBeforeDue?: number | string;
 };
 
 type AccessMember = {
@@ -80,37 +57,16 @@ type SettingsPanelProps = {
   initialBrands: ResellerBrand[];
   catalogBrandOptions: CatalogBrandOption[];
   initialAccount: AccountSettings;
-  initialSubscription: SubscriptionSettings;
-  initialPix: PixSettings;
-  initialAlerts: AlertSettings;
   initialAccessMembers: AccessMember[];
 };
 
-type SettingsSection = 'conta' | 'assinatura' | 'marcas' | 'pix' | 'alerta' | 'acessos' | 'aparencia';
+type SettingsSection = 'conta' | 'marcas' | 'acessos' | 'aparencia';
 
 type AccountForm = {
   ownerName: string;
   ownerEmail: string;
   ownerPhone: string;
   businessName: string;
-};
-
-type SubscriptionForm = {
-  plan: string;
-  status: SubscriptionStatus;
-  renewalDate: string;
-  monthlyPrice: string;
-};
-
-type PixForm = {
-  keyType: PixKeyType | '';
-  keyValue: string;
-  holderName: string;
-};
-
-type AlertForm = {
-  enabled: boolean;
-  daysBeforeDue: string;
 };
 
 type AccessForm = {
@@ -133,51 +89,29 @@ const sectionOptions: Array<{
   icon: typeof IconUser;
 }> = [
   { id: 'conta', label: 'Editar conta', icon: IconUser },
-  { id: 'assinatura', label: 'Minha assinatura', icon: IconDollar },
   { id: 'marcas', label: 'Gerenciar marcas', icon: IconStar },
-  { id: 'pix', label: 'Chave Pix', icon: IconDiamond },
-  { id: 'alerta', label: 'Alerta de vencimento', icon: IconCalendar },
   { id: 'aparencia', label: 'Aparencia', icon: IconSettings },
   { id: 'acessos', label: 'Gerenciar acessos', icon: IconLock }
 ];
 
 const sectionTitle: Record<SettingsSection, string> = {
   conta: 'Editar conta',
-  assinatura: 'Minha assinatura',
   marcas: 'Configurar marcas revendidas',
-  pix: 'Chave Pix',
-  alerta: 'Alerta de vencimento',
   aparencia: 'Aparencia',
   acessos: 'Gerenciar acessos'
 };
 
 const sectionDescription: Record<SettingsSection, string> = {
   conta: 'Atualize dados basicos da conta e informacoes do negocio.',
-  assinatura: 'Gerencie plano, status e renovacao da assinatura.',
   marcas: 'Adicione as marcas que voce revende para seus clientes.',
-  pix: 'Configure as chaves para recebimentos e conciliacao.',
-  alerta: 'Defina alertas de vencimento para recebiveis pendentes.',
   aparencia: 'Escolha entre modo claro e modo escuro para o painel web.',
   acessos: 'Controle membros da equipe e niveis de permissao.'
-};
-
-const sourceLabel: Record<BrandSource, string> = {
-  existing: 'Marca existente',
-  catalog: 'Marca do catalogo',
-  manual: 'Manual'
 };
 
 const sourcePillLabel: Record<BrandSource, string> = {
   existing: 'Existente',
   catalog: 'Catalogo',
   manual: 'Manual'
-};
-
-const statusLabel: Record<SubscriptionStatus, string> = {
-  active: 'Ativa',
-  trial: 'Teste',
-  overdue: 'Em atraso',
-  canceled: 'Cancelada'
 };
 
 const roleOptions = [
@@ -191,12 +125,6 @@ const roleOptions = [
 const isSection = (value: string): value is SettingsSection =>
   sectionOptions.some((option) => option.id === value);
 
-const isSubscriptionStatus = (value?: string): value is SubscriptionStatus =>
-  value === 'active' || value === 'trial' || value === 'overdue' || value === 'canceled';
-
-const isPixKeyType = (value?: string): value is PixKeyType =>
-  value === 'cpf' || value === 'cnpj' || value === 'email' || value === 'phone' || value === 'random';
-
 const DEFAULT_BRAND_PROFITABILITY = 30;
 
 const formatProfitability = (value?: number | string) => {
@@ -205,25 +133,6 @@ const formatProfitability = (value?: number | string) => {
     minimumFractionDigits: Number.isInteger(parsed) ? 0 : 2,
     maximumFractionDigits: 2
   });
-};
-
-const formatCurrencyInput = (value?: number | string) => {
-  const parsed = toNumber(value);
-  return parsed.toLocaleString('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-};
-
-const parseCurrencyInput = (value: string) => {
-  const normalized = value
-    .replace(/\s/g, '')
-    .replace(/R\$/gi, '')
-    .replace(/\./g, '')
-    .replace(',', '.');
-  const parsed = Number(normalized);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.max(0, parsed);
 };
 
 const formatPhoneInput = (value: string) => {
@@ -292,24 +201,6 @@ const toAccountForm = (value: AccountSettings): AccountForm => ({
   businessName: value.businessName || ''
 });
 
-const toSubscriptionForm = (value: SubscriptionSettings): SubscriptionForm => ({
-  plan: value.plan || 'Essencial',
-  status: isSubscriptionStatus(value.status) ? value.status : 'active',
-  renewalDate: value.renewalDate || '',
-  monthlyPrice: formatCurrencyInput(value.monthlyPrice)
-});
-
-const toPixForm = (value: PixSettings): PixForm => ({
-  keyType: isPixKeyType(value.keyType) ? value.keyType : '',
-  keyValue: value.keyValue || '',
-  holderName: value.holderName || ''
-});
-
-const toAlertForm = (value: AlertSettings): AlertForm => ({
-  enabled: value.enabled ?? true,
-  daysBeforeDue: String(Math.max(0, Math.min(60, Number(value.daysBeforeDue ?? 3) || 0)))
-});
-
 const defaultAccessForm: AccessForm = {
   name: '',
   email: '',
@@ -322,9 +213,6 @@ export default function SettingsPanel({
   initialBrands,
   catalogBrandOptions,
   initialAccount,
-  initialSubscription,
-  initialPix,
-  initialAlerts,
   initialAccessMembers
 }: SettingsPanelProps) {
   const router = useRouter();
@@ -369,20 +257,6 @@ export default function SettingsPanel({
   const [accountForm, setAccountForm] = useState<AccountForm>(toAccountForm(initialAccount));
   const [accountSaving, setAccountSaving] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
-
-  const [subscriptionForm, setSubscriptionForm] = useState<SubscriptionForm>(
-    toSubscriptionForm(initialSubscription)
-  );
-  const [subscriptionSaving, setSubscriptionSaving] = useState(false);
-  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
-
-  const [pixForm, setPixForm] = useState<PixForm>(toPixForm(initialPix));
-  const [pixSaving, setPixSaving] = useState(false);
-  const [pixError, setPixError] = useState<string | null>(null);
-
-  const [alertsForm, setAlertsForm] = useState<AlertForm>(toAlertForm(initialAlerts));
-  const [alertsSaving, setAlertsSaving] = useState(false);
-  const [alertsError, setAlertsError] = useState<string | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>('dark');
 
   const [members, setMembers] = useState<AccessMember[]>(initialAccessMembers);
@@ -426,18 +300,6 @@ export default function SettingsPanel({
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    setSubscriptionForm(toSubscriptionForm(initialSubscription));
-  }, [initialSubscription]);
-
-  useEffect(() => {
-    setPixForm(toPixForm(initialPix));
-  }, [initialPix]);
-
-  useEffect(() => {
-    setAlertsForm(toAlertForm(initialAlerts));
-  }, [initialAlerts]);
 
   useEffect(() => {
     setMembers(initialAccessMembers);
@@ -711,117 +573,6 @@ export default function SettingsPanel({
     }
   };
 
-  const handleSaveSubscription = async () => {
-    const plan = subscriptionForm.plan.trim();
-    if (!plan) {
-      setSubscriptionError('Informe o plano da assinatura.');
-      return;
-    }
-
-    setSubscriptionSaving(true);
-    setSubscriptionError(null);
-
-    try {
-      const res = await fetch(`${API_BASE}/settings/subscription`, {
-        method: 'PATCH',
-        headers: buildMutationHeaders(),
-        body: JSON.stringify({
-          plan,
-          status: subscriptionForm.status,
-          renewalDate: subscriptionForm.renewalDate || undefined,
-          monthlyPrice: parseCurrencyInput(subscriptionForm.monthlyPrice)
-        })
-      });
-      const body = (await res.json().catch(() => null)) as { data?: SubscriptionSettings; message?: string } | null;
-
-      if (!res.ok || !body?.data) {
-        setSubscriptionError(normalizeApiMessage(body, 'Erro ao atualizar assinatura.'));
-        return;
-      }
-
-      setSubscriptionForm(toSubscriptionForm(body.data));
-      setToast('Assinatura atualizada');
-    } catch {
-      setSubscriptionError('Erro ao atualizar assinatura.');
-    } finally {
-      setSubscriptionSaving(false);
-    }
-  };
-
-  const handleSavePix = async () => {
-    const keyValue = pixForm.keyValue.trim();
-    const holderName = pixForm.holderName.trim();
-
-    if (pixForm.keyType && !keyValue) {
-      setPixError('Informe a chave Pix para o tipo selecionado.');
-      return;
-    }
-
-    if (!pixForm.keyType && !keyValue && !holderName) {
-      setPixError('Preencha ao menos um campo.');
-      return;
-    }
-
-    setPixSaving(true);
-    setPixError(null);
-
-    try {
-      const res = await fetch(`${API_BASE}/settings/pix`, {
-        method: 'PATCH',
-        headers: buildMutationHeaders(),
-        body: JSON.stringify({
-          keyType: pixForm.keyType || undefined,
-          keyValue: keyValue || undefined,
-          holderName: holderName || undefined
-        })
-      });
-      const body = (await res.json().catch(() => null)) as { data?: PixSettings; message?: string } | null;
-
-      if (!res.ok || !body?.data) {
-        setPixError(normalizeApiMessage(body, 'Erro ao salvar chave Pix.'));
-        return;
-      }
-
-      setPixForm(toPixForm(body.data));
-      setToast('Chave Pix atualizada');
-    } catch {
-      setPixError('Erro ao salvar chave Pix.');
-    } finally {
-      setPixSaving(false);
-    }
-  };
-
-  const handleSaveAlerts = async () => {
-    const days = Math.max(0, Math.min(60, Number(alertsForm.daysBeforeDue.replace(/\D/g, '')) || 0));
-
-    setAlertsSaving(true);
-    setAlertsError(null);
-
-    try {
-      const res = await fetch(`${API_BASE}/settings/alerts`, {
-        method: 'PATCH',
-        headers: buildMutationHeaders(),
-        body: JSON.stringify({
-          enabled: alertsForm.enabled,
-          daysBeforeDue: days
-        })
-      });
-      const body = (await res.json().catch(() => null)) as { data?: AlertSettings; message?: string } | null;
-
-      if (!res.ok || !body?.data) {
-        setAlertsError(normalizeApiMessage(body, 'Erro ao atualizar alerta.'));
-        return;
-      }
-
-      setAlertsForm(toAlertForm(body.data));
-      setToast('Alertas atualizados');
-    } catch {
-      setAlertsError('Erro ao atualizar alerta.');
-    } finally {
-      setAlertsSaving(false);
-    }
-  };
-
   const handleChangeTheme = (nextTheme: ThemeMode) => {
     setThemePreference(nextTheme);
     setThemeMode(nextTheme);
@@ -1088,188 +839,6 @@ export default function SettingsPanel({
     </div>
   );
 
-  const renderSubscriptionSection = () => (
-    <div className="settings-form-card">
-      <div className="settings-form-grid two">
-        <label className="settings-field">
-          <span>Plano</span>
-          <input
-            value={subscriptionForm.plan}
-            placeholder="Ex.: Pro"
-            onChange={(event) => {
-              setSubscriptionForm((prev) => ({ ...prev, plan: event.target.value }));
-              if (subscriptionError) setSubscriptionError(null);
-            }}
-          />
-        </label>
-
-        <label className="settings-field">
-          <span>Status</span>
-          <select
-            value={subscriptionForm.status}
-            onChange={(event) => {
-              const next = event.target.value;
-              if (!isSubscriptionStatus(next)) return;
-              setSubscriptionForm((prev) => ({ ...prev, status: next }));
-              if (subscriptionError) setSubscriptionError(null);
-            }}
-          >
-            {Object.entries(statusLabel).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <div className="settings-form-grid two">
-        <label className="settings-field">
-          <span>Renovacao</span>
-          <input
-            type="date"
-            value={subscriptionForm.renewalDate}
-            onChange={(event) => {
-              setSubscriptionForm((prev) => ({ ...prev, renewalDate: event.target.value }));
-              if (subscriptionError) setSubscriptionError(null);
-            }}
-          />
-        </label>
-        <label className="settings-field">
-          <span>Valor mensal (R$)</span>
-          <input
-            value={subscriptionForm.monthlyPrice}
-            inputMode="decimal"
-            placeholder="0,00"
-            onChange={(event) => {
-              setSubscriptionForm((prev) => ({
-                ...prev,
-                monthlyPrice: event.target.value.replace(/[^\d,.]/g, '')
-              }));
-              if (subscriptionError) setSubscriptionError(null);
-            }}
-          />
-        </label>
-      </div>
-
-      {subscriptionError ? <div className="field-error">{subscriptionError}</div> : null}
-
-      <div className="settings-actions-row">
-        <button
-          className="button primary"
-          type="button"
-          disabled={subscriptionSaving}
-          onClick={handleSaveSubscription}
-        >
-          {subscriptionSaving ? 'Salvando...' : 'Salvar assinatura'}
-        </button>
-      </div>
-    </div>
-  );
-
-  const renderPixSection = () => (
-    <div className="settings-form-card">
-      <div className="settings-form-grid two">
-        <label className="settings-field">
-          <span>Tipo da chave</span>
-          <select
-            value={pixForm.keyType}
-            onChange={(event) => {
-              const next = event.target.value;
-              setPixForm((prev) => ({ ...prev, keyType: isPixKeyType(next) ? next : '' }));
-              if (pixError) setPixError(null);
-            }}
-          >
-            <option value="">Selecione</option>
-            <option value="cpf">CPF</option>
-            <option value="cnpj">CNPJ</option>
-            <option value="email">Email</option>
-            <option value="phone">Telefone</option>
-            <option value="random">Chave aleatoria</option>
-          </select>
-        </label>
-
-        <label className="settings-field">
-          <span>Chave</span>
-          <input
-            value={pixForm.keyValue}
-            placeholder="Informe a chave Pix"
-            onChange={(event) => {
-              setPixForm((prev) => ({ ...prev, keyValue: event.target.value }));
-              if (pixError) setPixError(null);
-            }}
-          />
-        </label>
-      </div>
-
-      <label className="settings-field">
-        <span>Titular da chave</span>
-        <input
-          value={pixForm.holderName}
-          placeholder="Nome completo do titular"
-          onChange={(event) => {
-            setPixForm((prev) => ({ ...prev, holderName: event.target.value }));
-            if (pixError) setPixError(null);
-          }}
-        />
-      </label>
-
-      {pixError ? <div className="field-error">{pixError}</div> : null}
-
-      <div className="settings-actions-row">
-        <button className="button primary" type="button" disabled={pixSaving} onClick={handleSavePix}>
-          {pixSaving ? 'Salvando...' : 'Salvar chave Pix'}
-        </button>
-      </div>
-    </div>
-  );
-
-  const renderAlertSection = () => (
-    <div className="settings-form-card">
-      <label className="settings-toggle-row">
-        <span>Ativar alerta automatico</span>
-        <input
-          type="checkbox"
-          checked={alertsForm.enabled}
-          onChange={(event) => {
-            setAlertsForm((prev) => ({ ...prev, enabled: event.target.checked }));
-            if (alertsError) setAlertsError(null);
-          }}
-        />
-      </label>
-
-      <label className="settings-field">
-        <span>Dias antes do vencimento</span>
-        <input
-          inputMode="numeric"
-          value={alertsForm.daysBeforeDue}
-          placeholder="3"
-          onChange={(event) => {
-            setAlertsForm((prev) => ({
-              ...prev,
-              daysBeforeDue: event.target.value.replace(/\D/g, '').slice(0, 2)
-            }));
-            if (alertsError) setAlertsError(null);
-          }}
-        />
-      </label>
-
-      <div className="settings-note">
-        {alertsForm.enabled
-          ? `Alertas serao enviados ${alertsForm.daysBeforeDue || '0'} dia(s) antes do vencimento.`
-          : 'Alertas automaticos desativados.'}
-      </div>
-
-      {alertsError ? <div className="field-error">{alertsError}</div> : null}
-
-      <div className="settings-actions-row">
-        <button className="button primary" type="button" disabled={alertsSaving} onClick={handleSaveAlerts}>
-          {alertsSaving ? 'Salvando...' : 'Salvar alerta'}
-        </button>
-      </div>
-    </div>
-  );
-
   const renderAppearanceSection = () => (
     <div className="settings-form-card settings-theme-card">
       <div className="settings-theme-options">
@@ -1344,9 +913,6 @@ export default function SettingsPanel({
   const renderSection = () => {
     if (activeSection === 'marcas') return renderBrandSection();
     if (activeSection === 'conta') return renderAccountSection();
-    if (activeSection === 'assinatura') return renderSubscriptionSection();
-    if (activeSection === 'pix') return renderPixSection();
-    if (activeSection === 'alerta') return renderAlertSection();
     if (activeSection === 'aparencia') return renderAppearanceSection();
     return renderAccessSection();
   };
