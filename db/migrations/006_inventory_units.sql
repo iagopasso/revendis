@@ -19,7 +19,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_units_status_valid') THEN
     ALTER TABLE inventory_units
       ADD CONSTRAINT inventory_units_status_valid
-      CHECK (status IN ('available', 'sold', 'inactive'));
+      CHECK (status IN ('available', 'reserved', 'sold', 'inactive'));
   END IF;
 END $$;
 

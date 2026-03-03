@@ -77,7 +77,36 @@ type StorefrontSettingsRow = {
   storefront_logo_url: string | null;
   storefront_credit_card_link: string | null;
   storefront_boleto_link: string | null;
+  storefront_runtime_state: unknown | null;
   pix_key_value: string | null;
+};
+
+type StorefrontRuntimeProductData = {
+  id: string;
+  name: string;
+  price?: number | string;
+  active?: boolean;
+};
+
+type StorefrontRuntimePromotionData = {
+  id: string;
+  name: string;
+  discount: number;
+  productIds: string[];
+  mode?: 'global' | 'per_product';
+  discountsByProduct?: Record<string, number>;
+  startDate?: string;
+  endDate?: string;
+  status?: 'active' | 'scheduled' | 'ended';
+  createdAt?: string;
+};
+
+type StorefrontRuntimeStateData = {
+  activeProducts: StorefrontRuntimeProductData[];
+  promotions: StorefrontRuntimePromotionData[];
+  hiddenProductIds: string[];
+  productDescriptions: Record<string, string>;
+  storePriceOverrides: Record<string, number>;
 };
 
 type StorefrontSettingsData = {
@@ -98,6 +127,7 @@ type StorefrontSettingsData = {
   logoUrl: string;
   creditCardLink: string;
   boletoLink: string;
+  runtimeState: StorefrontRuntimeStateData;
   pixKey: string;
   mercadoPagoEnabled: boolean;
 };
@@ -147,6 +177,136 @@ const toUniqueTrimmedArray = (value: unknown) => {
     result.push(normalized);
   }
   return result;
+};
+
+const normalizeRuntimeProduct = (value: unknown): StorefrontRuntimeProductData | null => {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as {
+    id?: unknown;
+    name?: unknown;
+    price?: unknown;
+    active?: unknown;
+  };
+  if (typeof record.id !== 'string' || typeof record.name !== 'string') return null;
+  return {
+    id: record.id.trim(),
+    name: record.name.trim(),
+    price: typeof record.price === 'number' || typeof record.price === 'string' ? record.price : undefined,
+    active: typeof record.active === 'boolean' ? record.active : undefined
+  };
+};
+
+const normalizeRuntimePromotion = (value: unknown): StorefrontRuntimePromotionData | null => {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as {
+    id?: unknown;
+    name?: unknown;
+    discount?: unknown;
+    productIds?: unknown;
+    mode?: unknown;
+    discountsByProduct?: unknown;
+    startDate?: unknown;
+    endDate?: unknown;
+    status?: unknown;
+    createdAt?: unknown;
+  };
+  if (typeof record.id !== 'string' || typeof record.name !== 'string') return null;
+
+  const productIds = toUniqueTrimmedArray(record.productIds);
+  const discountsByProduct =
+    record.discountsByProduct && typeof record.discountsByProduct === 'object'
+      ? Object.fromEntries(
+          Object.entries(record.discountsByProduct)
+            .filter(
+              ([key, val]) =>
+                typeof key === 'string' && key.trim().length > 0 && Number.isFinite(Number(val))
+            )
+            .map(([key, val]) => [key.trim(), Math.max(0, Number(val) || 0)])
+        )
+      : undefined;
+
+  const mode = record.mode === 'per_product' ? 'per_product' : record.mode === 'global' ? 'global' : undefined;
+  const status =
+    record.status === 'active' || record.status === 'scheduled' || record.status === 'ended'
+      ? record.status
+      : undefined;
+
+  return {
+    id: record.id.trim(),
+    name: record.name.trim(),
+    discount: Math.max(0, Number(record.discount) || 0),
+    productIds,
+    mode,
+    discountsByProduct:
+      discountsByProduct && Object.keys(discountsByProduct).length > 0 ? discountsByProduct : undefined,
+    startDate: typeof record.startDate === 'string' ? record.startDate : undefined,
+    endDate: typeof record.endDate === 'string' ? record.endDate : undefined,
+    status,
+    createdAt: typeof record.createdAt === 'string' ? record.createdAt : undefined
+  };
+};
+
+const normalizeStorefrontRuntimeState = (value: unknown): StorefrontRuntimeStateData => {
+  if (!value || typeof value !== 'object') {
+    return {
+      activeProducts: [],
+      promotions: [],
+      hiddenProductIds: [],
+      productDescriptions: {},
+      storePriceOverrides: {}
+    };
+  }
+
+  const record = value as {
+    activeProducts?: unknown;
+    promotions?: unknown;
+    hiddenProductIds?: unknown;
+    productDescriptions?: unknown;
+    storePriceOverrides?: unknown;
+  };
+
+  const hiddenProductIds = toUniqueTrimmedArray(record.hiddenProductIds);
+  const productDescriptions =
+    record.productDescriptions && typeof record.productDescriptions === 'object'
+      ? Object.fromEntries(
+          Object.entries(record.productDescriptions)
+            .filter(
+              ([key, val]) =>
+                typeof key === 'string' && key.trim().length > 0 && typeof val === 'string'
+            )
+            .map(([key, val]) => [key.trim(), val])
+        )
+      : {};
+  const storePriceOverrides =
+    record.storePriceOverrides && typeof record.storePriceOverrides === 'object'
+      ? Object.fromEntries(
+          Object.entries(record.storePriceOverrides)
+            .filter(
+              ([key, val]) =>
+                typeof key === 'string' && key.trim().length > 0 && Number.isFinite(Number(val))
+            )
+            .map(([key, val]) => [key.trim(), Math.max(0, Number(val) || 0)])
+        )
+      : {};
+
+  const activeProducts = Array.isArray(record.activeProducts)
+    ? record.activeProducts
+        .map(normalizeRuntimeProduct)
+        .filter((item): item is StorefrontRuntimeProductData => Boolean(item))
+    : [];
+  const promotions = Array.isArray(record.promotions)
+    ? record.promotions
+        .map(normalizeRuntimePromotion)
+        .filter((item): item is StorefrontRuntimePromotionData => Boolean(item))
+    : [];
+
+  return {
+    activeProducts,
+    promotions,
+    hiddenProductIds,
+    productDescriptions,
+    storePriceOverrides
+  };
 };
 
 const normalizeRole = (value?: string) => {
@@ -218,7 +378,8 @@ const ensureStorefrontColumns = async () => {
            ADD COLUMN IF NOT EXISTS storefront_logo_url text,
            ADD COLUMN IF NOT EXISTS storefront_credit_card_link text,
            ADD COLUMN IF NOT EXISTS storefront_boleto_link text,
-           ADD COLUMN IF NOT EXISTS storefront_catalog_snapshot jsonb`
+           ADD COLUMN IF NOT EXISTS storefront_catalog_snapshot jsonb,
+           ADD COLUMN IF NOT EXISTS storefront_runtime_state jsonb`
       );
     } catch (error) {
       if (!isPermissionDeniedError(error)) throw error;
@@ -344,6 +505,7 @@ const selectStorefrontSettings = async (db: DbExecutor, orgId: string): Promise<
             os.storefront_logo_url,
             to_jsonb(os) ->> 'storefront_credit_card_link' AS storefront_credit_card_link,
             to_jsonb(os) ->> 'storefront_boleto_link' AS storefront_boleto_link,
+            to_jsonb(os) -> 'storefront_runtime_state' AS storefront_runtime_state,
             os.pix_key_value
      FROM organizations o
      LEFT JOIN organization_settings os ON os.organization_id = o.id
@@ -375,6 +537,7 @@ const selectStorefrontSettings = async (db: DbExecutor, orgId: string): Promise<
     logoUrl: row?.storefront_logo_url || '',
     creditCardLink: row?.storefront_credit_card_link || '',
     boletoLink: row?.storefront_boleto_link || '',
+    runtimeState: normalizeStorefrontRuntimeState(row?.storefront_runtime_state),
     pixKey: row?.pix_key_value || '',
     mercadoPagoEnabled: Boolean(MERCADO_PAGO_ACCESS_TOKEN)
   };
@@ -586,6 +749,10 @@ router.patch(
             : await hasOrganizationSettingsColumn(client, 'storefront_credit_card_link');
         const hasBoletoColumn =
           payload.boletoLink === undefined ? true : await hasOrganizationSettingsColumn(client, 'storefront_boleto_link');
+        const hasRuntimeStateColumn =
+          payload.runtimeState === undefined
+            ? true
+            : await hasOrganizationSettingsColumn(client, 'storefront_runtime_state');
 
         const fields: string[] = [];
         const values: Array<string | number | boolean | string[] | null> = [];
@@ -665,8 +832,14 @@ router.patch(
           fields.push(`storefront_boleto_link = $${fields.length + 1}`);
           values.push(normalizeOptional(payload.boletoLink));
         }
+        if (payload.runtimeState !== undefined && hasRuntimeStateColumn) {
+          fields.push(`storefront_runtime_state = $${fields.length + 1}::jsonb`);
+          values.push(JSON.stringify(normalizeStorefrontRuntimeState(payload.runtimeState)));
+        }
 
-        await updateSettingsFields(client, orgId, fields, values);
+        if (fields.length > 0) {
+          await updateSettingsFields(client, orgId, fields, values);
+        }
 
         const hasCatalogSnapshotColumn = await hasOrganizationSettingsColumn(client, 'storefront_catalog_snapshot');
         if (hasCatalogSnapshotColumn) {

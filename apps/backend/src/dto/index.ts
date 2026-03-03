@@ -225,6 +225,34 @@ export type SettingsAlertInput = {
   daysBeforeDue?: number;
 };
 
+export type SettingsStorefrontRuntimeProductInput = {
+  id: string;
+  name: string;
+  price?: number | string;
+  active?: boolean;
+};
+
+export type SettingsStorefrontRuntimePromotionInput = {
+  id: string;
+  name: string;
+  discount: number;
+  productIds: string[];
+  mode?: 'global' | 'per_product';
+  discountsByProduct?: Record<string, number>;
+  startDate?: string;
+  endDate?: string;
+  status?: 'active' | 'scheduled' | 'ended';
+  createdAt?: string;
+};
+
+export type SettingsStorefrontRuntimeStateInput = {
+  activeProducts?: SettingsStorefrontRuntimeProductInput[];
+  promotions?: SettingsStorefrontRuntimePromotionInput[];
+  hiddenProductIds?: string[];
+  productDescriptions?: Record<string, string>;
+  storePriceOverrides?: Record<string, number>;
+};
+
 export type SettingsStorefrontInput = {
   shopName?: string;
   subdomain?: string;
@@ -243,6 +271,7 @@ export type SettingsStorefrontInput = {
   logoUrl?: string;
   creditCardLink?: string;
   boletoLink?: string;
+  runtimeState?: SettingsStorefrontRuntimeStateInput;
 };
 
 export type StorefrontOrderPaymentInput = {
@@ -277,5 +306,5 @@ export type StorefrontOrderInput = {
     address?: string;
     price?: number;
   };
-  payment?: StorefrontOrderPaymentInput;
+  payment: StorefrontOrderPaymentInput;
 };

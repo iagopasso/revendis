@@ -1,5 +1,6 @@
 import { API_BASE } from '../../(dash)/lib';
 import PublicStorefront from './public-storefront';
+import type { StorefrontRuntimeState } from '../../lib/storefront-settings';
 
 type StoreProduct = {
   id: string;
@@ -31,6 +32,7 @@ type StorefrontSettings = {
   pixKey?: string;
   creditCardLink?: string;
   boletoLink?: string;
+  runtimeState?: Partial<StorefrontRuntimeState>;
   mercadoPagoEnabled?: boolean;
 };
 

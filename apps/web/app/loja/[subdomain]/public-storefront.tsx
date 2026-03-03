@@ -1,13 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconArrowLeft, IconCart, IconCopy, IconSearch, IconTrash, IconWhatsapp } from '../../(dash)/icons';
 import { API_BASE, buildMutationHeaders } from '../../(dash)/lib';
 import {
   DEFAULT_STOREFRONT_SETTINGS,
+  hasStorefrontRuntimeStateData,
   loadStorefrontRuntimeState,
+  normalizeStorefrontRuntimeState,
   normalizeStorefrontSettings,
   sanitizeSubdomain,
+  type StorefrontRuntimePromotion,
+  type StorefrontRuntimeState,
   type StorefrontSettings
 } from '../../lib/storefront-settings';
 
@@ -29,6 +33,7 @@ type PublicStoreSettings = Partial<StorefrontSettings> & {
   pixKey?: string;
   creditCardLink?: string;
   boletoLink?: string;
+  runtimeState?: Partial<StorefrontRuntimeState>;
   mercadoPagoEnabled?: boolean;
 };
 
@@ -42,6 +47,8 @@ type NormalizedProduct = {
   imageUrl: string;
   quantity: number;
   price: number;
+  originalPrice?: number;
+  promotionDiscount?: number;
 };
 
 type CartItem = {
@@ -59,17 +66,65 @@ type CartItem = {
 
 type PublicView = 'catalog' | 'product' | 'checkout' | 'success';
 type CheckoutPaymentMethod = 'pix' | 'credit_card';
+type CheckoutPaymentStatus = 'pending' | 'paid' | 'failed' | 'expired';
 
 type CheckoutResponse = {
   data?: {
+    id?: string;
+    status?: string;
+    sale_id?: string | null;
     payment?: {
       method?: CheckoutPaymentMethod;
       reference?: string;
       checkoutUrl?: string;
       provider?: string;
+      status?: CheckoutPaymentStatus;
+      token?: string;
+      expiresAt?: string;
+      mercadoPagoPaymentId?: string;
+      pixQrCodeBase64?: string;
     };
+    payment_status?: CheckoutPaymentStatus;
+    payment_expires_at?: string | null;
   };
   message?: string;
+};
+
+const PENDING_PAYMENT_STORAGE_PREFIX = 'revendis:pending-payment:';
+const PENDING_PAYMENT_VERSION = 1;
+const CART_STORAGE_PREFIX = 'revendis:storefront-cart:';
+const CART_STORAGE_VERSION = 1;
+const CHECKOUT_DRAFT_STORAGE_PREFIX = 'revendis:checkout-draft:';
+const CHECKOUT_DRAFT_VERSION = 1;
+
+type PendingPaymentSnapshot = {
+  version: number;
+  orderId: string;
+  method: CheckoutPaymentMethod;
+  token: string;
+  provider: string;
+  checkoutUrl: string;
+  reference: string;
+  status: CheckoutPaymentStatus;
+  expiresAt: string;
+  mercadoPagoPaymentId?: string;
+  pixQrCodeBase64?: string;
+  customerName?: string;
+  customerPhone?: string;
+  installments?: number;
+};
+
+type PersistedCartSnapshot = {
+  version: number;
+  items: CartItem[];
+};
+
+type PersistedCheckoutDraft = {
+  version: number;
+  customerName: string;
+  customerPhone: string;
+  paymentMethod: CheckoutPaymentMethod | '';
+  installments: number;
 };
 
 const toNumber = (value: unknown) => {
@@ -83,6 +138,30 @@ const toNumber = (value: unknown) => {
 
 const formatPrice = (value: number) =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const toIsoDate = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeDateInput = (value: string) => {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+  const parsed = new Date(raw.includes('T') ? raw : `${raw}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return toIsoDate(parsed);
+};
+
+const resolvePromotionStatus = (startDate?: string, endDate?: string) => {
+  const today = normalizeDateInput(toIsoDate(new Date()));
+  const start = normalizeDateInput(startDate || '');
+  const end = normalizeDateInput(endDate || '');
+  if (end && end < today) return 'ended' as const;
+  if (start && start > today) return 'scheduled' as const;
+  return 'active' as const;
+};
 
 const toTlv = (id: string, value: string) => `${id}${String(value.length).padStart(2, '0')}${value}`;
 
@@ -268,9 +347,17 @@ const normalizeStoreProduct = (item: StoreProduct): NormalizedProduct => ({
   price: Math.max(0, toNumber(item.price))
 });
 
-const normalizeCartItem = (item: CartItem, latest?: NormalizedProduct): CartItem => {
+const normalizeCartItem = (
+  item: CartItem,
+  latest?: NormalizedProduct,
+  options?: { preservePendingQuantity?: boolean }
+): CartItem => {
   if (!latest) return item;
   const available = Math.max(0, latest.quantity);
+  const requestedQuantity = Math.max(0, Math.trunc(toNumber(item.quantity)));
+  const quantity = options?.preservePendingQuantity
+    ? requestedQuantity
+    : Math.max(0, Math.min(requestedQuantity, available));
   return {
     productId: item.productId,
     sku: latest.sku,
@@ -281,8 +368,23 @@ const normalizeCartItem = (item: CartItem, latest?: NormalizedProduct): CartItem
     imageUrl: latest.imageUrl,
     price: latest.price,
     available,
-    quantity: Math.max(0, Math.min(item.quantity, available))
+    quantity
   };
+};
+
+const normalizeCheckoutPaymentStatus = (value?: string | null): CheckoutPaymentStatus => {
+  const normalized = (value || '').trim().toLowerCase();
+  if (normalized === 'paid' || normalized === 'approved' || normalized === 'accepted') return 'paid';
+  if (normalized === 'failed' || normalized === 'rejected' || normalized === 'cancelled') return 'failed';
+  if (normalized === 'expired') return 'expired';
+  return 'pending';
+};
+
+const toCountdownText = (seconds: number) => {
+  const safe = Math.max(0, Math.trunc(seconds));
+  const minutes = Math.floor(safe / 60);
+  const remaining = safe % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(remaining).padStart(2, '0')}`;
 };
 
 export default function PublicStorefront({
@@ -334,12 +436,13 @@ export default function PublicStorefront({
 
   const [cartOpen, setCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartHydrated, setCartHydrated] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<CheckoutPaymentMethod | ''>(
-    pixKey ? 'pix' : mercadoPagoEnabled || creditCardLink ? 'credit_card' : ''
+    mercadoPagoEnabled || pixKey ? 'pix' : creditCardLink ? 'credit_card' : ''
   );
   const [creditCardInstallments, setCreditCardInstallments] = useState(1);
   const [paymentHelperMessage, setPaymentHelperMessage] = useState('');
@@ -347,43 +450,241 @@ export default function PublicStorefront({
   const [checkoutMessage, setCheckoutMessage] = useState('');
   const [checkoutError, setCheckoutError] = useState(false);
   const [submittingCheckout, setSubmittingCheckout] = useState(false);
+  const [promotions, setPromotions] = useState<StorefrontRuntimePromotion[]>([]);
   const [hiddenProductIds, setHiddenProductIds] = useState<string[]>([]);
   const [productDescriptions, setProductDescriptions] = useState<Record<string, string>>({});
   const [storePriceOverrides, setStorePriceOverrides] = useState<Record<string, number>>({});
   const [successPaymentUrl, setSuccessPaymentUrl] = useState('');
   const [successPaymentMethod, setSuccessPaymentMethod] = useState<CheckoutPaymentMethod | ''>('');
   const [successPaymentProvider, setSuccessPaymentProvider] = useState('');
+  const [successPaymentReference, setSuccessPaymentReference] = useState('');
+  const [successMercadoPagoPaymentId, setSuccessMercadoPagoPaymentId] = useState('');
+  const [successPixQrCodeBase64, setSuccessPixQrCodeBase64] = useState('');
+  const [successOrderId, setSuccessOrderId] = useState('');
+  const [successPaymentToken, setSuccessPaymentToken] = useState('');
+  const [successPaymentStatus, setSuccessPaymentStatus] = useState<CheckoutPaymentStatus>('pending');
+  const [successPixExpiresAt, setSuccessPixExpiresAt] = useState('');
+  const [successPixSecondsLeft, setSuccessPixSecondsLeft] = useState(0);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
+  const [pendingPaymentSnapshot, setPendingPaymentSnapshot] = useState<PendingPaymentSnapshot | null>(null);
+  const manualCartChangeRef = useRef(false);
+  const previousCartItemsCountRef = useRef(0);
 
   const viewStateSubdomain = useMemo(
     () => sanitizeSubdomain(subdomain) || DEFAULT_STOREFRONT_SETTINGS.subdomain,
     [subdomain]
   );
+  const initialRuntimeState = useMemo(
+    () => normalizeStorefrontRuntimeState(initialStoreSettings?.runtimeState || null),
+    [initialStoreSettings]
+  );
+  const pendingPaymentStorageKey = `${PENDING_PAYMENT_STORAGE_PREFIX}${viewStateSubdomain}`;
+  const cartStorageKey = `${CART_STORAGE_PREFIX}${viewStateSubdomain}`;
+  const checkoutDraftStorageKey = `${CHECKOUT_DRAFT_STORAGE_PREFIX}${viewStateSubdomain}`;
+
+  const clearPendingPaymentSnapshot = () => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.removeItem(pendingPaymentStorageKey);
+    setPendingPaymentSnapshot(null);
+  };
+
+  const savePendingPaymentSnapshot = (snapshot: PendingPaymentSnapshot) => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(pendingPaymentStorageKey, JSON.stringify(snapshot));
+    setPendingPaymentSnapshot(snapshot);
+  };
+
+  const loadPendingPaymentSnapshot = (): PendingPaymentSnapshot | null => {
+    if (typeof window === 'undefined') return null;
+    const raw = window.localStorage.getItem(pendingPaymentStorageKey);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as PendingPaymentSnapshot;
+      if (!parsed || parsed.version !== PENDING_PAYMENT_VERSION) return null;
+      if (!parsed.orderId || !parsed.method || !parsed.token) return null;
+      return {
+        ...parsed,
+        mercadoPagoPaymentId: (parsed.mercadoPagoPaymentId || '').trim() || undefined,
+        pixQrCodeBase64: (parsed.pixQrCodeBase64 || '').trim() || undefined,
+        customerName: (parsed.customerName || '').trim(),
+        customerPhone: (parsed.customerPhone || '').trim(),
+        installments: Math.min(12, Math.max(1, Math.trunc(toNumber(parsed.installments) || 1)))
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const clearPersistedCart = () => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.removeItem(cartStorageKey);
+  };
+
+  const clearCheckoutDraft = () => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.removeItem(checkoutDraftStorageKey);
+  };
+
+  const loadPersistedCart = (): CartItem[] => {
+    if (typeof window === 'undefined') return [];
+    const raw = window.localStorage.getItem(cartStorageKey);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as PersistedCartSnapshot;
+      if (!parsed || parsed.version !== CART_STORAGE_VERSION || !Array.isArray(parsed.items)) return [];
+      return parsed.items
+        .filter((item): item is CartItem => Boolean(item && typeof item === 'object' && typeof item.productId === 'string'))
+        .map((item) => ({
+          productId: item.productId,
+          sku: (item.sku || '').trim(),
+          code: (item.code || '').trim(),
+          name: (item.name || '').trim(),
+          brand: (item.brand || '').trim(),
+          category: (item.category || '').trim(),
+          imageUrl: (item.imageUrl || '').trim(),
+          price: Math.max(0, toNumber(item.price)),
+          available: Math.max(0, Math.trunc(toNumber(item.available))),
+          quantity: Math.max(0, Math.trunc(toNumber(item.quantity)))
+        }))
+        .filter((item) => item.productId && item.sku && item.quantity > 0);
+    } catch {
+      return [];
+    }
+  };
+
+  const loadCheckoutDraft = (): PersistedCheckoutDraft | null => {
+    if (typeof window === 'undefined') return null;
+    const raw = window.localStorage.getItem(checkoutDraftStorageKey);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as PersistedCheckoutDraft;
+      if (!parsed || parsed.version !== CHECKOUT_DRAFT_VERSION) return null;
+      const method =
+        parsed.paymentMethod === 'pix' || parsed.paymentMethod === 'credit_card' ? parsed.paymentMethod : '';
+      return {
+        version: CHECKOUT_DRAFT_VERSION,
+        customerName: (parsed.customerName || '').trim(),
+        customerPhone: (parsed.customerPhone || '').trim(),
+        paymentMethod: method,
+        installments: Math.min(12, Math.max(1, Math.trunc(toNumber(parsed.installments) || 1)))
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const resetSuccessState = () => {
+    setSuccessPaymentUrl('');
+    setSuccessPaymentMethod('');
+    setSuccessPaymentProvider('');
+    setSuccessPaymentReference('');
+    setSuccessMercadoPagoPaymentId('');
+    setSuccessPixQrCodeBase64('');
+    setSuccessOrderId('');
+    setSuccessPaymentToken('');
+    setSuccessPaymentStatus('pending');
+    setSuccessPixExpiresAt('');
+    setSuccessPixSecondsLeft(0);
+    setSuccessMessage('');
+    setConfirmingPayment(false);
+  };
+
+  const applyPendingPaymentSnapshot = (
+    snapshot: PendingPaymentSnapshot,
+    options?: {
+      openSuccess?: boolean;
+      message?: string;
+    }
+  ) => {
+    if (!snapshot) return;
+    if (options?.openSuccess) {
+      setView('success');
+    }
+    setSuccessOrderId(snapshot.orderId);
+    setSuccessPaymentMethod(snapshot.method);
+    setSuccessPaymentToken(snapshot.token);
+    setSuccessPaymentProvider(snapshot.provider || '');
+    setSuccessPaymentUrl(snapshot.checkoutUrl || '');
+    setSuccessPaymentReference(snapshot.reference || '');
+    setSuccessMercadoPagoPaymentId(snapshot.mercadoPagoPaymentId || '');
+    setSuccessPixQrCodeBase64(snapshot.pixQrCodeBase64 || '');
+    setSuccessPaymentStatus(normalizeCheckoutPaymentStatus(snapshot.status));
+    setSuccessPixExpiresAt(snapshot.expiresAt || '');
+    setSelectedPaymentMethod(snapshot.method);
+    setCustomerName(snapshot.customerName || '');
+    setCustomerPhone(snapshot.customerPhone || '');
+    if (snapshot.method === 'credit_card') {
+      setCreditCardInstallments(Math.min(12, Math.max(1, Math.trunc(toNumber(snapshot.installments) || 1))));
+    }
+    if (options?.message) {
+      setSuccessMessage(options.message);
+    }
+  };
 
   useEffect(() => {
     setProductsSource(initialProducts || []);
   }, [initialProducts]);
 
   useEffect(() => {
+    setCartHydrated(false);
+    const restored = loadPersistedCart();
+    setCartItems(restored);
+    setCartHydrated(true);
+  }, [cartStorageKey]);
+
+  useEffect(() => {
+    const draft = loadCheckoutDraft();
+    if (!draft) return;
+    if (draft.customerName) setCustomerName(draft.customerName);
+    if (draft.customerPhone) setCustomerPhone(draft.customerPhone);
+    if (draft.paymentMethod) setSelectedPaymentMethod(draft.paymentMethod);
+    setCreditCardInstallments(draft.installments);
+  }, [checkoutDraftStorageKey]);
+
+  useEffect(() => {
     const syncRuntime = () => {
       const runtime = loadStorefrontRuntimeState();
-      if (!runtime) {
-        setHiddenProductIds([]);
-        setProductDescriptions({});
-        setStorePriceOverrides({});
-        return;
-      }
-      setHiddenProductIds(runtime.hiddenProductIds || []);
-      setProductDescriptions(runtime.productDescriptions || {});
-      setStorePriceOverrides(runtime.storePriceOverrides || {});
+      const resolvedRuntime =
+        hasStorefrontRuntimeStateData(initialRuntimeState) || !runtime ? initialRuntimeState : runtime;
+      setPromotions(resolvedRuntime.promotions || []);
+      setHiddenProductIds(resolvedRuntime.hiddenProductIds || []);
+      setProductDescriptions(resolvedRuntime.productDescriptions || {});
+      setStorePriceOverrides(resolvedRuntime.storePriceOverrides || {});
     };
     syncRuntime();
     const onStorage = (event: StorageEvent) => {
       if (event.key && !event.key.includes('revendis:storefront-runtime')) return;
-      syncRuntime();
+      const runtime = loadStorefrontRuntimeState();
+      if (!runtime) return;
+      setPromotions(runtime.promotions || []);
+      setHiddenProductIds(runtime.hiddenProductIds || []);
+      setProductDescriptions(runtime.productDescriptions || {});
+      setStorePriceOverrides(runtime.storePriceOverrides || {});
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  }, [initialRuntimeState]);
+
+  const activePromotionDiscountByProductId = useMemo(() => {
+    const maxDiscountByProductId = new Map<string, number>();
+    for (const promotion of promotions) {
+      const status = promotion.status || resolvePromotionStatus(promotion.startDate, promotion.endDate);
+      if (status !== 'active') continue;
+      for (const productId of promotion.productIds) {
+        const discount =
+          promotion.mode === 'per_product'
+            ? Math.max(0, Math.min(99, toNumber(promotion.discountsByProduct?.[productId] ?? promotion.discount)))
+            : Math.max(0, Math.min(99, toNumber(promotion.discount)));
+        if (discount <= 0) continue;
+        const current = maxDiscountByProductId.get(productId) || 0;
+        if (discount > current) {
+          maxDiscountByProductId.set(productId, discount);
+        }
+      }
+    }
+    return maxDiscountByProductId;
+  }, [promotions]);
 
   const products = useMemo<NormalizedProduct[]>(
     () =>
@@ -396,9 +697,19 @@ export default function PublicStorefront({
           if (typeof override === 'number' && Number.isFinite(override)) {
             normalized.price = Math.max(0, override);
           }
+
+          const promotionDiscount = activePromotionDiscountByProductId.get(normalized.id) || 0;
+          if (promotionDiscount > 0) {
+            const basePrice = Math.max(0, normalized.price);
+            const promotionPrice = Math.max(0, basePrice - basePrice * (promotionDiscount / 100));
+            normalized.originalPrice = basePrice;
+            normalized.price = promotionPrice;
+            normalized.promotionDiscount = promotionDiscount;
+          }
+
           return normalized;
         }),
-    [hiddenProductIds, productsSource, storePriceOverrides]
+    [activePromotionDiscountByProductId, hiddenProductIds, productsSource, storePriceOverrides]
   );
 
   const productsById = useMemo(() => {
@@ -419,7 +730,7 @@ export default function PublicStorefront({
   );
   const availablePaymentMethods = useMemo<CheckoutPaymentMethod[]>(() => {
     const methods: CheckoutPaymentMethod[] = [];
-    if (pixKey) {
+    if (mercadoPagoEnabled || pixKey) {
       methods.push('pix');
     }
     if (mercadoPagoEnabled || creditCardLink) {
@@ -430,10 +741,8 @@ export default function PublicStorefront({
 
   const productsByStockRule = useMemo(
     () =>
-      settings.onlyStockProducts || !settings.showOutOfStockProducts
-        ? products.filter((item) => item.quantity > 0)
-        : products,
-    [products, settings.onlyStockProducts, settings.showOutOfStockProducts]
+      settings.showOutOfStockProducts ? products : products.filter((item) => item.quantity > 0),
+    [products, settings.showOutOfStockProducts]
   );
 
   const productsByConfiguredOptions = useMemo(
@@ -441,9 +750,10 @@ export default function PublicStorefront({
       productsByStockRule.filter((item) => {
         const allowedBrand =
           configuredBrandTokens.length === 0 || configuredBrandTokens.includes(normalizeToken(item.brand));
+        const allowedBrandStock = configuredBrandTokens.length === 0 || item.quantity > 0;
         const allowedCategory =
           configuredCategoryTokens.length === 0 || configuredCategoryTokens.includes(normalizeToken(item.category));
-        return allowedBrand && allowedCategory;
+        return allowedBrand && allowedBrandStock && allowedCategory;
       }),
     [configuredBrandTokens, configuredCategoryTokens, productsByStockRule]
   );
@@ -504,6 +814,30 @@ export default function PublicStorefront({
     }
     setSelectedPaymentMethod((prev) => (prev && availablePaymentMethods.includes(prev) ? prev : availablePaymentMethods[0]));
   }, [availablePaymentMethods]);
+
+  useEffect(() => {
+    if (!successPixExpiresAt || successPaymentStatus !== 'pending') {
+      setSuccessPixSecondsLeft(0);
+      return;
+    }
+
+    const tick = () => {
+      const expiresAtMs = new Date(successPixExpiresAt).getTime();
+      if (!Number.isFinite(expiresAtMs)) {
+        setSuccessPixSecondsLeft(0);
+        return;
+      }
+      const seconds = Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
+      setSuccessPixSecondsLeft(seconds);
+      if (seconds === 0) {
+        setSuccessPaymentStatus('expired');
+      }
+    };
+
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [successPixExpiresAt, successPaymentStatus]);
 
   useEffect(() => {
     if (view !== 'product') return;
@@ -567,10 +901,82 @@ export default function PublicStorefront({
   const cartDisplayItems = useMemo(
     () =>
       cartItems
-        .map((item) => normalizeCartItem(item, productsById.get(item.productId)))
+        .map((item) =>
+          normalizeCartItem(item, productsById.get(item.productId), {
+            preservePendingQuantity: Boolean(pendingPaymentSnapshot)
+          })
+        )
         .filter((item) => item.quantity > 0),
-    [cartItems, productsById]
+    [cartItems, pendingPaymentSnapshot, productsById]
   );
+  const hasActivePendingOrder = Boolean(
+    pendingPaymentSnapshot &&
+      normalizeCheckoutPaymentStatus(pendingPaymentSnapshot.status) !== 'paid' &&
+      pendingPaymentSnapshot.orderId &&
+      pendingPaymentSnapshot.token
+  );
+
+  useEffect(() => {
+    if (!hasActivePendingOrder || !pendingPaymentSnapshot) return;
+    setCustomerName(pendingPaymentSnapshot.customerName || '');
+    setCustomerPhone(pendingPaymentSnapshot.customerPhone || '');
+    setSelectedPaymentMethod(pendingPaymentSnapshot.method);
+    if (pendingPaymentSnapshot.method === 'credit_card') {
+      setCreditCardInstallments(Math.min(12, Math.max(1, Math.trunc(toNumber(pendingPaymentSnapshot.installments) || 1))));
+    }
+  }, [hasActivePendingOrder, pendingPaymentSnapshot]);
+
+  useEffect(() => {
+    if (!cartHydrated || typeof window === 'undefined') return;
+    if (cartItems.length === 0) {
+      clearPersistedCart();
+      return;
+    }
+    const snapshot: PersistedCartSnapshot = {
+      version: CART_STORAGE_VERSION,
+      items: cartItems
+    };
+    window.localStorage.setItem(cartStorageKey, JSON.stringify(snapshot));
+  }, [cartHydrated, cartItems, cartStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hasDraftData =
+      customerName.trim().length > 0 ||
+      customerPhone.trim().length > 0 ||
+      selectedPaymentMethod.length > 0 ||
+      creditCardInstallments > 1;
+    if (!hasDraftData) {
+      clearCheckoutDraft();
+      return;
+    }
+    const draft: PersistedCheckoutDraft = {
+      version: CHECKOUT_DRAFT_VERSION,
+      customerName: customerName.trim(),
+      customerPhone: customerPhone.trim(),
+      paymentMethod: selectedPaymentMethod,
+      installments: Math.min(12, Math.max(1, Math.trunc(creditCardInstallments || 1)))
+    };
+    window.localStorage.setItem(checkoutDraftStorageKey, JSON.stringify(draft));
+  }, [checkoutDraftStorageKey, creditCardInstallments, customerName, customerPhone, selectedPaymentMethod]);
+
+  useEffect(() => {
+    if (!cartHydrated) return;
+    const previousCount = previousCartItemsCountRef.current;
+    const currentCount = cartItems.length;
+    const manualCartChange = manualCartChangeRef.current;
+    manualCartChangeRef.current = false;
+    previousCartItemsCountRef.current = currentCount;
+
+    const hasPendingOrder =
+      pendingPaymentSnapshot &&
+      normalizeCheckoutPaymentStatus(pendingPaymentSnapshot.status) !== 'paid' &&
+      Boolean(pendingPaymentSnapshot.orderId) &&
+      Boolean(pendingPaymentSnapshot.token);
+
+    if (!manualCartChange || previousCount <= 0 || currentCount > 0 || !hasPendingOrder) return;
+    void cancelPendingOrderByToken(pendingPaymentSnapshot);
+  }, [cartHydrated, cartItems.length, pendingPaymentSnapshot]);
 
   const cartCount = useMemo(
     () => cartDisplayItems.reduce((sum, item) => sum + item.quantity, 0),
@@ -591,13 +997,6 @@ export default function PublicStorefront({
         txid: `PEDIDO${Math.round(cartTotal * 100) || 1}`
       }),
     [cartTotal, pixKey, settings.shopName]
-  );
-  const pixQrCodeUrl = useMemo(
-    () =>
-      pixCopyPasteCode
-        ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(pixCopyPasteCode)}`
-        : '',
-    [pixCopyPasteCode]
   );
   const installmentOptions = useMemo(() => {
     const maxInstallments = Math.min(6, Math.max(1, Math.floor(cartTotal / 30)));
@@ -642,6 +1041,7 @@ export default function PublicStorefront({
   };
 
   const updateCartItemQuantity = (productId: string, nextQuantity: number) => {
+    manualCartChangeRef.current = true;
     setCartItems((prev) =>
       prev.flatMap((item) => {
         if (item.productId !== productId) return [item];
@@ -656,6 +1056,7 @@ export default function PublicStorefront({
   };
 
   const removeCartItem = (productId: string) => {
+    manualCartChangeRef.current = true;
     setCartItems((prev) => prev.filter((item) => item.productId !== productId));
   };
 
@@ -708,9 +1109,238 @@ export default function PublicStorefront({
     setPaymentHelperError(false);
   };
 
+  const cancelPendingOrderByToken = async (snapshot: PendingPaymentSnapshot) => {
+    if (!snapshot.orderId || !snapshot.token) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/storefront/orders/${snapshot.orderId}/cancel-public`, {
+        method: 'POST',
+        headers: buildMutationHeaders(),
+        body: JSON.stringify({
+          subdomain: viewStateSubdomain,
+          token: snapshot.token
+        })
+      });
+      const payload = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+      if (!response.ok) {
+        const alreadyHandled =
+          payload?.code === 'already_cancelled' || payload?.code === 'already_accepted' || response.status === 409;
+        if (!alreadyHandled) {
+          throw new Error(payload?.message || 'Nao foi possivel cancelar o pedido pendente.');
+        }
+      }
+
+      clearPendingPaymentSnapshot();
+      resetSuccessState();
+      clearCheckoutDraft();
+      setToastMessage('Pedido pendente cancelado.');
+    } catch (error) {
+      setToastMessage(
+        error instanceof Error
+          ? error.message
+          : 'Carrinho limpo, mas nao foi possivel cancelar o pedido pendente.'
+      );
+    }
+  };
+
+  const confirmOrderPayment = async ({
+    orderId,
+    method,
+    token,
+    returnStatus,
+    mercadoPagoStatus,
+    mercadoPagoPaymentId
+  }: {
+    orderId: string;
+    method: CheckoutPaymentMethod;
+    token: string;
+    returnStatus?: string;
+    mercadoPagoStatus?: string;
+    mercadoPagoPaymentId?: string;
+  }) => {
+    if (!orderId || !token) return;
+
+    setConfirmingPayment(true);
+    setCheckoutMessage('');
+    setCheckoutError(false);
+    try {
+      const response = await fetch(`${API_BASE}/storefront/orders/${orderId}/payments/confirm`, {
+        method: 'POST',
+        headers: buildMutationHeaders(),
+        body: JSON.stringify({
+          subdomain: viewStateSubdomain,
+          method,
+          token,
+          returnStatus,
+          mercadoPagoStatus,
+          mercadoPagoPaymentId
+        })
+      });
+      const payload = (await response.json().catch(() => null)) as CheckoutResponse | null;
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Nao foi possivel confirmar o pagamento.');
+      }
+
+      const nextStatus = normalizeCheckoutPaymentStatus(payload?.data?.payment_status);
+      setSuccessPaymentStatus(nextStatus);
+      const nextExpiresAt = payload?.data?.payment_expires_at || successPixExpiresAt || '';
+      if (nextExpiresAt) {
+        setSuccessPixExpiresAt(nextExpiresAt);
+      }
+
+      if (pendingPaymentSnapshot && pendingPaymentSnapshot.orderId === orderId) {
+        savePendingPaymentSnapshot({
+          ...pendingPaymentSnapshot,
+          status: nextStatus,
+          expiresAt: nextExpiresAt || pendingPaymentSnapshot.expiresAt || ''
+        });
+      }
+
+      if (nextStatus === 'paid') {
+        setSuccessMessage('Pagamento feito.');
+        setCartItems([]);
+        clearPersistedCart();
+        clearPendingPaymentSnapshot();
+        clearCheckoutDraft();
+      } else if (nextStatus === 'expired') {
+        setSuccessMessage('Tempo do Pix expirado. Gere um novo pedido para continuar.');
+      } else if (nextStatus === 'failed') {
+        setSuccessMessage('Pagamento nao aprovado. Tente novamente.');
+      } else if (method === 'credit_card') {
+        setSuccessMessage('Pagamento ainda pendente no cartao. Conclua no Mercado Pago.');
+      } else {
+        setSuccessMessage('Pagamento Pix pendente. Assim que pagar, confirme aqui.');
+      }
+    } catch (error) {
+      setSuccessMessage(error instanceof Error ? error.message : 'Nao foi possivel confirmar o pagamento.');
+      setCheckoutError(true);
+    } finally {
+      setConfirmingPayment(false);
+    }
+  };
+
+  const goToPaymentStep = () => {
+    if (pendingPaymentSnapshot) {
+      setSelectedPaymentMethod(pendingPaymentSnapshot.method);
+      setCustomerName(pendingPaymentSnapshot.customerName || customerName);
+      setCustomerPhone(pendingPaymentSnapshot.customerPhone || customerPhone);
+      if (pendingPaymentSnapshot.method === 'credit_card') {
+        setCreditCardInstallments(Math.min(12, Math.max(1, Math.trunc(toNumber(pendingPaymentSnapshot.installments) || 1))));
+      }
+    }
+    setView('checkout');
+    setCheckoutMessage('');
+    setCheckoutError(false);
+  };
+
+  const continuePendingPayment = () => {
+    if (successPaymentMethod === 'credit_card' && successPaymentUrl) {
+      window.location.assign(successPaymentUrl);
+      return;
+    }
+    if (
+      pendingPaymentSnapshot &&
+      pendingPaymentSnapshot.method === 'credit_card' &&
+      pendingPaymentSnapshot.checkoutUrl
+    ) {
+      window.location.assign(pendingPaymentSnapshot.checkoutUrl);
+      return;
+    }
+    goToPaymentStep();
+  };
+
+  const changePendingPaymentMethod = async () => {
+    if (pendingPaymentSnapshot) {
+      await cancelPendingOrderByToken(pendingPaymentSnapshot);
+    }
+    setView('checkout');
+    setCheckoutMessage('Escolha uma nova forma de pagamento para continuar.');
+    setCheckoutError(false);
+  };
+
+  useEffect(() => {
+    const pendingSnapshot = loadPendingPaymentSnapshot();
+    setPendingPaymentSnapshot(pendingSnapshot);
+    if (pendingSnapshot) {
+      const snapshotStatus = normalizeCheckoutPaymentStatus(pendingSnapshot.status);
+      applyPendingPaymentSnapshot(pendingSnapshot, {
+        openSuccess: true,
+        message:
+          snapshotStatus === 'expired'
+            ? 'Pagamento expirado. Continue para pagar novamente ou troque a forma de pagamento.'
+            : snapshotStatus === 'failed'
+              ? 'Pagamento nao aprovado. Continue para tentar novamente ou troque a forma de pagamento.'
+              : pendingSnapshot.method === 'pix'
+                ? pendingSnapshot.provider === 'mercado_pago'
+                  ? 'Continue o pagamento Pix para concluir o pedido.'
+                  : 'Pagamento Pix pendente. Copie o codigo e confirme apos pagar.'
+                : 'Continue o pagamento com cartao para concluir o pedido.'
+      });
+    }
+
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const pagamento = (url.searchParams.get('pagamento') || '').trim();
+    const orderId = (url.searchParams.get('pedido') || '').trim();
+    const token = (url.searchParams.get('token') || '').trim();
+    const methodParam = (url.searchParams.get('metodo') || '').trim().toLowerCase();
+    const mpStatus = (url.searchParams.get('status') || url.searchParams.get('collection_status') || '').trim();
+    const paymentId = (url.searchParams.get('payment_id') || '').trim();
+
+    if (!pagamento || !orderId || !token) return;
+    const methodFromQuery: CheckoutPaymentMethod | '' =
+      methodParam === 'pix' || methodParam === 'credit_card' ? methodParam : '';
+    const methodFromSnapshot: CheckoutPaymentMethod | '' =
+      pendingSnapshot && pendingSnapshot.orderId === orderId && pendingSnapshot.token === token
+        ? pendingSnapshot.method
+        : '';
+    const method = methodFromQuery || methodFromSnapshot || 'credit_card';
+
+    setView('success');
+    setSuccessOrderId(orderId);
+    setSuccessPaymentMethod(method);
+    setSuccessPaymentProvider('mercado_pago');
+    setSuccessPaymentToken(token);
+    setSuccessMercadoPagoPaymentId(paymentId || pendingSnapshot?.mercadoPagoPaymentId || '');
+    setSuccessPixQrCodeBase64(pendingSnapshot?.pixQrCodeBase64 || '');
+    setSuccessMessage(method === 'pix' ? 'Confirmando pagamento Pix...' : 'Confirmando pagamento no cartao...');
+    void confirmOrderPayment({
+      orderId,
+      method,
+      token,
+      returnStatus: pagamento,
+      mercadoPagoStatus: mpStatus || pagamento,
+      mercadoPagoPaymentId: paymentId || undefined
+    });
+
+    url.searchParams.delete('pagamento');
+    url.searchParams.delete('pedido');
+    url.searchParams.delete('token');
+    url.searchParams.delete('metodo');
+    url.searchParams.delete('status');
+    url.searchParams.delete('collection_status');
+    url.searchParams.delete('payment_id');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  }, [pendingPaymentStorageKey]);
+
   const handleFinalizeOrder = async () => {
     const trimmedName = customerName.trim();
     const trimmedPhone = customerPhone.trim();
+
+    if (hasActivePendingOrder && pendingPaymentSnapshot) {
+      if (pendingPaymentSnapshot.method === 'credit_card' && pendingPaymentSnapshot.checkoutUrl) {
+        window.location.assign(pendingPaymentSnapshot.checkoutUrl);
+        return;
+      }
+      applyPendingPaymentSnapshot(pendingPaymentSnapshot, {
+        openSuccess: true,
+        message:
+          pendingPaymentSnapshot.method === 'pix'
+            ? 'Pedido pendente. Realize o pagamento e clique em "Confirmar pagamento".'
+            : 'Pedido pendente. Conclua o pagamento e depois confirme.'
+      });
+      return;
+    }
 
     if (!trimmedName) {
       setCheckoutMessage('Informe seu nome para finalizar o pedido.');
@@ -748,7 +1378,7 @@ export default function PublicStorefront({
         : mercadoPagoEnabled
           ? ''
           : creditCardLink;
-    if (selectedPaymentMethod === 'pix' && !paymentReference) {
+    if (selectedPaymentMethod === 'pix' && !mercadoPagoEnabled && !paymentReference) {
       setCheckoutMessage('A chave Pix da loja nao esta configurada.');
       setCheckoutError(true);
       return;
@@ -798,27 +1428,49 @@ export default function PublicStorefront({
         throw new Error(payload?.message || 'Nao foi possivel finalizar o pedido agora.');
       }
       const payload = (await response.json().catch(() => null)) as CheckoutResponse | null;
+      const orderId = payload?.data?.id || '';
       const responsePaymentReference = payload?.data?.payment?.reference || '';
       const checkoutUrl =
         payload?.data?.payment?.checkoutUrl ||
         (/^https?:\/\//i.test(responsePaymentReference) ? responsePaymentReference : '');
       const method = payload?.data?.payment?.method || selectedPaymentMethod;
       const paymentProvider = payload?.data?.payment?.provider || '';
+      const paymentToken = payload?.data?.payment?.token || '';
+      const mercadoPagoPaymentId = payload?.data?.payment?.mercadoPagoPaymentId || '';
+      const pixQrCodeBase64 = payload?.data?.payment?.pixQrCodeBase64 || '';
+      const paymentStatus = normalizeCheckoutPaymentStatus(payload?.data?.payment?.status || payload?.data?.payment_status);
+      const paymentExpiresAt = payload?.data?.payment?.expiresAt || payload?.data?.payment_expires_at || '';
 
-      // When Mercado Pago returns a checkout URL, continue directly to payment.
-      if (paymentProvider === 'mercado_pago' && checkoutUrl) {
+      if (orderId && paymentToken) {
+        savePendingPaymentSnapshot({
+          version: PENDING_PAYMENT_VERSION,
+          orderId,
+          method,
+          token: paymentToken,
+          provider: paymentProvider,
+          checkoutUrl,
+          reference: responsePaymentReference,
+          status: paymentStatus,
+          expiresAt: paymentExpiresAt || '',
+          mercadoPagoPaymentId: mercadoPagoPaymentId || undefined,
+          pixQrCodeBase64: pixQrCodeBase64 || undefined,
+          customerName: trimmedName,
+          customerPhone: trimmedPhone,
+          installments: method === 'credit_card' ? creditCardInstallments : 1
+        });
+      }
+
+      // Credit card remains redirect-based. Pix is rendered in-page with QR/copie-cola.
+      if (method === 'credit_card' && checkoutUrl) {
         setCheckoutMessage('Redirecionando para o pagamento...');
         setCheckoutError(false);
         window.location.assign(checkoutUrl);
         return;
       }
 
-      setCartItems([]);
       setCartOpen(false);
       setSelectedProductId(null);
       setProductQuantity(1);
-      setCustomerName('');
-      setCustomerPhone('');
       setView('success');
       syncProductQueryParam(null);
       setCheckoutMessage('');
@@ -828,6 +1480,24 @@ export default function PublicStorefront({
       setSuccessPaymentUrl(checkoutUrl);
       setSuccessPaymentMethod(method);
       setSuccessPaymentProvider(paymentProvider);
+      setSuccessPaymentReference(responsePaymentReference);
+      setSuccessMercadoPagoPaymentId(mercadoPagoPaymentId);
+      setSuccessPixQrCodeBase64(pixQrCodeBase64);
+      setSuccessOrderId(orderId);
+      setSuccessPaymentToken(paymentToken);
+      setSuccessPaymentStatus(paymentStatus);
+      setSuccessPixExpiresAt(paymentExpiresAt || '');
+      if (method === 'pix') {
+        setSuccessMessage(
+          paymentProvider === 'mercado_pago'
+            ? 'Pix gerado no Mercado Pago. Escaneie o QR Code ou copie o codigo Pix.'
+            : 'Pagamento Pix pendente. Pague e toque em "Ja paguei" para confirmar.'
+        );
+      } else if (paymentProvider === 'mercado_pago') {
+        setSuccessMessage('Aguardando confirmacao do pagamento no cartao.');
+      } else {
+        setSuccessMessage('Pedido criado. Conclua o pagamento no link para finalizar.');
+      }
     } catch (error) {
       setCheckoutMessage(error instanceof Error ? error.message : 'Nao foi possivel finalizar o pedido agora.');
       setCheckoutError(true);
@@ -837,8 +1507,17 @@ export default function PublicStorefront({
   };
 
   const whatsappPhone = toWhatsappPhone(settings.whatsapp || '');
-  const isPixAvailable = Boolean(pixKey);
+  const isPixAvailable = mercadoPagoEnabled || Boolean(pixKey);
   const isCreditCardAvailable = mercadoPagoEnabled || Boolean(creditCardLink);
+  const successPixQrCodeUrl = useMemo(
+    () =>
+      successPaymentMethod === 'pix' && successPaymentStatus === 'pending' && successPaymentReference
+        ? successPixQrCodeBase64
+          ? `data:image/png;base64,${successPixQrCodeBase64}`
+          : `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(successPaymentReference)}`
+        : '',
+    [successPaymentMethod, successPaymentStatus, successPaymentReference, successPixQrCodeBase64]
+  );
 
   return (
     <main
@@ -1018,6 +1697,9 @@ export default function PublicStorefront({
                         <small>
                           {product.brand} • Cód: {product.code}
                         </small>
+                        {typeof product.originalPrice === 'number' && product.originalPrice > product.price ? (
+                          <span className="public-stock-product-old-price">{formatPrice(product.originalPrice)}</span>
+                        ) : null}
                         <strong>{formatPrice(product.price)}</strong>
                       </div>
 
@@ -1073,6 +1755,10 @@ export default function PublicStorefront({
                 <span className="public-stock-detail-code">Cód: {selectedProduct.code}</span>
                 {selectedProductDescription ? (
                   <p className="public-stock-detail-description">{selectedProductDescription}</p>
+                ) : null}
+                {typeof selectedProduct.originalPrice === 'number' &&
+                selectedProduct.originalPrice > selectedProduct.price ? (
+                  <span className="public-stock-detail-old-price">{formatPrice(selectedProduct.originalPrice)}</span>
                 ) : null}
                 <strong>{formatPrice(selectedProduct.price)}</strong>
 
@@ -1183,6 +1869,7 @@ export default function PublicStorefront({
                 Seu nome
                 <input
                   value={customerName}
+                  disabled={hasActivePendingOrder}
                   onChange={(event) => {
                     setCustomerName(event.target.value);
                     setCheckoutMessage('');
@@ -1195,6 +1882,7 @@ export default function PublicStorefront({
                 Seu telefone
                 <input
                   value={customerPhone}
+                  disabled={hasActivePendingOrder}
                   onChange={(event) => {
                     setCustomerPhone(event.target.value);
                     setCheckoutMessage('');
@@ -1226,7 +1914,7 @@ export default function PublicStorefront({
                           name="checkout-payment-method"
                           value="pix"
                           checked={selectedPaymentMethod === 'pix'}
-                          disabled={!isPixAvailable}
+                          disabled={!isPixAvailable || hasActivePendingOrder}
                           onChange={() => {
                             setSelectedPaymentMethod('pix');
                             setCheckoutMessage('');
@@ -1240,29 +1928,11 @@ export default function PublicStorefront({
 
                       {selectedPaymentMethod === 'pix' && isPixAvailable ? (
                         <div className="public-stock-payment-reference">
-                          <span>Chave Pix: {pixKey}</span>
-                          {pixQrCodeUrl ? (
-                            <div className="public-stock-pix-qr">
-                              <img src={pixQrCodeUrl} alt="QR Code Pix" />
-                            </div>
-                          ) : null}
-                          <span>Pix copia e cola:</span>
-                          <code className="public-stock-pix-code">{pixCopyPasteCode || pixKey}</code>
-                          <button
-                            type="button"
-                            className="public-stock-payment-copy"
-                            onClick={() =>
-                              void copyText(pixCopyPasteCode || pixKey).then((copied) => {
-                                setPaymentHelperMessage(
-                                  copied ? 'Codigo Pix copiado.' : 'Nao foi possivel copiar o codigo Pix.'
-                                );
-                                setPaymentHelperError(!copied);
-                              })
-                            }
-                          >
-                            <IconCopy />
-                            Copiar codigo Pix
-                          </button>
+                          <span>
+                            {mercadoPagoEnabled
+                              ? 'Ao finalizar, vamos gerar o QR Code Pix e o copia e cola aqui mesmo.'
+                              : `Chave Pix: ${pixKey}`}
+                          </span>
                         </div>
                       ) : null}
                     </section>
@@ -1283,7 +1953,7 @@ export default function PublicStorefront({
                           name="checkout-payment-method"
                           value="credit_card"
                           checked={selectedPaymentMethod === 'credit_card'}
-                          disabled={!isCreditCardAvailable}
+                          disabled={!isCreditCardAvailable || hasActivePendingOrder}
                           onChange={() => {
                             setSelectedPaymentMethod('credit_card');
                             setCheckoutMessage('');
@@ -1303,6 +1973,7 @@ export default function PublicStorefront({
                             <span>Parcelamento</span>
                             <select
                               value={creditCardInstallments}
+                              disabled={hasActivePendingOrder}
                               onChange={(event) => setCreditCardInstallments(Math.max(1, Number(event.target.value) || 1))}
                             >
                               {installmentOptions.map((installment) => (
@@ -1338,6 +2009,25 @@ export default function PublicStorefront({
                   {checkoutMessage}
                 </p>
               ) : null}
+              {hasActivePendingOrder ? (
+                <p className="public-stock-checkout-feedback">
+                  Pedido pendente encontrado. Os dados do cliente e pagamento foram mantidos ate confirmar o pagamento ou remover os itens do carrinho.
+                </p>
+              ) : null}
+              {hasActivePendingOrder ? (
+                <div className="public-stock-success-actions">
+                  <button type="button" className="public-stock-success-pay" onClick={continuePendingPayment}>
+                    {pendingPaymentSnapshot?.method === 'credit_card' ? 'Ir para pagamento' : 'Ver etapa de pagamento'}
+                  </button>
+                  <button
+                    type="button"
+                    className="public-stock-success-pay"
+                    onClick={() => void changePendingPaymentMethod()}
+                  >
+                    Trocar forma de pagamento
+                  </button>
+                </div>
+              ) : null}
 
               <button
                 type="button"
@@ -1345,13 +2035,18 @@ export default function PublicStorefront({
                 onClick={handleFinalizeOrder}
                 disabled={
                   submittingCheckout ||
-                  cartDisplayItems.length === 0 ||
-                  cartDisplayItems.some((item) => item.available <= 0 || item.quantity > item.available) ||
-                  availablePaymentMethods.length === 0 ||
-                  !selectedPaymentMethod
+                  (!hasActivePendingOrder &&
+                    (cartDisplayItems.length === 0 ||
+                      cartDisplayItems.some((item) => item.available <= 0 || item.quantity > item.available) ||
+                      availablePaymentMethods.length === 0 ||
+                      !selectedPaymentMethod))
                 }
               >
-                {submittingCheckout ? 'Finalizando...' : 'Finalizar pedido'}
+                {submittingCheckout
+                  ? 'Finalizando...'
+                  : hasActivePendingOrder
+                    ? 'Continuar pedido pendente'
+                    : 'Finalizar pedido'}
               </button>
             </aside>
           </div>
@@ -1361,30 +2056,89 @@ export default function PublicStorefront({
       {view === 'success' ? (
         <section className="public-stock-success-page">
           <div className="public-stock-success-icon">✓</div>
-          <h1>Compra realizada com sucesso!</h1>
+          <h1>{successPaymentStatus === 'paid' ? 'Pagamento feito' : 'Pedido criado'}</h1>
           <p>
-            {successPaymentProvider === 'mercado_pago'
-              ? 'Pedido registrado. Agora finalize o pagamento com seguranca pelo Mercado Pago.'
-              : 'Obrigado por comprar em meu site! Em breve entrarei em contato com voce para finalizar a compra.'}
+            {successMessage ||
+              (successPaymentStatus === 'paid'
+                ? 'Seu pagamento foi confirmado e a venda foi finalizada.'
+                : 'Aguardando confirmacao do pagamento.')}
           </p>
+          {successOrderId ? <p className="public-stock-success-order">Pedido: #{successOrderId.slice(0, 8).toUpperCase()}</p> : null}
+          {successPaymentMethod === 'pix' && successPaymentStatus === 'pending' ? (
+            <p className="public-stock-success-timer">Tempo restante do Pix: {toCountdownText(successPixSecondsLeft)}</p>
+          ) : null}
+          {successPaymentMethod === 'pix' &&
+          successPaymentStatus === 'pending' &&
+          successPaymentReference ? (
+            <div className="public-stock-success-pix">
+              {successPixQrCodeUrl ? (
+                <div className="public-stock-pix-qr">
+                  <img src={successPixQrCodeUrl} alt="QR Code Pix" />
+                </div>
+              ) : null}
+              <code>{successPaymentReference}</code>
+              <button
+                type="button"
+                className="public-stock-success-pay"
+                onClick={() =>
+                  void copyText(successPaymentReference).then((copied) => {
+                    setSuccessMessage(copied ? 'Codigo Pix copiado.' : 'Nao foi possivel copiar o codigo Pix.');
+                  })
+                }
+              >
+                <IconCopy />
+                Copiar Pix
+              </button>
+            </div>
+          ) : null}
           <div className="public-stock-success-actions">
-            {successPaymentUrl ? (
-              <a href={successPaymentUrl} target="_blank" rel="noreferrer" className="public-stock-success-pay">
-                {successPaymentMethod === 'pix' ? 'Pagar com Pix' : 'Pagar com cartao'}
-              </a>
+            {successPaymentStatus !== 'paid' ? (
+              <button
+                type="button"
+                className="public-stock-success-pay"
+                onClick={continuePendingPayment}
+              >
+                {successPaymentMethod === 'credit_card' ? 'Ir para pagamento' : 'Ver etapa de pagamento'}
+              </button>
             ) : null}
-            <button
-              type="button"
-              onClick={() => {
-                backToCatalog();
-                setSearch('');
-                setSuccessPaymentUrl('');
-                setSuccessPaymentMethod('');
-                setSuccessPaymentProvider('');
-              }}
-            >
-              Voltar para a loja
-            </button>
+            {successOrderId && successPaymentToken && successPaymentStatus !== 'paid' && successPaymentMethod ? (
+              <button
+                type="button"
+                className="public-stock-success-pay"
+                onClick={() =>
+                  void confirmOrderPayment({
+                    orderId: successOrderId,
+                    method: successPaymentMethod,
+                    token: successPaymentToken,
+                    mercadoPagoPaymentId: successMercadoPagoPaymentId || undefined
+                  })
+                }
+                disabled={confirmingPayment || (successPaymentMethod === 'pix' && successPaymentStatus === 'expired')}
+              >
+                {confirmingPayment ? 'Confirmando...' : 'Confirmar pagamento'}
+              </button>
+            ) : null}
+            {successPaymentStatus !== 'paid' && successPaymentMethod ? (
+              <button
+                type="button"
+                className="public-stock-success-pay"
+                onClick={() => void changePendingPaymentMethod()}
+              >
+                Trocar forma de pagamento
+              </button>
+            ) : null}
+            {successPaymentStatus === 'paid' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  backToCatalog();
+                  setSearch('');
+                  resetSuccessState();
+                }}
+              >
+                Voltar para a loja
+              </button>
+            ) : null}
           </div>
         </section>
       ) : null}
@@ -1478,15 +2232,18 @@ export default function PublicStorefront({
               </button>
             </footer>
 
-            {toastMessage ? (
-              <div className="public-stock-cart-toast">
-                <span>{toastMessage}</span>
-                <button type="button" onClick={() => setToastMessage('')}>
-                  x
-                </button>
-              </div>
-            ) : null}
           </aside>
+        </div>
+      ) : null}
+
+      {toastMessage ? (
+        <div className="public-stock-toast-center" role="status" aria-live="polite">
+          <div className="public-stock-toast-card">
+            <span>{toastMessage}</span>
+            <button type="button" aria-label="Fechar aviso" onClick={() => setToastMessage('')}>
+              x
+            </button>
+          </div>
         </div>
       ) : null}
     </main>

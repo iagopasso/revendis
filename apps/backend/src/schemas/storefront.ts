@@ -29,7 +29,6 @@ export const storefrontOrderSchema = z
         installments: z.number().int().min(1).max(12).optional()
       })
       .strict()
-      .optional()
   })
   .strict();
 
@@ -54,6 +53,30 @@ export const storefrontOrderAcceptSchema = z.preprocess(
             .strict()
         )
         .optional()
+    })
+    .strict()
+);
+
+export const storefrontOrderPaymentConfirmSchema = z.preprocess(
+  (value) => (value && typeof value === 'object' ? value : {}),
+  z
+    .object({
+      subdomain: z.string().trim().min(1).optional(),
+      method: z.enum(['pix', 'credit_card']),
+      token: z.string().trim().min(12).max(160),
+      mercadoPagoPaymentId: z.string().trim().max(120).optional(),
+      mercadoPagoStatus: z.string().trim().max(80).optional(),
+      returnStatus: z.string().trim().max(80).optional()
+    })
+    .strict()
+);
+
+export const storefrontOrderCancelByTokenSchema = z.preprocess(
+  (value) => (value && typeof value === 'object' ? value : {}),
+  z
+    .object({
+      subdomain: z.string().trim().min(1),
+      token: z.string().trim().min(12).max(160)
     })
     .strict()
 );

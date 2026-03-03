@@ -341,6 +341,39 @@ export const IconWhatsapp = ({ className }: IconProps) => (
   </IconBase>
 );
 
+export const IconBrandFacebook = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path
+      d="M14.3 8.2h2V5h-2.4C11.4 5 10 6.4 10 8.9V11H8v3h2v5h3v-5h2.5l.5-3H13V9.2c0-.6.3-1 1.3-1z"
+      fill="currentColor"
+      stroke="none"
+    />
+  </IconBase>
+);
+
+export const IconBrandX = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <path d="M5 5l14 14" />
+    <path d="M19 5L5 19" />
+  </IconBase>
+);
+
+export const IconBrandLinkedin = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <rect x="4.5" y="9.5" width="3" height="10" rx="0.6" fill="currentColor" stroke="none" />
+    <rect x="9.5" y="9.5" width="3" height="10" rx="0.6" fill="currentColor" stroke="none" />
+    <path d="M12.5 11.3c.8-1.1 1.8-1.8 3.3-1.8 2.1 0 3.7 1.4 3.7 4.4v5.6h-3v-5.2c0-1.3-.5-2.1-1.8-2.1-1.3 0-2.2.9-2.2 2.4" />
+    <circle cx="6" cy="6.5" r="1.8" fill="currentColor" stroke="none" />
+  </IconBase>
+);
+
+export const IconMail = ({ className }: IconProps) => (
+  <IconBase className={className}>
+    <rect x="3" y="6" width="18" height="12" rx="2" />
+    <path d="M4 7l8 6 8-6" />
+  </IconBase>
+);
+
 export const IconBell = ({ className }: IconProps) => (
   <IconBase className={className}>
     <path d="M18 16V11a6 6 0 0 0-12 0v5l-2 2h16l-2-2z" />

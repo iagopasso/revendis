@@ -138,6 +138,7 @@ export default function LojaConfiguracoesPage() {
   const [shopName, setShopName] = useState(DEFAULT_STOREFRONT_SETTINGS.shopName);
   const [subdomain, setSubdomain] = useState(DEFAULT_STOREFRONT_SETTINGS.subdomain);
   const [shopColor, setShopColor] = useState(DEFAULT_STOREFRONT_SETTINGS.shopColor);
+  const [origin, setOrigin] = useState('');
   const [publicStorePrefix, setPublicStorePrefix] = useState('/loja/');
   const [onlyStockProducts, setOnlyStockProducts] = useState(DEFAULT_STOREFRONT_SETTINGS.onlyStockProducts);
   const [showOutOfStockProducts, setShowOutOfStockProducts] = useState(
@@ -148,15 +149,14 @@ export default function LojaConfiguracoesPage() {
   const [filterByPrice, setFilterByPrice] = useState(DEFAULT_STOREFRONT_SETTINGS.filterByPrice);
   const [whatsapp, setWhatsapp] = useState(DEFAULT_STOREFRONT_SETTINGS.whatsapp);
   const [showWhatsappButton, setShowWhatsappButton] = useState(DEFAULT_STOREFRONT_SETTINGS.showWhatsappButton);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>(DEFAULT_STOREFRONT_SETTINGS.selectedBrands);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(DEFAULT_STOREFRONT_SETTINGS.selectedCategories);
   const [creditCardLink, setCreditCardLink] = useState(DEFAULT_STOREFRONT_SETTINGS.creditCardLink);
   const [boletoLink, setBoletoLink] = useState(DEFAULT_STOREFRONT_SETTINGS.boletoLink);
-  const [mercadoPagoEnabled, setMercadoPagoEnabled] = useState(false);
   const [catalogProducts, setCatalogProducts] = useState<PreviewProduct[]>(previewFallbackProducts);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveMessage, setSaveMessage] = useState('');
   const previewSearch = '';
-  const previewSelectedBrands: string[] = [];
-  const previewSelectedCategories: string[] = [];
   const previewPriceFrom = '';
   const previewPriceTo = '';
 
@@ -171,11 +171,14 @@ export default function LojaConfiguracoesPage() {
     setFilterByPrice(settings.filterByPrice);
     setWhatsapp(settings.whatsapp);
     setShowWhatsappButton(settings.showWhatsappButton);
+    setSelectedBrands(settings.selectedBrands);
+    setSelectedCategories(settings.selectedCategories);
     setCreditCardLink(settings.creditCardLink);
     setBoletoLink(settings.boletoLink);
   };
 
   useEffect(() => {
+    setOrigin(window.location.origin);
     setPublicStorePrefix(`${window.location.origin.replace(/\/+$/, '')}/loja/`);
 
     const saved = loadStorefrontSettings();
@@ -201,7 +204,6 @@ export default function LojaConfiguracoesPage() {
             data?: Partial<ReturnType<typeof storefrontSettingsToPayload>>;
           };
           const merged = storefrontSettingsFromPayload(payload?.data);
-          setMercadoPagoEnabled(Boolean((payload?.data as { mercadoPagoEnabled?: unknown } | undefined)?.mercadoPagoEnabled));
           applySettings(merged);
           saveStorefrontSettings(merged);
           emitStorefrontSettingsUpdated(merged);
@@ -232,11 +234,11 @@ export default function LojaConfiguracoesPage() {
   }, [saveStatus]);
 
   const brandOptions = useMemo(
-    () => uniqueValues(catalogProducts.map((item) => item.brand).filter(Boolean)),
+    () => uniqueValues(catalogProducts.filter((item) => item.inStock).map((item) => item.brand).filter(Boolean)),
     [catalogProducts]
   );
   const categoryOptions = useMemo(
-    () => uniqueValues(catalogProducts.map((item) => item.category).filter(Boolean)),
+    () => uniqueValues(catalogProducts.filter((item) => item.inStock).map((item) => item.category).filter(Boolean)),
     [catalogProducts]
   );
 
@@ -254,9 +256,8 @@ export default function LojaConfiguracoesPage() {
       showWhatsappButton,
       creditCardLink,
       boletoLink,
-      // The right panel is preview-only; no preselected filters are configured here.
-      selectedBrands: [],
-      selectedCategories: [],
+      selectedBrands,
+      selectedCategories,
       priceFrom: '',
       priceTo: ''
     });
@@ -285,7 +286,6 @@ export default function LojaConfiguracoesPage() {
         data?: Partial<ReturnType<typeof storefrontSettingsToPayload>>;
       };
       const synced = storefrontSettingsFromPayload(payload?.data || settings);
-      setMercadoPagoEnabled(Boolean((payload?.data as { mercadoPagoEnabled?: unknown } | undefined)?.mercadoPagoEnabled));
       saveStorefrontSettings(synced);
       emitStorefrontSettingsUpdated(synced);
       applySettings(synced);
@@ -310,19 +310,67 @@ export default function LojaConfiguracoesPage() {
     }
   };
 
+  const toggleReleasedBrand = (brand: string) => {
+    const normalized = normalizeToken(brand);
+    setSelectedBrands((prev) => {
+      const exists = prev.some((item) => normalizeToken(item) === normalized);
+      if (exists) {
+        return prev.filter((item) => normalizeToken(item) !== normalized);
+      }
+      return [...prev, brand];
+    });
+  };
+
+  const toggleReleasedCategory = (category: string) => {
+    const normalized = normalizeToken(category);
+    setSelectedCategories((prev) => {
+      const exists = prev.some((item) => normalizeToken(item) === normalized);
+      if (exists) {
+        return prev.filter((item) => normalizeToken(item) !== normalized);
+      }
+      return [...prev, category];
+    });
+  };
+
+  useEffect(() => {
+    setSelectedBrands((prev) =>
+      prev.filter((item) => brandOptions.some((brand) => normalizeToken(brand) === normalizeToken(item)))
+    );
+  }, [brandOptions]);
+
+  useEffect(() => {
+    setSelectedCategories((prev) =>
+      prev.filter((item) => categoryOptions.some((category) => normalizeToken(category) === normalizeToken(item)))
+    );
+  }, [categoryOptions]);
+
   const filteredProducts = useMemo(() => {
     return catalogProducts.filter((item) => {
-      const matchesStockVisibility = (showOutOfStockProducts && !onlyStockProducts) || item.inStock;
-      return matchesStockVisibility;
+      const matchesStockVisibility = showOutOfStockProducts || item.inStock;
+      const matchesReleasedBrand =
+        selectedBrands.length === 0 || selectedBrands.some((brand) => normalizeToken(brand) === normalizeToken(item.brand));
+      const matchesBrandStockRule = selectedBrands.length === 0 || item.inStock;
+      const matchesReleasedCategory =
+        selectedCategories.length === 0 ||
+        selectedCategories.some((category) => normalizeToken(category) === normalizeToken(item.category));
+      const matchesCategoryStockRule = selectedCategories.length === 0 || item.inStock;
+      return (
+        matchesStockVisibility &&
+        matchesReleasedBrand &&
+        matchesBrandStockRule &&
+        matchesReleasedCategory &&
+        matchesCategoryStockRule
+      );
     });
-  }, [catalogProducts, onlyStockProducts, showOutOfStockProducts]);
+  }, [catalogProducts, selectedBrands, selectedCategories, showOutOfStockProducts]);
 
   const whatsappPhone = toWhatsappPhone(whatsapp);
 
-  const publicStoreUrl = buildPublicStoreUrl(subdomain, typeof window !== 'undefined' ? window.location.origin : '');
+  const publicStoreUrl = buildPublicStoreUrl(subdomain, origin);
+  const accentStyle = { ['--store-accent' as string]: shopColor };
 
   return (
-    <main className="store-config-page" style={{ ['--store-accent' as string]: shopColor }}>
+    <main className="store-config-page">
       <header className="store-config-header">
         <div className="store-config-header-left">
           <Link href="/" className="store-config-back" aria-label="Voltar para loja online">
@@ -351,145 +399,179 @@ export default function LojaConfiguracoesPage() {
 
       <div className="store-public-link-row">
         <span>Link da loja virtual:</span>
-        <a href={publicStoreUrl} target="_blank" rel="noreferrer">
+        <a href={publicStoreUrl} target="_blank" rel="noreferrer" style={{ color: '#ffffff' }}>
           {publicStoreUrl}
         </a>
       </div>
 
       <section className="store-config-shell">
         <aside className="store-config-sidebar">
-          <label className="store-config-field">
-            Nome da loja
-            <input value={shopName} onChange={(event) => setShopName(event.target.value)} />
-          </label>
+          <div className="store-config-sidebar-scroll">
+            <label className="store-config-field">
+              Nome da loja
+              <input value={shopName} onChange={(event) => setShopName(event.target.value)} />
+            </label>
 
-          <div className="store-config-block">
-            <strong>Cor da loja</strong>
-            <div className="store-color-grid">
-              {colors.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  className={shopColor === color ? 'active' : ''}
-                  style={{ backgroundColor: color }}
-                  aria-label={`Selecionar cor ${color}`}
-                  onClick={() => setShopColor(color)}
-                />
-              ))}
+            <div className="store-config-block">
+              <strong>Cor da loja</strong>
+              <div className="store-color-grid">
+                {colors.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={shopColor === color ? 'active' : ''}
+                    style={{ backgroundColor: color }}
+                    aria-label={`Selecionar cor ${color}`}
+                    onClick={() => setShopColor(color)}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="store-config-block">
-            <strong>Produtos</strong>
-            <label className="store-toggle-row">
-              <span>Somente permitir pedidos de produtos em estoque</span>
-              <button
-                type="button"
-                className={onlyStockProducts ? 'store-switch on' : 'store-switch'}
-                role="switch"
-                aria-checked={onlyStockProducts}
-                aria-label="Somente permitir pedidos de produtos em estoque"
-                onClick={() => setOnlyStockProducts((prev) => !prev)}
-              >
-                <span />
-              </button>
-            </label>
-            <label className="store-toggle-row">
-              <span>Mostrar produtos sem estoque</span>
-              <button
-                type="button"
-                className={showOutOfStockProducts ? 'store-switch on' : 'store-switch'}
-                role="switch"
-                aria-checked={showOutOfStockProducts}
-                aria-label="Mostrar produtos sem estoque"
-                onClick={() => setShowOutOfStockProducts((prev) => !prev)}
-              >
-                <span />
-              </button>
-            </label>
-          </div>
+            <div className="store-config-block">
+              <strong>Produtos</strong>
+              <label className="store-toggle-row">
+                <span>Somente permitir pedidos de produtos em estoque</span>
+                <button
+                  type="button"
+                  className={onlyStockProducts ? 'store-switch on' : 'store-switch'}
+                  role="switch"
+                  aria-checked={onlyStockProducts}
+                  aria-label="Somente permitir pedidos de produtos em estoque"
+                  onClick={() => setOnlyStockProducts((prev) => !prev)}
+                >
+                  <span />
+                </button>
+              </label>
+              <label className="store-toggle-row">
+                <span>Mostrar produtos sem estoque</span>
+                <button
+                  type="button"
+                  className={showOutOfStockProducts ? 'store-switch on' : 'store-switch'}
+                  role="switch"
+                  aria-checked={showOutOfStockProducts}
+                  aria-label="Mostrar produtos sem estoque"
+                  onClick={() => setShowOutOfStockProducts((prev) => !prev)}
+                >
+                  <span />
+                </button>
+              </label>
+            </div>
 
-          <div className="store-config-block">
-            <strong>Filtros</strong>
-            <label className="store-toggle-row">
-              <span>Possibilitar filtrar por categoria</span>
-              <button
-                type="button"
-                className={filterByCategory ? 'store-switch on' : 'store-switch'}
-                role="switch"
-                aria-checked={filterByCategory}
-                aria-label="Possibilitar filtrar por categoria"
-                onClick={() => setFilterByCategory((prev) => !prev)}
-              >
-                <span />
-              </button>
-            </label>
-            <label className="store-toggle-row">
-              <span>Possibilitar filtrar por marca</span>
-              <button
-                type="button"
-                className={filterByBrand ? 'store-switch on' : 'store-switch'}
-                role="switch"
-                aria-checked={filterByBrand}
-                aria-label="Possibilitar filtrar por marca"
-                onClick={() => setFilterByBrand((prev) => !prev)}
-              >
-                <span />
-              </button>
-            </label>
-            <label className="store-toggle-row">
-              <span>Possibilitar filtrar por preço</span>
-              <button
-                type="button"
-                className={filterByPrice ? 'store-switch on' : 'store-switch'}
-                role="switch"
-                aria-checked={filterByPrice}
-                aria-label="Possibilitar filtrar por preço"
-                onClick={() => setFilterByPrice((prev) => !prev)}
-              >
-                <span />
-              </button>
-            </label>
-          </div>
+            <div className="store-config-block">
+              <strong>Liberar produtos por marca</strong>
+              <span className="store-config-hint">
+                Selecione as marcas permitidas na loja. Sem seleção: libera todas as marcas.
+              </span>
+              {brandOptions.length === 0 ? (
+                <span className="store-brand-release-empty">Nenhuma marca encontrada no catálogo.</span>
+              ) : (
+                <div className="store-brand-release-list">
+                  {brandOptions.map((brand) => (
+                    <label key={brand} className="store-brand-release-item">
+                      <input
+                        type="checkbox"
+                        checked={includesToken(selectedBrands, brand)}
+                        onChange={() => toggleReleasedBrand(brand)}
+                      />
+                      <span>{brand}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
 
-          <div className="store-config-block">
-            <strong>Whatsapp da loja</strong>
-            <input
-              value={whatsapp}
-              onChange={(event) => setWhatsapp(event.target.value)}
-              placeholder="(00) 00000-0000"
-            />
-            <label className="store-toggle-row">
-              <span>Mostrar botão de WhatsApp</span>
-              <button
-                type="button"
-                className={showWhatsappButton ? 'store-switch on' : 'store-switch'}
-                role="switch"
-                aria-checked={showWhatsappButton}
-                aria-label="Mostrar botão de WhatsApp"
-              onClick={() => setShowWhatsappButton((prev) => !prev)}
-              >
-                <span />
-              </button>
-            </label>
-          </div>
+            <div className="store-config-block">
+              <strong>Liberar produtos por categoria</strong>
+              <span className="store-config-hint">
+                Selecione as categorias permitidas na loja. Sem seleção: libera todas as categorias.
+              </span>
+              {categoryOptions.length === 0 ? (
+                <span className="store-brand-release-empty">Nenhuma categoria encontrada no catálogo.</span>
+              ) : (
+                <div className="store-brand-release-list">
+                  {categoryOptions.map((category) => (
+                    <label key={category} className="store-brand-release-item">
+                      <input
+                        type="checkbox"
+                        checked={includesToken(selectedCategories, category)}
+                        onChange={() => toggleReleasedCategory(category)}
+                      />
+                      <span>{category}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
 
-          <div className="store-config-block">
-            <strong>Pagamento por cartão</strong>
-            <span className="store-config-hint">
-              {mercadoPagoEnabled
-                ? 'Mercado Pago ativo para cartao. Pix usa a chave configurada na conta.'
-                : 'A chave Pix e carregada automaticamente das configuracoes gerais.'}
-            </span>
-            <input
-              value={creditCardLink}
-              onChange={(event) => setCreditCardLink(event.target.value)}
-              placeholder="https://seu-link-de-pagamento"
-            />
+            <div className="store-config-block">
+              <strong>Filtros</strong>
+              <label className="store-toggle-row">
+                <span>Possibilitar filtrar por categoria</span>
+                <button
+                  type="button"
+                  className={filterByCategory ? 'store-switch on' : 'store-switch'}
+                  role="switch"
+                  aria-checked={filterByCategory}
+                  aria-label="Possibilitar filtrar por categoria"
+                  onClick={() => setFilterByCategory((prev) => !prev)}
+                >
+                  <span />
+                </button>
+              </label>
+              <label className="store-toggle-row">
+                <span>Possibilitar filtrar por marca</span>
+                <button
+                  type="button"
+                  className={filterByBrand ? 'store-switch on' : 'store-switch'}
+                  role="switch"
+                  aria-checked={filterByBrand}
+                  aria-label="Possibilitar filtrar por marca"
+                  onClick={() => setFilterByBrand((prev) => !prev)}
+                >
+                  <span />
+                </button>
+              </label>
+              <label className="store-toggle-row">
+                <span>Possibilitar filtrar por preço</span>
+                <button
+                  type="button"
+                  className={filterByPrice ? 'store-switch on' : 'store-switch'}
+                  role="switch"
+                  aria-checked={filterByPrice}
+                  aria-label="Possibilitar filtrar por preço"
+                  onClick={() => setFilterByPrice((prev) => !prev)}
+                >
+                  <span />
+                </button>
+              </label>
+            </div>
+
+            <div className="store-config-block">
+              <strong>Whatsapp da loja</strong>
+              <input
+                value={whatsapp}
+                onChange={(event) => setWhatsapp(event.target.value)}
+                placeholder="(00) 00000-0000"
+              />
+              <label className="store-toggle-row">
+                <span>Mostrar botão de WhatsApp</span>
+                <button
+                  type="button"
+                  className={showWhatsappButton ? 'store-switch on' : 'store-switch'}
+                  role="switch"
+                  aria-checked={showWhatsappButton}
+                  aria-label="Mostrar botão de WhatsApp"
+                onClick={() => setShowWhatsappButton((prev) => !prev)}
+                >
+                  <span />
+                </button>
+              </label>
+            </div>
           </div>
         </aside>
 
-        <section className="store-config-preview">
+        <section className="store-config-preview" style={accentStyle}>
           <div className="store-preview-top">
             <strong>{shopName || 'Loja'}</strong>
             <label className="store-preview-search readonly">
@@ -515,7 +597,7 @@ export default function LojaConfiguracoesPage() {
                   ) : (
                     brandOptions.map((brand) => (
                       <label key={brand} className="store-check">
-                        <input type="checkbox" checked={includesToken(previewSelectedBrands, brand)} readOnly />
+                        <input type="checkbox" checked={includesToken(selectedBrands, brand)} readOnly />
                         <span>{brand}</span>
                       </label>
                     ))
@@ -531,7 +613,7 @@ export default function LojaConfiguracoesPage() {
                   ) : (
                     categoryOptions.map((category) => (
                       <label key={category} className="store-check">
-                        <input type="checkbox" checked={includesToken(previewSelectedCategories, category)} readOnly />
+                        <input type="checkbox" checked={includesToken(selectedCategories, category)} readOnly />
                         <span>{category}</span>
                       </label>
                     ))

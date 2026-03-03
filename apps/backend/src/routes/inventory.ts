@@ -383,6 +383,9 @@ router.delete(
       if (unit.status === 'inactive') {
         return { status: 'inactive' as const };
       }
+      if (unit.status === 'reserved') {
+        return { status: 'reserved' as const };
+      }
 
       await client.query(
         `UPDATE inventory_units
@@ -405,6 +408,9 @@ router.delete(
     }
     if (result.status === 'sold') {
       return res.status(409).json({ code: 'unit_sold', message: 'Unidade ja vendida.' });
+    }
+    if (result.status === 'reserved') {
+      return res.status(409).json({ code: 'unit_reserved', message: 'Unidade reservada para um pedido.' });
     }
 
     return res.status(204).send();

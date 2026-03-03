@@ -1,6 +1,11 @@
 import StorefrontShell from '../storefront-shell';
 import { fetchItem, fetchList } from '../lib';
-import { storefrontSettingsFromPayload, type StorefrontSettingsPayload } from '../../lib/storefront-settings';
+import {
+  storefrontRuntimeStateFromPayload,
+  storefrontSettingsFromPayload,
+  type StorefrontRuntimeState,
+  type StorefrontSettingsPayload
+} from '../../lib/storefront-settings';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -20,7 +25,9 @@ type StoreCatalogProduct = {
 export default async function LojaPage() {
   const [catalogResponse, settingsResponse] = await Promise.all([
     fetchList<StoreCatalogProduct>('/storefront/catalog'),
-    fetchItem<Partial<StorefrontSettingsPayload>>('/settings/storefront')
+    fetchItem<Partial<StorefrontSettingsPayload> & { runtimeState?: Partial<StorefrontRuntimeState> }>(
+      '/settings/storefront'
+    )
   ]);
 
   const catalog = (catalogResponse?.data || []).filter(
@@ -28,12 +35,14 @@ export default async function LojaPage() {
   );
 
   const initialSettings = storefrontSettingsFromPayload(settingsResponse?.data);
+  const initialRuntimeState = storefrontRuntimeStateFromPayload(settingsResponse?.data?.runtimeState || null);
 
   return (
     <StorefrontShell
       initialCatalog={catalog}
       initialStoreName={initialSettings.shopName}
       initialStoreSettings={initialSettings}
+      initialRuntimeState={initialRuntimeState}
     />
   );
 }

@@ -226,42 +226,81 @@ const normalizeRuntimePromotion = (item: unknown): StorefrontRuntimePromotion | 
   };
 };
 
+export const normalizeStorefrontRuntimeState = (
+  payload?: Partial<StorefrontRuntimeState> | null
+): StorefrontRuntimeState => {
+  const parsed = payload || {};
+  const hiddenProductIds = Array.isArray(parsed.hiddenProductIds)
+    ? parsed.hiddenProductIds
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+  const productDescriptions =
+    parsed.productDescriptions && typeof parsed.productDescriptions === 'object'
+      ? Object.fromEntries(
+          Object.entries(parsed.productDescriptions)
+            .filter(
+              ([key, value]) =>
+                typeof key === 'string' && typeof value === 'string' && key.trim().length > 0
+            )
+            .map(([key, value]) => [key.trim(), value])
+        )
+      : {};
+  const storePriceOverrides =
+    parsed.storePriceOverrides && typeof parsed.storePriceOverrides === 'object'
+      ? Object.fromEntries(
+          Object.entries(parsed.storePriceOverrides)
+            .filter(
+              ([key, value]) =>
+                typeof key === 'string' && key.trim().length > 0 && Number.isFinite(Number(value))
+            )
+            .map(([key, value]) => [key.trim(), Math.max(0, Number(value) || 0)])
+        )
+      : {};
+
+  return {
+    activeProducts: Array.isArray(parsed.activeProducts)
+      ? parsed.activeProducts
+          .map(normalizeRuntimeProduct)
+          .filter((item): item is StorefrontRuntimeProduct => Boolean(item))
+      : [],
+    promotions: Array.isArray(parsed.promotions)
+      ? parsed.promotions
+          .map(normalizeRuntimePromotion)
+          .filter((item): item is StorefrontRuntimePromotion => Boolean(item))
+      : [],
+    hiddenProductIds,
+    productDescriptions,
+    storePriceOverrides
+  };
+};
+
+export const storefrontRuntimeStateFromPayload = (
+  payload?: Partial<StorefrontRuntimeState> | null
+): StorefrontRuntimeState => normalizeStorefrontRuntimeState(payload || null);
+
+export const storefrontRuntimeStateToPayload = (state: StorefrontRuntimeState): StorefrontRuntimeState =>
+  normalizeStorefrontRuntimeState(state);
+
+export const hasStorefrontRuntimeStateData = (state?: Partial<StorefrontRuntimeState> | null) => {
+  const normalized = normalizeStorefrontRuntimeState(state);
+  return Boolean(
+    normalized.activeProducts.length ||
+      normalized.promotions.length ||
+      normalized.hiddenProductIds.length ||
+      Object.keys(normalized.productDescriptions).length ||
+      Object.keys(normalized.storePriceOverrides).length
+  );
+};
+
 export const loadStorefrontRuntimeState = (): StorefrontRuntimeState | null => {
   if (!isClient()) return null;
   try {
     const raw = window.localStorage.getItem(STOREFRONT_RUNTIME_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StorefrontRuntimeState>;
-    const hiddenProductIds = Array.isArray(parsed.hiddenProductIds)
-      ? parsed.hiddenProductIds.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean)
-      : [];
-    const productDescriptions =
-      parsed.productDescriptions && typeof parsed.productDescriptions === 'object'
-        ? Object.fromEntries(
-            Object.entries(parsed.productDescriptions)
-              .filter(([key, value]) => typeof key === 'string' && typeof value === 'string' && key.trim().length > 0)
-              .map(([key, value]) => [key.trim(), value])
-          )
-        : {};
-    const storePriceOverrides =
-      parsed.storePriceOverrides && typeof parsed.storePriceOverrides === 'object'
-        ? Object.fromEntries(
-            Object.entries(parsed.storePriceOverrides)
-              .filter(([key, value]) => typeof key === 'string' && key.trim().length > 0 && Number.isFinite(Number(value)))
-              .map(([key, value]) => [key.trim(), Math.max(0, Number(value) || 0)])
-          )
-        : {};
-    return {
-      activeProducts: Array.isArray(parsed.activeProducts)
-        ? parsed.activeProducts.map(normalizeRuntimeProduct).filter((item): item is StorefrontRuntimeProduct => Boolean(item))
-        : [],
-      promotions: Array.isArray(parsed.promotions)
-        ? parsed.promotions.map(normalizeRuntimePromotion).filter((item): item is StorefrontRuntimePromotion => Boolean(item))
-        : [],
-      hiddenProductIds,
-      productDescriptions,
-      storePriceOverrides
-    };
+    return normalizeStorefrontRuntimeState(parsed);
   } catch {
     return null;
   }
@@ -269,14 +308,15 @@ export const loadStorefrontRuntimeState = (): StorefrontRuntimeState | null => {
 
 export const saveStorefrontRuntimeState = (state: StorefrontRuntimeState) => {
   if (!isClient()) return;
+  const normalized = normalizeStorefrontRuntimeState(state);
   window.localStorage.setItem(
     STOREFRONT_RUNTIME_STORAGE_KEY,
     JSON.stringify({
-      activeProducts: state.activeProducts,
-      promotions: state.promotions,
-      hiddenProductIds: state.hiddenProductIds,
-      productDescriptions: state.productDescriptions,
-      storePriceOverrides: state.storePriceOverrides
+      activeProducts: normalized.activeProducts,
+      promotions: normalized.promotions,
+      hiddenProductIds: normalized.hiddenProductIds,
+      productDescriptions: normalized.productDescriptions,
+      storePriceOverrides: normalized.storePriceOverrides
     })
   );
 };

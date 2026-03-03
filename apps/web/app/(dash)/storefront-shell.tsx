@@ -5,7 +5,11 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  IconBrandFacebook,
+  IconBrandLinkedin,
+  IconBrandX,
   IconBox,
+  IconMail,
   IconDots,
   IconCopy,
   IconPlus,
@@ -14,19 +18,24 @@ import {
   IconShare,
   IconTag,
   IconTagPercent,
-  IconTrash
+  IconTrash,
+  IconWhatsapp
 } from './icons';
 import { API_BASE, SALES_SYNC_STORAGE_KEY, buildMutationHeaders } from './lib';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from './sales-detail-modal';
 import {
   buildPublicStoreUrl,
   DEFAULT_STOREFRONT_SETTINGS,
+  hasStorefrontRuntimeStateData,
   STOREFRONT_SETTINGS_EVENT,
   loadStorefrontRuntimeState,
   loadStorefrontSettings,
+  normalizeStorefrontRuntimeState,
   normalizeStorefrontSettings,
   saveStorefrontSettings,
   saveStorefrontRuntimeState,
+  storefrontRuntimeStateToPayload,
+  type StorefrontRuntimeState,
   type StorefrontSettings
 } from '../lib/storefront-settings';
 
@@ -60,12 +69,15 @@ type StorefrontOrder = {
   customer_phone?: string;
   customer_email?: string;
   status: 'pending' | 'accepted' | 'cancelled';
+  payment_status?: 'pending' | 'paid' | 'failed' | 'expired';
   total: number;
   created_at: string;
   items_count: number;
   sale_id?: string | null;
   accepted_at?: string | null;
   cancelled_at?: string | null;
+  payment_method?: 'pix' | 'credit_card' | '';
+  payment_installments?: number | null;
   items: StorefrontOrderItem[];
 };
 
@@ -245,16 +257,47 @@ const formatOrderCode = (value: string) => {
   return `#${value.slice(0, 12)}`;
 };
 
-const orderStatusLabel = (status: StorefrontOrder['status']) => {
-  if (status === 'accepted') return 'Aceito';
-  if (status === 'cancelled') return 'Recusado';
+const normalizeOrderPaymentStatus = (value: unknown): NonNullable<StorefrontOrder['payment_status']> => {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (normalized === 'paid') return 'paid';
+  if (normalized === 'failed') return 'failed';
+  if (normalized === 'expired') return 'expired';
+  return 'pending';
+};
+
+const orderStatusLabel = (order: StorefrontOrder) => {
+  if (order.status === 'cancelled') return 'Recusado';
+  if (order.payment_status === 'paid') return 'Pago';
+  if (order.payment_status === 'failed') return 'Falhou';
+  if (order.payment_status === 'expired') return 'Pix expirado';
   return 'Pendente';
 };
 
-const orderStatusClass = (status: StorefrontOrder['status']) => {
-  if (status === 'accepted') return 'accepted';
-  if (status === 'cancelled') return 'cancelled';
+const orderStatusClass = (order: StorefrontOrder) => {
+  if (order.status === 'cancelled') return 'cancelled';
+  if (order.payment_status === 'paid') return 'accepted';
+  if (order.payment_status === 'failed' || order.payment_status === 'expired') return 'cancelled';
   return 'pending';
+};
+
+const normalizeOrderPaymentMethod = (value: unknown): StorefrontOrder['payment_method'] => {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (normalized === 'pix') return 'pix';
+  if (normalized === 'credit_card') return 'credit_card';
+  return '';
+};
+
+const orderPaymentMethodLabel = (method: StorefrontOrder['payment_method']) => {
+  if (method === 'pix') return 'Pix';
+  if (method === 'credit_card') return 'Cartao de credito';
+  return 'Nao informado';
+};
+
+const orderInstallmentsLabel = (order: StorefrontOrder) => {
+  if (order.payment_method === 'pix') return 'A vista';
+  if (order.payment_method !== 'credit_card') return 'A vista';
+  const installments = Math.max(1, Math.trunc(toNumber(order.payment_installments) || 1));
+  return installments > 1 ? `${installments}x` : 'A vista';
 };
 
 const normalizeOrderStatus = (value: unknown): StorefrontOrder['status'] => {
@@ -298,12 +341,15 @@ const normalizeOrder = (value: unknown): StorefrontOrder | null => {
     customer_phone: typeof record.customer_phone === 'string' ? record.customer_phone : '',
     customer_email: typeof record.customer_email === 'string' ? record.customer_email : '',
     status: normalizeOrderStatus(record.status),
+    payment_status: normalizeOrderPaymentStatus(record.payment_status),
     total: Math.max(0, toNumber(record.total)),
     created_at: typeof record.created_at === 'string' ? record.created_at : new Date().toISOString(),
     items_count: Math.max(0, Math.trunc(toNumber(record.items_count))),
     sale_id: typeof record.sale_id === 'string' ? record.sale_id : null,
     accepted_at: typeof record.accepted_at === 'string' ? record.accepted_at : null,
     cancelled_at: typeof record.cancelled_at === 'string' ? record.cancelled_at : null,
+    payment_method: normalizeOrderPaymentMethod(record.payment_method),
+    payment_installments: Math.max(1, Math.trunc(toNumber(record.payment_installments) || 1)),
     items
   };
 };
@@ -373,11 +419,13 @@ const SecondaryNavItem = ({
 export default function StorefrontShell({
   initialCatalog,
   initialStoreName,
-  initialStoreSettings
+  initialStoreSettings,
+  initialRuntimeState
 }: {
   initialCatalog: StoreProduct[];
   initialStoreName?: string;
   initialStoreSettings?: Partial<StorefrontSettings>;
+  initialRuntimeState?: StorefrontRuntimeState;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -435,6 +483,8 @@ export default function StorefrontShell({
   const [promotionsPage, setPromotionsPage] = useState(1);
   const pendingSectionRef = useRef<Section | null>(null);
   const runtimeHydratedRef = useRef(false);
+  const runtimeSyncTimerRef = useRef<number | null>(null);
+  const lastRuntimeSyncedPayloadRef = useRef('');
   const [publicStoreOrigin, setPublicStoreOrigin] = useState('');
   const [orders, setOrders] = useState<StorefrontOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -472,16 +522,21 @@ export default function StorefrontShell({
     setStoreSettings(mergedSettings);
     saveStorefrontSettings(mergedSettings);
 
+    const runtimeFromServer = normalizeStorefrontRuntimeState(initialRuntimeState || null);
     const savedRuntime = loadStorefrontRuntimeState();
-    if (savedRuntime) {
-      setActiveProducts(savedRuntime.activeProducts);
-      setPromotions(savedRuntime.promotions);
-      setHiddenProductIds(savedRuntime.hiddenProductIds || []);
-      setProductDescriptions(savedRuntime.productDescriptions || {});
-      setStorePriceOverrides(savedRuntime.storePriceOverrides || {});
+    const runtimeToApply =
+      hasStorefrontRuntimeStateData(runtimeFromServer) || !savedRuntime ? runtimeFromServer : savedRuntime;
+
+    if (runtimeToApply) {
+      setActiveProducts(runtimeToApply.activeProducts);
+      setPromotions(runtimeToApply.promotions);
+      setHiddenProductIds(runtimeToApply.hiddenProductIds || []);
+      setProductDescriptions(runtimeToApply.productDescriptions || {});
+      setStorePriceOverrides(runtimeToApply.storePriceOverrides || {});
+      lastRuntimeSyncedPayloadRef.current = JSON.stringify(storefrontRuntimeStateToPayload(runtimeToApply));
     }
     runtimeHydratedRef.current = true;
-  }, [initialStoreName, initialStoreSettings]);
+  }, [initialRuntimeState, initialStoreName, initialStoreSettings]);
 
   useEffect(() => {
     setCatalogProducts(initialCatalog.filter((item) => item.active !== false));
@@ -489,13 +544,48 @@ export default function StorefrontShell({
 
   useEffect(() => {
     if (!runtimeHydratedRef.current) return;
-    saveStorefrontRuntimeState({
+    const runtimeState = normalizeStorefrontRuntimeState({
       activeProducts,
       promotions,
       hiddenProductIds,
       productDescriptions,
       storePriceOverrides
     });
+    saveStorefrontRuntimeState(runtimeState);
+
+    const runtimePayload = storefrontRuntimeStateToPayload(runtimeState);
+    const serializedPayload = JSON.stringify(runtimePayload);
+    if (serializedPayload === lastRuntimeSyncedPayloadRef.current) return;
+
+    if (runtimeSyncTimerRef.current !== null) {
+      window.clearTimeout(runtimeSyncTimerRef.current);
+    }
+
+    runtimeSyncTimerRef.current = window.setTimeout(() => {
+      void fetch(`${API_BASE}/settings/storefront`, {
+        method: 'PATCH',
+        headers: buildMutationHeaders(),
+        body: JSON.stringify({ runtimeState: runtimePayload })
+      })
+        .then((response) => {
+          if (response.ok) {
+            lastRuntimeSyncedPayloadRef.current = serializedPayload;
+          }
+        })
+        .catch(() => {
+          // keep local runtime when sync is temporarily unavailable
+        })
+        .finally(() => {
+          runtimeSyncTimerRef.current = null;
+      });
+    }, 650);
+
+    return () => {
+      if (runtimeSyncTimerRef.current !== null) {
+        window.clearTimeout(runtimeSyncTimerRef.current);
+        runtimeSyncTimerRef.current = null;
+      }
+    };
   }, [activeProducts, promotions, hiddenProductIds, productDescriptions, storePriceOverrides]);
 
   useEffect(() => {
@@ -860,6 +950,16 @@ export default function StorefrontShell({
     promotionRows.length === 0 ? 0 : (promotionsPage - 1) * PRODUCTS_PAGE_SIZE + paginatedPromotionRows.length;
 
   const storeUrl = buildPublicStoreUrl(storeSettings.subdomain, publicStoreOrigin);
+  const resolveAbsoluteStoreUrl = () => {
+    if (/^https?:\/\//i.test(storeUrl)) return storeUrl;
+    if (typeof window === 'undefined') return storeUrl;
+    return new URL(storeUrl, window.location.origin).toString();
+  };
+  const openSharePopup = (url: string) => {
+    if (typeof window === 'undefined') return;
+    window.open(url, '_blank', 'noopener,noreferrer,width=720,height=760');
+    setShareOpen(false);
+  };
 
   const handleSectionChange = (next: Section) => {
     if (next === section) {
@@ -938,18 +1038,51 @@ export default function StorefrontShell({
   };
 
   const handleCopyStoreLink = async () => {
-    const copied = await copyText(storeUrl);
+    const resolvedStoreUrl = resolveAbsoluteStoreUrl();
+    const copied = await copyText(resolvedStoreUrl);
     if (copied) {
       setStoreLinkFeedback('Link copiado.');
       setStoreLinkFeedbackError(false);
+      setShareOpen(false);
       return;
     }
 
     setStoreLinkFeedback('Nao foi possivel copiar automaticamente.');
     setStoreLinkFeedbackError(true);
     if (typeof window !== 'undefined') {
-      window.prompt('Copie o link da loja:', storeUrl);
+      window.prompt('Copie o link da loja:', resolvedStoreUrl);
     }
+  };
+
+  const handleShareFacebook = () => {
+    const resolvedStoreUrl = resolveAbsoluteStoreUrl();
+    openSharePopup(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(resolvedStoreUrl)}`);
+  };
+
+  const handleShareWhatsapp = () => {
+    const resolvedStoreUrl = resolveAbsoluteStoreUrl();
+    const message = `Confira minha loja: ${resolvedStoreUrl}`;
+    openSharePopup(`https://wa.me/?text=${encodeURIComponent(message)}`);
+  };
+
+  const handleShareX = () => {
+    const resolvedStoreUrl = resolveAbsoluteStoreUrl();
+    const text = `Confira minha loja online`;
+    openSharePopup(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(resolvedStoreUrl)}`);
+  };
+
+  const handleShareLinkedin = () => {
+    const resolvedStoreUrl = resolveAbsoluteStoreUrl();
+    openSharePopup(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(resolvedStoreUrl)}`);
+  };
+
+  const handleShareEmail = () => {
+    const resolvedStoreUrl = resolveAbsoluteStoreUrl();
+    if (typeof window === 'undefined') return;
+    const subject = 'Confira minha loja';
+    const body = `Olá!\n\nDá uma olhada na minha loja:\n${resolvedStoreUrl}`;
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    setShareOpen(false);
   };
 
   const removePromotion = (promotionId: string) => {
@@ -1604,20 +1737,40 @@ export default function StorefrontShell({
                 <div className="store-share-popover">
                   <div className="store-share-title">Compartilhar minha loja</div>
                   <div className="store-share-icons">
-                    <button type="button" aria-label="Compartilhar no Facebook" className="fb">
-                      f
+                    <button
+                      type="button"
+                      aria-label="Compartilhar no Facebook"
+                      className="fb"
+                      onClick={handleShareFacebook}
+                    >
+                      <IconBrandFacebook />
                     </button>
-                    <button type="button" aria-label="Compartilhar no WhatsApp" className="wa">
-                      w
+                    <button
+                      type="button"
+                      aria-label="Compartilhar no WhatsApp"
+                      className="wa"
+                      onClick={handleShareWhatsapp}
+                    >
+                      <IconWhatsapp />
                     </button>
-                    <button type="button" aria-label="Compartilhar no X" className="x">
-                      x
+                    <button type="button" aria-label="Compartilhar no X" className="x" onClick={handleShareX}>
+                      <IconBrandX />
                     </button>
-                    <button type="button" aria-label="Compartilhar no LinkedIn" className="in">
-                      in
+                    <button
+                      type="button"
+                      aria-label="Compartilhar no LinkedIn"
+                      className="in"
+                      onClick={handleShareLinkedin}
+                    >
+                      <IconBrandLinkedin />
                     </button>
-                    <button type="button" aria-label="Compartilhar por e-mail" className="mail">
-                      @
+                    <button
+                      type="button"
+                      aria-label="Compartilhar por e-mail"
+                      className="mail"
+                      onClick={handleShareEmail}
+                    >
+                      <IconMail />
                     </button>
                   </div>
                 </div>
@@ -1723,8 +1876,8 @@ export default function StorefrontShell({
                       <span>{order.customer_name}</span>
                       <span>{order.items_count} produto(s)</span>
                       <span>{formatPrice(order.total)}</span>
-                      <span className={`store-order-status ${orderStatusClass(order.status)}`}>
-                        {orderStatusLabel(order.status)}
+                      <span className={`store-order-status ${orderStatusClass(order)}`}>
+                        {orderStatusLabel(order)}
                       </span>
                       <span>{formatDate(order.created_at)}</span>
                     </button>
@@ -2361,6 +2514,8 @@ export default function StorefrontShell({
                 <b>{selectedOrder.customer_name}</b>
                 {selectedOrder.customer_phone ? <span>{selectedOrder.customer_phone}</span> : null}
                 {selectedOrder.customer_email ? <span>{selectedOrder.customer_email}</span> : null}
+                <span>Pagamento: {orderPaymentMethodLabel(selectedOrder.payment_method)}</span>
+                <span>Parcelamento: {orderInstallmentsLabel(selectedOrder)}</span>
               </div>
             </div>
 
@@ -2396,8 +2551,8 @@ export default function StorefrontShell({
             </div>
 
             <footer className="store-order-modal-footer">
-              <span className={`store-order-status ${orderStatusClass(selectedOrder.status)}`}>
-                {orderStatusLabel(selectedOrder.status)}
+              <span className={`store-order-status ${orderStatusClass(selectedOrder)}`}>
+                {orderStatusLabel(selectedOrder)}
               </span>
               <div className="store-order-modal-actions">
                 {selectedOrder.status === 'pending' ? (
@@ -2405,18 +2560,10 @@ export default function StorefrontShell({
                     <button
                       type="button"
                       className="store-btn"
-                      onClick={() => setCancelConfirmOpen(true)}
+                      onClick={closeOrderModal}
                       disabled={orderActionLoading !== ''}
                     >
-                      Recusar
-                    </button>
-                    <button
-                      type="button"
-                      className="store-btn primary"
-                      onClick={openAcceptSaleModal}
-                      disabled={orderActionLoading !== ''}
-                    >
-                      {orderActionLoading === 'accept' ? 'Aceitando...' : 'Aceitar'}
+                      Fechar
                     </button>
                   </>
                 ) : selectedOrder.status === 'accepted' ? (

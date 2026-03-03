@@ -114,7 +114,7 @@ start_service_tmux() {
   fi
 }
 
-start_service_tmux "backend" "backend" "$ROOT_DIR/apps/backend" "npm run dev" "3001"
+start_service_tmux "backend" "backend" "$ROOT_DIR/apps/backend" "bash -lc 'set -a; [ -f .env.local ] && source .env.local; [ -f .env ] && source .env; set +a; npm run dev'" "3001"
 start_service_tmux "web" "web" "$ROOT_DIR/apps/web" "npm run dev" "3000"
 start_service_tmux "mobile" "mobile" "$ROOT_DIR/apps/mobile" "npm run dev" "8082"
 

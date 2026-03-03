@@ -16,3 +16,8 @@ export const MERCADO_PAGO_PUBLIC_BASE_URL = (process.env.MERCADO_PAGO_PUBLIC_BAS
   .replace(/\/+$/, '');
 
 export const MERCADO_PAGO_WEBHOOK_URL = (process.env.MERCADO_PAGO_WEBHOOK_URL || '').trim();
+
+export const STOREFRONT_PIX_EXPIRES_MINUTES = Math.max(
+  5,
+  Math.min(60, Number(process.env.STOREFRONT_PIX_EXPIRES_MINUTES || 15))
+);

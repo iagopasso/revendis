@@ -12,6 +12,40 @@ const subdomainSchema = z
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   .max(48);
 
+const storefrontRuntimeProductSchema = z
+  .object({
+    id: z.string().trim().min(1).max(120),
+    name: z.string().trim().min(1).max(260),
+    price: z.union([z.number(), z.string().trim().max(60)]).optional(),
+    active: z.boolean().optional()
+  })
+  .strict();
+
+const storefrontRuntimePromotionSchema = z
+  .object({
+    id: z.string().trim().min(1).max(160),
+    name: z.string().trim().min(1).max(260),
+    discount: z.number().min(0).max(99),
+    productIds: z.array(z.string().trim().min(1).max(120)).max(400),
+    mode: z.enum(['global', 'per_product']).optional(),
+    discountsByProduct: z.record(z.string().trim().min(1).max(120), z.number().min(0).max(99)).optional(),
+    startDate: z.string().trim().max(40).optional(),
+    endDate: z.string().trim().max(40).optional(),
+    status: z.enum(['active', 'scheduled', 'ended']).optional(),
+    createdAt: z.string().trim().max(80).optional()
+  })
+  .strict();
+
+const storefrontRuntimeStateSchema = z
+  .object({
+    activeProducts: z.array(storefrontRuntimeProductSchema).max(400).optional(),
+    promotions: z.array(storefrontRuntimePromotionSchema).max(400).optional(),
+    hiddenProductIds: z.array(z.string().trim().min(1).max(120)).max(400).optional(),
+    productDescriptions: z.record(z.string().trim().min(1).max(120), z.string().trim().max(4000)).optional(),
+    storePriceOverrides: z.record(z.string().trim().min(1).max(120), z.number().min(0).max(999999999)).optional()
+  })
+  .strict();
+
 export const settingsAccountUpdateSchema = z
   .object({
     ownerName: z.string().trim().min(1).max(120).optional(),
@@ -75,7 +109,8 @@ export const settingsStorefrontUpdateSchema = z
     priceTo: z.string().trim().max(30).optional(),
     logoUrl: z.string().trim().max(4000).optional(),
     creditCardLink: z.string().trim().max(4000).optional(),
-    boletoLink: z.string().trim().max(4000).optional()
+    boletoLink: z.string().trim().max(4000).optional(),
+    runtimeState: storefrontRuntimeStateSchema.optional()
   })
   .strict()
   .refine((payload) => Object.keys(payload).length > 0, {
