@@ -4,6 +4,7 @@ import type {
   AccessMemberInput,
   AccessMemberUpdateInput,
   SettingsAccountInput,
+  SettingsAccountPasswordInput,
   SettingsAlertInput,
   SettingsPixInput,
   SettingsStorefrontInput,
@@ -16,6 +17,7 @@ import { idParamSchema } from '../schemas/common';
 import {
   accessMemberInputSchema,
   accessMemberUpdateSchema,
+  settingsAccountPasswordUpdateSchema,
   settingsAccountUpdateSchema,
   settingsAlertUpdateSchema,
   settingsPixUpdateSchema,
@@ -620,8 +622,8 @@ const selectCurrentUserForAccount = async (
 ) => {
   const normalizedUserId = normalizeUuid(currentUserId);
   if (normalizedUserId) {
-    const byIdResult = await db.query<{ name: string; email: string }>(
-      `SELECT name, email
+    const byIdResult = await db.query<{ id: string; name: string; email: string }>(
+      `SELECT id, name, email
        FROM users
        WHERE organization_id = $1
          AND id = $2
@@ -634,8 +636,8 @@ const selectCurrentUserForAccount = async (
 
   if (!currentUserEmail) return null;
 
-  const byEmailResult = await db.query<{ name: string; email: string }>(
-    `SELECT name, email
+  const byEmailResult = await db.query<{ id: string; name: string; email: string }>(
+    `SELECT id, name, email
      FROM users
      WHERE organization_id = $1
        AND lower(email) = lower($2)
@@ -815,6 +817,102 @@ router.patch(
     }
 
     res.json({ data: account });
+  })
+);
+
+router.patch(
+  '/settings/account/password',
+  validateRequest({ body: settingsAccountPasswordUpdateSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const currentUserId = normalizeUuid(req.header('x-user-id'));
+    const currentUserEmail = `${req.header('x-user-email') || ''}`.trim().toLowerCase();
+    const payload = req.body as SettingsAccountPasswordInput;
+
+    if (!currentUserId && !currentUserEmail) {
+      return res.status(401).json({
+        code: 'unauthorized',
+        message: 'Sessao invalida. Entre novamente.'
+      });
+    }
+
+    const changeResult = await withTransaction(async (client) => {
+      const currentUser = await selectCurrentUserForAccount(
+        client,
+        orgId,
+        currentUserId,
+        currentUserEmail
+      );
+      if (!currentUser?.id) {
+        return 'user_not_found' as const;
+      }
+
+      const credentialResult = await client.query<{ user_id: string }>(
+        `SELECT user_id
+         FROM user_credentials
+         WHERE user_id = $1
+         LIMIT 1`,
+        [currentUser.id]
+      );
+      if (!credentialResult.rows[0]) {
+        return 'password_not_configured' as const;
+      }
+
+      const currentPasswordMatch = await client.query<{ user_id: string }>(
+        `SELECT user_id
+         FROM user_credentials
+         WHERE user_id = $1
+           AND password_hash = crypt($2, password_hash)
+         LIMIT 1`,
+        [currentUser.id, payload.currentPassword]
+      );
+      if (!currentPasswordMatch.rows[0]) {
+        return 'invalid_current_password' as const;
+      }
+
+      await client.query(
+        `UPDATE user_credentials
+         SET password_hash = crypt($2, gen_salt('bf'))
+         WHERE user_id = $1`,
+        [currentUser.id, payload.newPassword]
+      );
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        userId: currentUser.id,
+        entityType: 'settings_account_password',
+        entityId: currentUser.id,
+        action: 'updated',
+        payload: { source: 'self' }
+      });
+
+      return 'updated' as const;
+    });
+
+    if (changeResult === 'user_not_found') {
+      return res.status(404).json({
+        code: 'user_not_found',
+        message: 'Usuario da sessao nao encontrado.'
+      });
+    }
+
+    if (changeResult === 'password_not_configured') {
+      return res.status(409).json({
+        code: 'password_not_configured',
+        message: 'Esta conta nao possui senha configurada para alteracao.'
+      });
+    }
+
+    if (changeResult === 'invalid_current_password') {
+      return res.status(401).json({
+        code: 'invalid_current_password',
+        message: 'Senha atual invalida.'
+      });
+    }
+
+    return res.json({
+      message: 'Senha atualizada com sucesso.'
+    });
   })
 );
 

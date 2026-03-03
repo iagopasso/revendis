@@ -4,14 +4,6 @@ import Credentials from 'next-auth/providers/credentials';
 import Facebook from 'next-auth/providers/facebook';
 import Google from 'next-auth/providers/google';
 
-type CredentialUser = {
-  id: string;
-  email: string;
-  password: string;
-  name: string;
-  role: 'owner' | 'seller';
-};
-
 type AuthUserPayload = {
   id: string;
   name: string;
@@ -22,39 +14,11 @@ type AuthUserPayload = {
 };
 
 const providers: NonNullable<NextAuthConfig['providers']> = [];
-const adminEmail = (process.env.AUTH_ADMIN_EMAIL || 'admin@revendis.local').trim().toLowerCase();
-const adminPassword = process.env.AUTH_ADMIN_PASSWORD || 'Admin@123456';
-const adminName = (process.env.AUTH_ADMIN_NAME || 'Administrador').trim() || 'Administrador';
-const resellerEmail = (process.env.AUTH_RESELLER_EMAIL || 'revenda@revendis.local').trim().toLowerCase();
-const resellerPassword = process.env.AUTH_RESELLER_PASSWORD || 'Revenda@123456';
-const resellerName = (process.env.AUTH_RESELLER_NAME || 'Revenda').trim() || 'Revenda';
+const defaultAuthUserName =
+  (process.env.AUTH_DEFAULT_USER_NAME || process.env.AUTH_RESELLER_NAME || 'Revendedora').trim() || 'Revendedora';
 const defaultOrgId = process.env.NEXT_PUBLIC_ORG_ID || '00000000-0000-0000-0000-000000000001';
 const mutationAuthToken =
   process.env.MUTATION_AUTH_TOKEN || process.env.NEXT_PUBLIC_MUTATION_AUTH_TOKEN || '';
-
-const credentialUsers: CredentialUser[] = [];
-const pushCredentialUser = (user: CredentialUser) => {
-  if (!user.email || !user.password) return;
-  if (credentialUsers.some((entry) => entry.email === user.email)) return;
-  credentialUsers.push(user);
-};
-
-pushCredentialUser({
-  id: 'local-admin',
-  email: adminEmail,
-  password: adminPassword,
-  name: adminName,
-  role: 'owner'
-});
-pushCredentialUser({
-  id: 'local-reseller',
-  email: resellerEmail,
-  password: resellerPassword,
-  name: resellerName,
-  role: 'seller'
-});
-
-const credentialUsersByEmail = new Map(credentialUsers.map((user) => [user.email, user]));
 
 const withNoTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
@@ -65,7 +29,6 @@ const resolveApiBase = () => {
 };
 
 const AUTH_API_BASE = resolveApiBase();
-const defaultStoreId = process.env.NEXT_PUBLIC_STORE_ID || '00000000-0000-0000-0000-000000000101';
 
 const normalizeSessionRole = (value: unknown): 'owner' | 'seller' => {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -146,31 +109,19 @@ providers.push(
       if (!email || !password) return null;
 
       const backendUser = await authenticateWithBackendCredentials(email, password);
-      if (backendUser) {
-        const organizationId = `${backendUser.organizationId || ''}`.trim();
-        const storeId = `${backendUser.storeId || ''}`.trim();
-        if (!organizationId || !storeId) return null;
+      if (!backendUser) return null;
 
-        return {
-          id: backendUser.id,
-          name: backendUser.name,
-          email: backendUser.email,
-          role: normalizeSessionRole(backendUser.role),
-          organizationId,
-          storeId
-        };
-      }
-
-      const user = credentialUsersByEmail.get(email);
-      if (!user || user.password !== password) return null;
+      const organizationId = `${backendUser.organizationId || ''}`.trim();
+      const storeId = `${backendUser.storeId || ''}`.trim();
+      if (!organizationId || !storeId) return null;
 
       return {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        organizationId: defaultOrgId,
-        storeId: defaultStoreId
+        id: backendUser.id,
+        name: backendUser.name,
+        email: backendUser.email,
+        role: normalizeSessionRole(backendUser.role),
+        organizationId,
+        storeId
       };
     }
   })
@@ -208,7 +159,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const email = (user.email || '').trim().toLowerCase();
       if (!email) return false;
 
-      const syncedUser = await syncSocialUser(email, (user.name || resellerName).trim());
+      const syncedUser = await syncSocialUser(email, (user.name || defaultAuthUserName).trim());
       const syncedOrgId = `${syncedUser?.organizationId || ''}`.trim();
       const syncedStoreId = `${syncedUser?.storeId || ''}`.trim();
       if (!syncedUser?.id || !syncedOrgId || !syncedStoreId) return false;
@@ -220,7 +171,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         storeId?: string;
       };
       mutableUser.id = syncedUser.id;
-      mutableUser.name = syncedUser.name || user.name || resellerName;
+      mutableUser.name = syncedUser.name || user.name || defaultAuthUserName;
       mutableUser.email = syncedUser.email || email;
       mutableUser.role = normalizeSessionRole(syncedUser.role);
       mutableUser.organizationId = syncedOrgId;
@@ -228,8 +179,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true;
     },
     async jwt({ token, user, account }) {
-      const tokenEmail = `${user?.email || token?.email || ''}`.trim().toLowerCase();
-      const credentialUser = credentialUsersByEmail.get(tokenEmail);
       const userIdFromUser =
         user && 'id' in user ? `${(user as { id?: unknown }).id || ''}`.trim() : '';
       const roleFromUser =
@@ -242,11 +191,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         user && 'storeId' in user ? `${(user as { storeId?: unknown }).storeId || ''}`.trim() : '';
 
       if (account?.provider === 'credentials') {
-        token.role = roleFromUser || credentialUser?.role || 'seller';
+        token.role = roleFromUser || 'seller';
       } else if (account) {
         token.role = roleFromUser || 'seller';
       } else if (typeof token.role !== 'string') {
-        token.role = credentialUser?.role || 'seller';
+        token.role = 'seller';
       }
 
       if (userIdFromUser) {
@@ -255,14 +204,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       if (orgIdFromUser) {
         token.orgId = orgIdFromUser;
-      } else if (account?.provider === 'credentials' && credentialUser && typeof token.orgId !== 'string') {
-        token.orgId = defaultOrgId;
       }
 
       if (storeIdFromUser) {
         token.storeId = storeIdFromUser;
-      } else if (account?.provider === 'credentials' && credentialUser && typeof token.storeId !== 'string') {
-        token.storeId = defaultStoreId;
       }
 
       return token;

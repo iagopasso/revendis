@@ -58,6 +58,17 @@ export const settingsAccountUpdateSchema = z
     message: 'Informe ao menos um campo para atualizar.'
   });
 
+export const settingsAccountPasswordUpdateSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(72),
+    newPassword: z.string().min(6).max(72)
+  })
+  .strict()
+  .refine((payload) => payload.currentPassword !== payload.newPassword, {
+    message: 'A nova senha deve ser diferente da senha atual.',
+    path: ['newPassword']
+  });
+
 export const settingsSubscriptionUpdateSchema = z
   .object({
     plan: z.string().trim().min(1).max(80).optional(),

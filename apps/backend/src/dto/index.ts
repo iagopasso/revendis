@@ -207,6 +207,11 @@ export type SettingsAccountInput = {
   businessName?: string;
 };
 
+export type SettingsAccountPasswordInput = {
+  currentPassword: string;
+  newPassword: string;
+};
+
 export type SettingsSubscriptionInput = {
   plan?: string;
   status?: string;

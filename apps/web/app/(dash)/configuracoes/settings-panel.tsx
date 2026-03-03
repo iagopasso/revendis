@@ -69,6 +69,12 @@ type AccountForm = {
   businessName: string;
 };
 
+type PasswordForm = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
+
 type AccessForm = {
   name: string;
   email: string;
@@ -257,6 +263,13 @@ export default function SettingsPanel({
   const [accountForm, setAccountForm] = useState<AccountForm>(toAccountForm(initialAccount));
   const [accountSaving, setAccountSaving] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
+  const [passwordForm, setPasswordForm] = useState<PasswordForm>({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>('dark');
 
   const [members, setMembers] = useState<AccessMember[]>(initialAccessMembers);
@@ -573,6 +586,63 @@ export default function SettingsPanel({
     }
   };
 
+  const handleSavePassword = async () => {
+    const currentPassword = passwordForm.currentPassword;
+    const newPassword = passwordForm.newPassword;
+    const confirmPassword = passwordForm.confirmPassword;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('Preencha senha atual, nova senha e confirmacao.');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordError('Use uma nova senha com pelo menos 6 caracteres.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('A confirmacao da nova senha nao confere.');
+      return;
+    }
+
+    if (newPassword === currentPassword) {
+      setPasswordError('A nova senha deve ser diferente da atual.');
+      return;
+    }
+
+    setPasswordSaving(true);
+    setPasswordError(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/settings/account/password`, {
+        method: 'PATCH',
+        headers: buildMutationHeaders(),
+        body: JSON.stringify({
+          currentPassword,
+          newPassword
+        })
+      });
+      const body = (await res.json().catch(() => null)) as { message?: string } | null;
+
+      if (!res.ok) {
+        setPasswordError(normalizeApiMessage(body, 'Erro ao atualizar senha.'));
+        return;
+      }
+
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+      setToast(body?.message || 'Senha atualizada');
+    } catch {
+      setPasswordError('Erro ao atualizar senha.');
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
   const handleChangeTheme = (nextTheme: ThemeMode) => {
     setThemePreference(nextTheme);
     setThemeMode(nextTheme);
@@ -834,6 +904,62 @@ export default function SettingsPanel({
       <div className="settings-actions-row">
         <button className="button primary" type="button" disabled={accountSaving} onClick={handleSaveAccount}>
           {accountSaving ? 'Salvando...' : 'Salvar conta'}
+        </button>
+      </div>
+
+      <div className="settings-note">Use o email de contato como login principal da sua conta.</div>
+
+      <div className="settings-form-grid">
+        <strong>Alterar senha de acesso</strong>
+        <div className="settings-form-grid two">
+          <label className="settings-field">
+            <span>Senha atual</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={passwordForm.currentPassword}
+              placeholder="Digite a senha atual"
+              onChange={(event) => {
+                setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }));
+                if (passwordError) setPasswordError(null);
+              }}
+            />
+          </label>
+          <label className="settings-field">
+            <span>Nova senha</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={passwordForm.newPassword}
+              placeholder="Minimo de 6 caracteres"
+              onChange={(event) => {
+                setPasswordForm((prev) => ({ ...prev, newPassword: event.target.value }));
+                if (passwordError) setPasswordError(null);
+              }}
+            />
+          </label>
+        </div>
+
+        <label className="settings-field">
+          <span>Confirmar nova senha</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={passwordForm.confirmPassword}
+            placeholder="Repita a nova senha"
+            onChange={(event) => {
+              setPasswordForm((prev) => ({ ...prev, confirmPassword: event.target.value }));
+              if (passwordError) setPasswordError(null);
+            }}
+          />
+        </label>
+      </div>
+
+      {passwordError ? <div className="field-error">{passwordError}</div> : null}
+
+      <div className="settings-actions-row">
+        <button className="button primary" type="button" disabled={passwordSaving} onClick={handleSavePassword}>
+          {passwordSaving ? 'Salvando...' : 'Salvar nova senha'}
         </button>
       </div>
     </div>

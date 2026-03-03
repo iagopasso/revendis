@@ -149,8 +149,8 @@ export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPane
       return 'Cadastre com nome, email e senha.';
     }
 
-    if (hasProvider) return 'Entre com e-mail/senha de admin ou revendedora, ou use Google/Facebook.';
-    return 'Entre com e-mail/senha de admin ou revendedora. O login social e opcional.';
+    if (hasProvider) return 'Entre com o e-mail e senha da sua conta, ou use Google/Facebook.';
+    return 'Entre com o e-mail e senha da sua conta. O login social e opcional.';
   }, [googleEnabled, hasProvider, mode]);
 
   const handleProviderSignIn = async (provider: 'google' | 'facebook') => {
@@ -353,7 +353,7 @@ export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPane
             <button
               type="button"
               className="auth-link-muted"
-              onClick={() => setFeedback('Recuperacao de senha disponivel pelo administrador da conta.')}
+              onClick={() => setFeedback('Para trocar senha, entre na conta e use Configuracoes > Editar conta.')}
             >
               Esqueci minha senha
             </button>
