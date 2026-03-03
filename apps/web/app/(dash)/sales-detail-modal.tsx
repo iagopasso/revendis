@@ -1280,7 +1280,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
                     </div>
                     <div className="receipt-meta">
                       <span>Emitido em {formatDate(sale.date)}</span>
-                      <span>às {formatTime(sale.date)} no Revendi Web</span>
+                      <span>às {formatTime(sale.date)} no Revendis Web</span>
                     </div>
                   </div>
 

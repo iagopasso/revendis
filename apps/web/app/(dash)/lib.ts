@@ -27,11 +27,48 @@ export const buildMutationHeaders = (extra?: HeadersInit) => {
   return headers;
 };
 
+const resolveTenantHeaders = async (): Promise<HeadersInit | null> => {
+  if (typeof window !== 'undefined') {
+    return {} as HeadersInit;
+  }
+
+  try {
+    const authModule = await import('../../auth');
+    const session = await authModule.auth();
+    const orgId = `${(session?.user as { organizationId?: string } | undefined)?.organizationId || ''}`.trim();
+    const storeId = `${(session?.user as { storeId?: string } | undefined)?.storeId || ''}`.trim();
+    const userId = `${(session?.user as { id?: string } | undefined)?.id || ''}`.trim();
+    const userEmail = `${session?.user?.email || ''}`.trim().toLowerCase();
+    if (!orgId || !storeId) return null;
+
+    const headers: Record<string, string> = {
+      'x-org-id': orgId,
+      'x-store-id': storeId
+    };
+    if (userId) {
+      headers['x-user-id'] = userId;
+    }
+    if (userEmail) {
+      headers['x-user-email'] = userEmail;
+    }
+
+    return headers as HeadersInit;
+  } catch {
+    return null;
+  }
+};
+
 export const fetchList = async <T,>(path: string): Promise<ListResponse<T> | null> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   try {
-    const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store', signal: controller.signal });
+    const tenantHeaders = await resolveTenantHeaders();
+    if (!tenantHeaders) return null;
+    const res = await fetch(`${API_BASE}${path}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: tenantHeaders
+    });
     if (!res.ok) return null;
     return (await res.json()) as ListResponse<T>;
   } catch {
@@ -45,7 +82,13 @@ export const fetchItem = async <T,>(path: string): Promise<ItemResponse<T> | nul
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   try {
-    const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store', signal: controller.signal });
+    const tenantHeaders = await resolveTenantHeaders();
+    if (!tenantHeaders) return null;
+    const res = await fetch(`${API_BASE}${path}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: tenantHeaders
+    });
     if (!res.ok) return null;
     return (await res.json()) as ItemResponse<T>;
   } catch {

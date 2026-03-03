@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import auth from './auth';
 import brands from './brands';
 import catalog from './catalog';
 import customers from './customers';
@@ -15,6 +16,7 @@ import storefront from './storefront';
 const router = Router();
 
 router.use(health);
+router.use(auth);
 router.use(brands);
 router.use(catalog);
 router.use(customers);

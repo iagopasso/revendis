@@ -407,6 +407,27 @@ export default function SettingsPanel({
   }, [initialAccount]);
 
   useEffect(() => {
+    let active = true;
+    const loadLatestAccount = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/settings/account`, {
+          cache: 'no-store'
+        });
+        const body = (await res.json().catch(() => null)) as { data?: AccountSettings } | null;
+        if (!active || !res.ok || !body?.data) return;
+        setAccountForm(toAccountForm(body.data));
+      } catch {
+        // Keep initial server-side values if refresh fails.
+      }
+    };
+
+    void loadLatestAccount();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     setSubscriptionForm(toSubscriptionForm(initialSubscription));
   }, [initialSubscription]);
 

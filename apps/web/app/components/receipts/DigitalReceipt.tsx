@@ -113,7 +113,7 @@ export default function DigitalReceipt({ receipt = MOCK_DIGITAL_RECEIPT }: { rec
             </Badge>
           </Flex>
           <Text color="gray.500" fontSize="sm">
-            Emitido em {formatDate(receipt.issuedAt)} às {formatIssueTime(receipt.issuedAt)} no Revendi Web
+            Emitido em {formatDate(receipt.issuedAt)} às {formatIssueTime(receipt.issuedAt)} no Revendis Web
           </Text>
 
           <SimpleGrid columns={{ base: 1, md: 2 }} gap={4} mt={6}>

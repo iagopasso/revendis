@@ -605,12 +605,59 @@ const updateSettingsFields = async (
   );
 };
 
+const selectCurrentUserForAccount = async (
+  db: DbExecutor,
+  orgId: string,
+  currentUserId: string,
+  currentUserEmail: string
+) => {
+  if (currentUserId) {
+    const byIdResult = await db.query<{ name: string; email: string }>(
+      `SELECT name, email
+       FROM users
+       WHERE organization_id = $1
+         AND id = $2
+       LIMIT 1`,
+      [orgId, currentUserId]
+    );
+    const byIdUser = byIdResult.rows[0];
+    if (byIdUser) return byIdUser;
+  }
+
+  if (!currentUserEmail) return null;
+
+  const byEmailResult = await db.query<{ name: string; email: string }>(
+    `SELECT name, email
+     FROM users
+     WHERE organization_id = $1
+       AND lower(email) = lower($2)
+     LIMIT 1`,
+    [orgId, currentUserEmail]
+  );
+
+  return byEmailResult.rows[0] || null;
+};
+
 router.get(
   '/settings/account',
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const currentUserId = `${req.header('x-user-id') || ''}`.trim();
+    const currentUserEmail = `${req.header('x-user-email') || ''}`.trim().toLowerCase();
     await ensureSettingsRow({ query }, orgId);
     const account = await selectAccount({ query }, orgId);
+
+    const currentUser = await selectCurrentUserForAccount(
+      { query },
+      orgId,
+      currentUserId,
+      currentUserEmail
+    );
+    if (currentUser) {
+      account.ownerName = currentUser.name || account.ownerName;
+      account.ownerEmail = currentUser.email || account.ownerEmail;
+    }
+
     res.json({ data: account });
   })
 );
@@ -620,7 +667,9 @@ router.patch(
   validateRequest({ body: settingsAccountUpdateSchema }),
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
-    const userId = req.header('x-user-id') || null;
+    const currentUserId = `${req.header('x-user-id') || ''}`.trim();
+    const userId = currentUserId || null;
+    const currentUserEmail = `${req.header('x-user-email') || ''}`.trim().toLowerCase();
     const payload = req.body as SettingsAccountInput;
 
     try {
@@ -659,17 +708,45 @@ router.patch(
         }
 
         if (payload.ownerName !== undefined || payload.ownerEmail !== undefined) {
-          const ownerResult = await client.query<{ id: string }>(
-            `SELECT id
-             FROM users
-             WHERE organization_id = $1
-             ORDER BY CASE WHEN lower(role) = 'owner' THEN 0 ELSE 1 END, created_at ASC
-             LIMIT 1`,
-            [orgId]
-          );
+          let targetUserId = '';
 
-          const owner = ownerResult.rows[0];
-          if (owner) {
+          if (currentUserId) {
+            const currentUserByIdResult = await client.query<{ id: string }>(
+              `SELECT id
+               FROM users
+               WHERE organization_id = $1
+                 AND id = $2
+               LIMIT 1`,
+              [orgId, currentUserId]
+            );
+            targetUserId = currentUserByIdResult.rows[0]?.id || '';
+          }
+
+          if (!targetUserId && currentUserEmail) {
+            const currentUserResult = await client.query<{ id: string }>(
+              `SELECT id
+               FROM users
+               WHERE organization_id = $1
+                 AND lower(email) = lower($2)
+               LIMIT 1`,
+              [orgId, currentUserEmail]
+            );
+            targetUserId = currentUserResult.rows[0]?.id || '';
+          }
+
+          if (!targetUserId) {
+            const ownerResult = await client.query<{ id: string }>(
+              `SELECT id
+               FROM users
+               WHERE organization_id = $1
+               ORDER BY CASE WHEN lower(role) = 'owner' THEN 0 ELSE 1 END, created_at ASC
+               LIMIT 1`,
+              [orgId]
+            );
+            targetUserId = ownerResult.rows[0]?.id || '';
+          }
+
+          if (targetUserId) {
             const userFields: string[] = [];
             const userValues: string[] = [];
 
@@ -683,7 +760,7 @@ router.patch(
             }
 
             if (userFields.length > 0) {
-              userValues.push(owner.id);
+              userValues.push(targetUserId);
               await client.query(
                 `UPDATE users
                  SET ${userFields.join(', ')}
@@ -718,6 +795,17 @@ router.patch(
     }
 
     const account = await selectAccount({ query }, orgId);
+    const currentUser = await selectCurrentUserForAccount(
+      { query },
+      orgId,
+      currentUserId,
+      currentUserEmail
+    );
+    if (currentUser) {
+      account.ownerName = currentUser.name || account.ownerName;
+      account.ownerEmail = currentUser.email || account.ownerEmail;
+    }
+
     res.json({ data: account });
   })
 );

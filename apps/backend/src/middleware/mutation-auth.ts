@@ -19,6 +19,9 @@ const extractBearerToken = (value: string | undefined) => {
 const isPublicWriteRoute = (req: Request) => {
   if (req.method.toUpperCase() !== 'POST') return false;
   const path = normalizePath(req.path);
+  if (path === '/auth/register') return true;
+  if (path === '/auth/login') return true;
+  if (path === '/auth/social-sync') return true;
   if (path === '/storefront/orders') return true;
   if (path === '/storefront/payments/mercado-pago/webhook') return true;
   if (/^\/storefront\/orders\/[0-9a-f-]+\/payments\/confirm$/i.test(path)) return true;

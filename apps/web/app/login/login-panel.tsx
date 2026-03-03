@@ -8,6 +8,12 @@ type LoginPanelProps = {
   facebookEnabled: boolean;
 };
 
+type LoginResult = {
+  ok: boolean;
+  redirectUrl?: string;
+  message?: string;
+};
+
 const GoogleLogo = () => (
   <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true">
     <path
@@ -62,20 +68,90 @@ const EyeIcon = ({ open }: { open: boolean }) => (
   </svg>
 );
 
+const requestCredentialSession = async (email: string, password: string): Promise<LoginResult> => {
+  try {
+    const csrfResponse = await fetch('/api/auth/csrf', {
+      cache: 'no-store',
+      credentials: 'same-origin'
+    });
+    if (!csrfResponse.ok) {
+      return { ok: false, message: 'Nao foi possivel iniciar a sessao.' };
+    }
+
+    const csrfPayload = (await csrfResponse.json().catch(() => null)) as { csrfToken?: string } | null;
+    const csrfToken = csrfPayload?.csrfToken;
+    if (!csrfToken) {
+      return { ok: false, message: 'Nao foi possivel iniciar a sessao.' };
+    }
+
+    const body = new URLSearchParams({
+      csrfToken,
+      email,
+      password,
+      callbackUrl: '/dashboard'
+    });
+
+    const loginResponse = await fetch('/api/auth/callback/credentials', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Auth-Return-Redirect': '1'
+      },
+      body,
+      credentials: 'same-origin'
+    });
+
+    const loginPayload = (await loginResponse.json().catch(() => null)) as { url?: string } | null;
+    const redirectUrl = loginPayload?.url || '/dashboard';
+    const parsedUrl = new URL(redirectUrl, window.location.origin);
+    const error = parsedUrl.searchParams.get('error');
+
+    if (error) {
+      return {
+        ok: false,
+        message: error === 'CredentialsSignin' ? 'Credenciais invalidas.' : 'Nao foi possivel iniciar a sessao.'
+      };
+    }
+
+    if (!loginResponse.ok) {
+      return { ok: false, message: 'Nao foi possivel iniciar a sessao.' };
+    }
+
+    return {
+      ok: true,
+      redirectUrl: `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`
+    };
+  } catch {
+    return { ok: false, message: 'Nao foi possivel iniciar a sessao.' };
+  }
+};
+
 export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPanelProps) {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [registerName, setRegisterName] = useState('');
+  const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState('');
+  const [showRegisterPasswordConfirm, setShowRegisterPasswordConfirm] = useState(false);
   const [submittingProvider, setSubmittingProvider] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string>('');
 
   const hasProvider = googleEnabled || facebookEnabled;
   const credentialsSubmitting = submittingProvider === 'credentials';
+  const registerSubmitting = submittingProvider === 'register';
 
   const providerHint = useMemo(() => {
-    if (hasProvider) return 'Entre com e-mail/senha de admin ou revenda, ou use Google/Facebook.';
-    return 'Entre com e-mail/senha de admin ou revenda. O login social e opcional.';
-  }, [hasProvider]);
+    if (mode === 'register') {
+      if (googleEnabled) {
+        return 'Cadastre por formulario ou use Google para criar acesso rapidamente.';
+      }
+      return 'Cadastre com nome, email e senha.';
+    }
+
+    if (hasProvider) return 'Entre com e-mail/senha de admin ou revendedora, ou use Google/Facebook.';
+    return 'Entre com e-mail/senha de admin ou revendedora. O login social e opcional.';
+  }, [googleEnabled, hasProvider, mode]);
 
   const handleProviderSignIn = async (provider: 'google' | 'facebook') => {
     setFeedback('');
@@ -99,70 +175,107 @@ export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPane
     setFeedback('');
     setSubmittingProvider('credentials');
     try {
-      const csrfResponse = await fetch('/api/auth/csrf', {
-        cache: 'no-store',
-        credentials: 'same-origin'
-      });
-      if (!csrfResponse.ok) throw new Error('csrf_fetch_failed');
-
-      const csrfPayload = (await csrfResponse.json().catch(() => null)) as { csrfToken?: string } | null;
-      const csrfToken = csrfPayload?.csrfToken;
-      if (!csrfToken) throw new Error('csrf_missing');
-
-      const body = new URLSearchParams({
-        csrfToken,
-        email,
-        password,
-        callbackUrl: '/dashboard'
-      });
-
-      const loginResponse = await fetch('/api/auth/callback/credentials', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'X-Auth-Return-Redirect': '1'
-        },
-        body,
-        credentials: 'same-origin'
-      });
-
-      const loginPayload = (await loginResponse.json().catch(() => null)) as { url?: string } | null;
-      const redirectUrl = loginPayload?.url || '/dashboard';
-      const parsedUrl = new URL(redirectUrl, window.location.origin);
-      const error = parsedUrl.searchParams.get('error');
-
-      if (error) {
-        setFeedback(error === 'CredentialsSignin' ? 'Credenciais invalidas.' : 'Nao foi possivel iniciar a sessao.');
+      const result = await requestCredentialSession(email, password);
+      if (!result.ok || !result.redirectUrl) {
+        setFeedback(result.message || 'Nao foi possivel iniciar a sessao.');
         return;
       }
-
-      if (!loginResponse.ok) {
-        setFeedback('Nao foi possivel iniciar a sessao.');
-        return;
-      }
-
-      window.location.href = `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
-    } catch {
-      setFeedback('Nao foi possivel iniciar a sessao.');
+      window.location.href = result.redirectUrl;
     } finally {
       setSubmittingProvider(null);
     }
   };
 
+  const handleRegisterSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const name = registerName.trim();
+    const email = identifier.trim().toLowerCase();
+    if (!name || !email || !password || !registerPasswordConfirm) {
+      setFeedback('Preencha nome, e-mail, senha e confirmacao para cadastrar.');
+      return;
+    }
+
+    if (password.length < 6) {
+      setFeedback('Use uma senha com pelo menos 6 caracteres.');
+      return;
+    }
+
+    if (password !== registerPasswordConfirm) {
+      setFeedback('A confirmacao de senha nao confere.');
+      return;
+    }
+
+    setFeedback('');
+    setSubmittingProvider('register');
+
+    try {
+      const registerResponse = await fetch('/api/backend/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          password
+        })
+      });
+
+      if (!registerResponse.ok) {
+        const payload = (await registerResponse.json().catch(() => null)) as { message?: string } | null;
+        setFeedback(payload?.message || 'Nao foi possivel concluir o cadastro.');
+        return;
+      }
+
+      const loginResult = await requestCredentialSession(email, password);
+      if (!loginResult.ok || !loginResult.redirectUrl) {
+        setFeedback(loginResult.message || 'Cadastro concluido, mas o login falhou.');
+        return;
+      }
+
+      window.location.href = loginResult.redirectUrl;
+    } catch {
+      setFeedback('Nao foi possivel concluir o cadastro.');
+    } finally {
+      setSubmittingProvider(null);
+    }
+  };
+
+  const submitHandler = mode === 'register' ? handleRegisterSubmit : handleLegacySubmit;
+
   return (
     <section className="auth-login-wrap">
       <div className="auth-brand">
         <span className="auth-brand-mark" />
-        <strong>revendi</strong>
+        <strong>revendis</strong>
       </div>
 
-      <form className="auth-card" onSubmit={handleLegacySubmit}>
-        <h1>Entrar no Revendi</h1>
+      <form className="auth-card" onSubmit={submitHandler}>
+        <h1>{mode === 'register' ? 'Criar conta no Revendis' : 'Entrar no Revendis'}</h1>
+
+        {mode === 'register' ? (
+          <>
+            <label className="auth-field">
+              <span>Nome completo</span>
+              <input
+                type="text"
+                autoComplete="name"
+                value={registerName}
+                onChange={(event) => {
+                  setRegisterName(event.target.value);
+                  if (feedback) setFeedback('');
+                }}
+              />
+            </label>
+
+          </>
+        ) : null}
 
         <label className="auth-field">
-          <span>Telefone ou e-mail</span>
+          <span>E-mail</span>
           <input
-            type="text"
+            type="email"
             autoComplete="username"
             value={identifier}
             onChange={(event) => {
@@ -177,7 +290,7 @@ export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPane
           <div className="auth-password-field">
             <input
               type={showPassword ? 'text' : 'password'}
-              autoComplete="current-password"
+              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
               value={password}
               onChange={(event) => {
                 setPassword(event.target.value);
@@ -190,8 +303,38 @@ export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPane
           </div>
         </label>
 
+        {mode === 'register' ? (
+          <label className="auth-field">
+            <span>Confirmar senha</span>
+            <div className="auth-password-field">
+              <input
+                type={showRegisterPasswordConfirm ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={registerPasswordConfirm}
+                onChange={(event) => {
+                  setRegisterPasswordConfirm(event.target.value);
+                  if (feedback) setFeedback('');
+                }}
+              />
+              <button
+                type="button"
+                aria-label="Mostrar confirmacao de senha"
+                onClick={() => setShowRegisterPasswordConfirm((current) => !current)}
+              >
+                <EyeIcon open={showRegisterPasswordConfirm} />
+              </button>
+            </div>
+          </label>
+        ) : null}
+
         <button className="auth-submit" type="submit" disabled={submittingProvider !== null}>
-          {credentialsSubmitting ? 'Entrando...' : 'Entrar'}
+          {mode === 'register'
+            ? registerSubmitting
+              ? 'Cadastrando...'
+              : 'Cadastrar'
+            : credentialsSubmitting
+              ? 'Entrando...'
+              : 'Entrar'}
         </button>
 
         <div className="auth-links-row">
@@ -199,24 +342,36 @@ export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPane
             type="button"
             className="auth-link-primary"
             onClick={() => {
-              if (googleEnabled) {
-                void handleProviderSignIn('google');
-                return;
-              }
-              if (facebookEnabled) {
-                void handleProviderSignIn('facebook');
-              }
+              setFeedback('');
+              setMode((current) => (current === 'login' ? 'register' : 'login'));
             }}
           >
-            Criar uma conta
+            {mode === 'login' ? 'Criar uma conta' : 'Ja tenho conta'}
           </button>
-          <button
-            type="button"
-            className="auth-link-muted"
-            onClick={() => setFeedback('Recuperacao de senha disponivel pelo provedor social.')}
-          >
-            Esqueci minha senha
-          </button>
+
+          {mode === 'login' ? (
+            <button
+              type="button"
+              className="auth-link-muted"
+              onClick={() => setFeedback('Recuperacao de senha disponivel pelo administrador da conta.')}
+            >
+              Esqueci minha senha
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="auth-link-muted"
+              onClick={() => {
+                if (googleEnabled) {
+                  void handleProviderSignIn('google');
+                  return;
+                }
+                setFeedback('Use o formulario para finalizar seu cadastro.');
+              }}
+            >
+              Cadastrar com Google
+            </button>
+          )}
         </div>
 
         <div className="auth-social-row">

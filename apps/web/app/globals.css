@@ -177,6 +177,7 @@ main {
 }
 
 .auth-field input,
+.auth-field select,
 .auth-password-field input {
   width: 100%;
   min-height: 48px;
@@ -191,6 +192,7 @@ main {
 }
 
 .auth-field input:focus,
+.auth-field select:focus,
 .auth-password-field input:focus {
   border-color: #8d22df;
   box-shadow: 0 0 0 1px rgba(141, 34, 223, 0.45) inset;

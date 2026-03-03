@@ -224,7 +224,7 @@ export default function ReportDetailPanel({
       pdf.setPage(page);
       pdf.setFontSize(10);
       pdf.setTextColor(107, 114, 128);
-      pdf.text(`Gerado em ${generatedAt} no Revendi Web`, pageWidth / 2, pageHeight - 20, { align: 'center' });
+      pdf.text(`Gerado em ${generatedAt} no Revendis Web`, pageWidth / 2, pageHeight - 20, { align: 'center' });
     }
 
     pdf.save(`${exportBaseName}.pdf`);

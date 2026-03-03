@@ -12,6 +12,15 @@ type CredentialUser = {
   role: 'owner' | 'seller';
 };
 
+type AuthUserPayload = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  organizationId?: string;
+  storeId?: string | null;
+};
+
 const providers: NonNullable<NextAuthConfig['providers']> = [];
 const adminEmail = (process.env.AUTH_ADMIN_EMAIL || 'admin@revendis.local').trim().toLowerCase();
 const adminPassword = process.env.AUTH_ADMIN_PASSWORD || 'Admin@123456';
@@ -56,10 +65,44 @@ const resolveApiBase = () => {
 };
 
 const AUTH_API_BASE = resolveApiBase();
+const defaultStoreId = process.env.NEXT_PUBLIC_STORE_ID || '00000000-0000-0000-0000-000000000101';
 
-const syncSocialUserAsReseller = async (email: string, name: string) => {
+const normalizeSessionRole = (value: unknown): 'owner' | 'seller' => {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (normalized === 'owner' || normalized === 'admin') return 'owner';
+  return 'seller';
+};
+
+const authenticateWithBackendCredentials = async (
+  email: string,
+  password: string
+): Promise<AuthUserPayload | null> => {
+  try {
+    const response = await fetch(`${AUTH_API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-org-id': defaultOrgId
+      },
+      body: JSON.stringify({
+        email,
+        password
+      }),
+      cache: 'no-store'
+    });
+
+    if (!response.ok) return null;
+    const payload = (await response.json().catch(() => null)) as { data?: AuthUserPayload } | null;
+    if (!payload?.data?.id || !payload.data.email) return null;
+    return payload.data;
+  } catch {
+    return null;
+  }
+};
+
+const syncSocialUser = async (email: string, name: string): Promise<AuthUserPayload | null> => {
   const normalizedEmail = email.trim().toLowerCase();
-  if (!normalizedEmail) return;
+  if (!normalizedEmail) return null;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -70,50 +113,22 @@ const syncSocialUserAsReseller = async (email: string, name: string) => {
   }
 
   try {
-    const createResponse = await fetch(`${AUTH_API_BASE}/settings/access`, {
+    const syncResponse = await fetch(`${AUTH_API_BASE}/auth/social-sync`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
         name: name.trim() || 'Revendedor(a)',
-        email: normalizedEmail,
-        role: 'seller',
-        active: true
+        email: normalizedEmail
       }),
       cache: 'no-store'
     });
 
-    if (createResponse.ok) return;
-    if (createResponse.status !== 409) return;
-
-    const listResponse = await fetch(`${AUTH_API_BASE}/settings/access`, {
-      method: 'GET',
-      headers: {
-        'x-org-id': defaultOrgId
-      },
-      cache: 'no-store'
-    });
-
-    if (!listResponse.ok) return;
-    const listPayload = (await listResponse.json().catch(() => null)) as
-      | { data?: Array<{ id: string; email: string }> }
-      | null;
-    const member = listPayload?.data?.find(
-      (item) => item.email?.trim().toLowerCase() === normalizedEmail
-    );
-    if (!member?.id) return;
-
-    await fetch(`${AUTH_API_BASE}/settings/access/${member.id}`, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify({
-        name: name.trim() || 'Revendedor(a)',
-        role: 'seller',
-        active: true
-      }),
-      cache: 'no-store'
-    });
+    if (!syncResponse.ok) return null;
+    const payload = (await syncResponse.json().catch(() => null)) as { data?: AuthUserPayload } | null;
+    if (!payload?.data?.id || !payload.data.email) return null;
+    return payload.data;
   } catch {
-    // Do not block sign-in when backend sync is unavailable.
+    return null;
   }
 };
 
@@ -129,6 +144,23 @@ providers.push(
       const email = `${credentials?.email || ''}`.trim().toLowerCase();
       const password = `${credentials?.password || ''}`;
       if (!email || !password) return null;
+
+      const backendUser = await authenticateWithBackendCredentials(email, password);
+      if (backendUser) {
+        const organizationId = `${backendUser.organizationId || ''}`.trim();
+        const storeId = `${backendUser.storeId || ''}`.trim();
+        if (!organizationId || !storeId) return null;
+
+        return {
+          id: backendUser.id,
+          name: backendUser.name,
+          email: backendUser.email,
+          role: normalizeSessionRole(backendUser.role),
+          organizationId,
+          storeId
+        };
+      }
+
       const user = credentialUsersByEmail.get(email);
       if (!user || user.password !== password) return null;
 
@@ -136,7 +168,9 @@ providers.push(
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        organizationId: defaultOrgId,
+        storeId: defaultStoreId
       };
     }
   })
@@ -173,27 +207,93 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (account?.provider === 'credentials') return true;
       const email = (user.email || '').trim().toLowerCase();
       if (!email) return false;
-      await syncSocialUserAsReseller(email, (user.name || resellerName).trim());
+
+      const syncedUser = await syncSocialUser(email, (user.name || resellerName).trim());
+      const syncedOrgId = `${syncedUser?.organizationId || ''}`.trim();
+      const syncedStoreId = `${syncedUser?.storeId || ''}`.trim();
+      if (!syncedUser?.id || !syncedOrgId || !syncedStoreId) return false;
+
+      const mutableUser = user as typeof user & {
+        id?: string;
+        role?: string;
+        organizationId?: string;
+        storeId?: string;
+      };
+      mutableUser.id = syncedUser.id;
+      mutableUser.name = syncedUser.name || user.name || resellerName;
+      mutableUser.email = syncedUser.email || email;
+      mutableUser.role = normalizeSessionRole(syncedUser.role);
+      mutableUser.organizationId = syncedOrgId;
+      mutableUser.storeId = syncedStoreId;
       return true;
     },
     async jwt({ token, user, account }) {
       const tokenEmail = `${user?.email || token?.email || ''}`.trim().toLowerCase();
       const credentialUser = credentialUsersByEmail.get(tokenEmail);
+      const userIdFromUser =
+        user && 'id' in user ? `${(user as { id?: unknown }).id || ''}`.trim() : '';
+      const roleFromUser =
+        user && 'role' in user ? normalizeSessionRole((user as { role?: unknown }).role) : null;
+      const orgIdFromUser =
+        user && 'organizationId' in user
+          ? `${(user as { organizationId?: unknown }).organizationId || ''}`.trim()
+          : '';
+      const storeIdFromUser =
+        user && 'storeId' in user ? `${(user as { storeId?: unknown }).storeId || ''}`.trim() : '';
 
       if (account?.provider === 'credentials') {
-        token.role = credentialUser?.role || 'seller';
+        token.role = roleFromUser || credentialUser?.role || 'seller';
       } else if (account) {
-        token.role = 'seller';
+        token.role = roleFromUser || 'seller';
       } else if (typeof token.role !== 'string') {
         token.role = credentialUser?.role || 'seller';
+      }
+
+      if (userIdFromUser) {
+        token.sub = userIdFromUser;
+      }
+
+      if (orgIdFromUser) {
+        token.orgId = orgIdFromUser;
+      } else if (account?.provider === 'credentials' && credentialUser && typeof token.orgId !== 'string') {
+        token.orgId = defaultOrgId;
+      }
+
+      if (storeIdFromUser) {
+        token.storeId = storeIdFromUser;
+      } else if (account?.provider === 'credentials' && credentialUser && typeof token.storeId !== 'string') {
+        token.storeId = defaultStoreId;
       }
 
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as typeof session.user & { role?: string }).role =
+        (session.user as typeof session.user & { id?: string }).id =
+          typeof token.sub === 'string' ? token.sub : '';
+        (session.user as typeof session.user & {
+          role?: string;
+          organizationId?: string;
+          storeId?: string;
+        }).role =
           typeof token.role === 'string' ? token.role : 'seller';
+
+        const orgId = typeof token.orgId === 'string' ? token.orgId.trim() : '';
+        const storeId = typeof token.storeId === 'string' ? token.storeId.trim() : '';
+        const sessionUser = session.user as typeof session.user & {
+          organizationId?: string;
+          storeId?: string;
+        };
+        if (orgId) {
+          sessionUser.organizationId = orgId;
+        } else {
+          delete sessionUser.organizationId;
+        }
+        if (storeId) {
+          sessionUser.storeId = storeId;
+        } else {
+          delete sessionUser.storeId;
+        }
       }
       return session;
     },

@@ -31,8 +31,6 @@ const primaryNavItems = [
   { href: '/relatorios', label: 'Relatórios', mobileLabel: 'Relatorios', icon: IconPieChart }
 ] as const;
 
-const DEFAULT_ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || '00000000-0000-0000-0000-000000000001';
-
 type SidebarProps = {
   sessionUser: {
     name: string;
@@ -115,7 +113,6 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
       const response = await fetch(`${API_BASE}/settings/access/self`, {
         method: 'DELETE',
         headers: buildMutationHeaders({
-          'x-org-id': DEFAULT_ORG_ID,
           'x-user-email': email
         })
       });
