@@ -13,6 +13,7 @@ type CreateMercadoPagoPreferenceInput = {
   subdomain: string;
   paymentToken: string;
   method: MercadoPagoMethod;
+  publicBaseUrl?: string;
   installments?: number;
   customerName: string;
   customerPhone?: string;
@@ -158,8 +159,8 @@ const extractMercadoPagoErrorMessage = (payload: unknown, status: number) => {
   return `Nao foi possivel gerar pagamento no Mercado Pago. (HTTP ${status})`;
 };
 
-const resolveMercadoPagoPublicBaseUrl = () => {
-  const raw = (MERCADO_PAGO_PUBLIC_BASE_URL || '').trim();
+const normalizeMercadoPagoPublicBaseUrl = (rawValue?: string) => {
+  const raw = (rawValue || '').trim();
   if (!raw) return '';
   try {
     const parsed = new URL(raw);
@@ -170,15 +171,35 @@ const resolveMercadoPagoPublicBaseUrl = () => {
   }
 };
 
-const MERCADO_PAGO_PUBLIC_CHECKOUT_BASE_URL = resolveMercadoPagoPublicBaseUrl();
+const MERCADO_PAGO_PUBLIC_CHECKOUT_BASE_URL = normalizeMercadoPagoPublicBaseUrl(MERCADO_PAGO_PUBLIC_BASE_URL);
 
-const buildBackUrls = (subdomain: string, orderId: string, paymentToken: string, method: MercadoPagoMethod) => {
-  if (!MERCADO_PAGO_PUBLIC_CHECKOUT_BASE_URL) return null;
+const buildStorefrontReturnUrl = (baseUrl: string, subdomain: string) => {
+  const resolvedBase = normalizeMercadoPagoPublicBaseUrl(baseUrl);
+  const normalizedSubdomain = (subdomain || '').trim();
+  if (!resolvedBase || !normalizedSubdomain) return '';
+  const baseWithoutTrailingSlash = resolvedBase.replace(/\/+$/, '');
+  if (baseWithoutTrailingSlash.toLowerCase().endsWith('/loja')) {
+    return `${baseWithoutTrailingSlash}/${encodeURIComponent(normalizedSubdomain)}`;
+  }
+  return `${baseWithoutTrailingSlash}/loja/${encodeURIComponent(normalizedSubdomain)}`;
+};
+
+const buildBackUrls = (
+  subdomain: string,
+  orderId: string,
+  paymentToken: string,
+  method: MercadoPagoMethod,
+  publicBaseUrl?: string
+) => {
+  const resolvedPublicBaseUrl =
+    normalizeMercadoPagoPublicBaseUrl(publicBaseUrl) || MERCADO_PAGO_PUBLIC_CHECKOUT_BASE_URL;
+  const storefrontReturnUrl = buildStorefrontReturnUrl(resolvedPublicBaseUrl, subdomain);
+  if (!storefrontReturnUrl) return null;
   const query = `pedido=${encodeURIComponent(orderId)}&token=${encodeURIComponent(paymentToken)}&metodo=${encodeURIComponent(method)}`;
   return {
-    success: `${MERCADO_PAGO_PUBLIC_CHECKOUT_BASE_URL}/loja/${subdomain}?pagamento=sucesso&${query}`,
-    pending: `${MERCADO_PAGO_PUBLIC_CHECKOUT_BASE_URL}/loja/${subdomain}?pagamento=pendente&${query}`,
-    failure: `${MERCADO_PAGO_PUBLIC_CHECKOUT_BASE_URL}/loja/${subdomain}?pagamento=falha&${query}`
+    success: `${storefrontReturnUrl}?pagamento=sucesso&${query}`,
+    pending: `${storefrontReturnUrl}?pagamento=pendente&${query}`,
+    failure: `${storefrontReturnUrl}?pagamento=falha&${query}`
   };
 };
 
@@ -237,7 +258,7 @@ export const createMercadoPagoPreference = async (
   }
 
   const payerPhone = parsePhone(input.customerPhone);
-  const backUrls = buildBackUrls(input.subdomain, input.orderId, input.paymentToken, input.method);
+  const backUrls = buildBackUrls(input.subdomain, input.orderId, input.paymentToken, input.method, input.publicBaseUrl);
   const payload: Record<string, unknown> = {
     items: validItems,
     external_reference: input.orderId,

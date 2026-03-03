@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { randomUUID } from 'crypto';
 import type { StorefrontOrderInput } from '../dto';
 import { DEFAULT_ORG_ID, DEFAULT_STORE_ID, STOREFRONT_PIX_EXPIRES_MINUTES } from '../config';
@@ -191,6 +191,40 @@ const normalizeSubdomain = (value?: string | null) =>
 const normalizeOptional = (value?: string | null) => {
   const next = value?.trim();
   return next ? next : null;
+};
+
+const normalizeHeaderValue = (value?: string | null) => {
+  if (!value) return '';
+  return value.split(',')[0]?.trim() || '';
+};
+
+const normalizeHttpOrigin = (value?: string | null) => {
+  const raw = normalizeHeaderValue(value);
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    return parsed.origin;
+  } catch {
+    return '';
+  }
+};
+
+const resolveStorefrontPublicBaseUrl = (req: Request) => {
+  const originFromOriginHeader = normalizeHttpOrigin(req.header('origin'));
+  if (originFromOriginHeader) return originFromOriginHeader;
+
+  const originFromReferer = normalizeHttpOrigin(req.header('referer'));
+  if (originFromReferer) return originFromReferer;
+
+  const forwardedHost = normalizeHeaderValue(req.header('x-forwarded-host'));
+  const host = forwardedHost || normalizeHeaderValue(req.header('host'));
+  if (!host) return '';
+
+  const forwardedProto = normalizeHeaderValue(req.header('x-forwarded-proto')).toLowerCase();
+  const protocol = forwardedProto === 'https' || forwardedProto === 'http' ? forwardedProto : req.protocol;
+  if (protocol !== 'http' && protocol !== 'https') return '';
+  return `${protocol}://${host}`;
 };
 
 const normalizeUuidArray = (value: unknown) => {
@@ -1508,6 +1542,7 @@ router.post(
       let mercadoPagoPaymentId = '';
       let pixCopyPasteCode = '';
       let pixQrCodeBase64 = '';
+      const paymentPublicBaseUrl = resolveStorefrontPublicBaseUrl(req);
 
       if (paymentMethod === 'credit_card' && isMercadoPagoEnabled()) {
         try {
@@ -1516,6 +1551,7 @@ router.post(
             subdomain: subdomainContext?.subdomain || DEFAULT_STOREFRONT_SUBDOMAIN,
             paymentToken,
             method: paymentMethod,
+            publicBaseUrl: paymentPublicBaseUrl || undefined,
             installments,
             customerName: customer.name,
             customerPhone: customer.phone || '',
