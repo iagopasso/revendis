@@ -19,6 +19,10 @@ const defaultAuthUserName =
 const defaultOrgId = process.env.NEXT_PUBLIC_ORG_ID || '00000000-0000-0000-0000-000000000001';
 const mutationAuthToken =
   process.env.MUTATION_AUTH_TOKEN || process.env.NEXT_PUBLIC_MUTATION_AUTH_TOKEN || '';
+const googleClientId = `${process.env.AUTH_GOOGLE_ID || ''}`.trim();
+const googleClientSecret = `${process.env.AUTH_GOOGLE_SECRET || ''}`.trim();
+const facebookClientId = `${process.env.AUTH_FACEBOOK_ID || ''}`.trim();
+const facebookClientSecret = `${process.env.AUTH_FACEBOOK_SECRET || ''}`.trim();
 
 const withNoTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
@@ -127,20 +131,20 @@ providers.push(
   })
 );
 
-if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
+if (googleClientId && googleClientSecret) {
   providers.push(
     Google({
-      clientId: process.env.AUTH_GOOGLE_ID,
-      clientSecret: process.env.AUTH_GOOGLE_SECRET
+      clientId: googleClientId,
+      clientSecret: googleClientSecret
     })
   );
 }
 
-if (process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET) {
+if (facebookClientId && facebookClientSecret) {
   providers.push(
     Facebook({
-      clientId: process.env.AUTH_FACEBOOK_ID,
-      clientSecret: process.env.AUTH_FACEBOOK_SECRET
+      clientId: facebookClientId,
+      clientSecret: facebookClientSecret
     })
   );
 }

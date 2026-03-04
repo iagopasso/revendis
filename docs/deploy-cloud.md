@@ -105,20 +105,30 @@ NEXT_PUBLIC_ORG_ID=00000000-0000-0000-0000-000000000001
 NEXT_PUBLIC_STORE_ID=00000000-0000-0000-0000-000000000101
 NEXT_PUBLIC_MUTATION_AUTH_TOKEN=troque_por_um_token_longo
 AUTH_SECRET=troque_por_um_segredo_grande
-AUTH_ADMIN_EMAIL=admin@seu-dominio.com
-AUTH_ADMIN_PASSWORD=troque_essa_senha
-AUTH_ADMIN_NAME=Administrador
+AUTH_URL=https://app.seudominio.com
 ```
 
 Variaveis opcionais (OAuth):
 
 ```bash
+# Google (use AUTH_* or GOOGLE_CLIENT_*)
 AUTH_GOOGLE_ID=
 AUTH_GOOGLE_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Facebook (use AUTH_* or FACEBOOK_CLIENT_*)
 AUTH_FACEBOOK_ID=
 AUTH_FACEBOOK_SECRET=
+FACEBOOK_CLIENT_ID=
+FACEBOOK_CLIENT_SECRET=
 AUTH_ALLOWED_EMAILS=email1@dominio.com,email2@dominio.com
 ```
+
+Callbacks OAuth (Google/Facebook):
+
+- Producao: `https://app.seudominio.com/api/auth/callback/google`
+- Local: `http://localhost:3000/api/auth/callback/google`
 
 ## 6) Dominios
 
@@ -136,7 +146,7 @@ Se for usar vitrine por subdominio (`loja.seudominio.com`), siga tambem:
 2. Backend respondendo `GET /api/health`
 3. Web carregando e autenticando
 4. `NEXT_PUBLIC_API_URL` apontando para API publica
-5. Credenciais padrao trocadas (`AUTH_ADMIN_PASSWORD`, `AUTH_SECRET`)
+5. Segredos de autenticacao configurados (`AUTH_SECRET`, OAuth se aplicavel)
 
 ## Arquivos de referencia
 

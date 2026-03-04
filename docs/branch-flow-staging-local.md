@@ -39,9 +39,9 @@ NEXT_PUBLIC_API_TIMEOUT_MS=10000
 NEXT_PUBLIC_ORG_ID=00000000-0000-0000-0000-000000000001
 NEXT_PUBLIC_STORE_ID=00000000-0000-0000-0000-000000000101
 AUTH_SECRET=local-secret-forte
-AUTH_ADMIN_EMAIL=admin@local
-AUTH_ADMIN_PASSWORD=Admin@123456
-AUTH_ADMIN_NAME=Administrador
+AUTH_URL=http://localhost:3000
+AUTH_GOOGLE_ID=
+AUTH_GOOGLE_SECRET=
 EOF
 
 pnpm --filter web dev
@@ -97,3 +97,4 @@ git push origin main
 - `apps/web/.env.local` e `.env.*` ficam fora do Git (ignorado no repo).
 - Use `DATABASE_URL` diferente entre local e producao.
 - Nao rode migrations de teste no banco de producao.
+- Callback Google local: `http://localhost:3000/api/auth/callback/google`.
