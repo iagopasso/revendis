@@ -35,6 +35,7 @@ type SidebarProps = {
   sessionUser: {
     name: string;
     email: string;
+    image?: string;
   };
 };
 
@@ -86,6 +87,12 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
       .join('');
     return initials || 'PF';
   }, [sessionUser.email, sessionUser.name]);
+  const profileImage = useMemo(() => {
+    const value = (sessionUser.image || '').trim();
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value) || /^data:image\//i.test(value)) return value;
+    return '';
+  }, [sessionUser.image]);
 
   const handleSignOut = async () => {
     setProfileMenuOpen(false);
@@ -172,7 +179,7 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
           aria-expanded={profileMenuOpen}
           onClick={() => setProfileMenuOpen((current) => !current)}
         >
-          <span>{displayLabel}</span>
+          <span>{profileImage ? <img src={profileImage} alt={sessionUser.name || 'Perfil'} loading="lazy" /> : displayLabel}</span>
         </button>
 
         {profileMenuOpen ? (

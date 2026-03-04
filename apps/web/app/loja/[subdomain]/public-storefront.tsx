@@ -64,6 +64,13 @@ type CartItem = {
   quantity: number;
 };
 
+type ActiveFilterChip = {
+  key: string;
+  label: string;
+  kind: 'search' | 'brand' | 'category' | 'price_from' | 'price_to';
+  value?: string;
+};
+
 type PublicView = 'catalog' | 'product' | 'checkout' | 'success';
 type CheckoutPaymentMethod = 'pix' | 'credit_card';
 type CheckoutPaymentStatus = 'pending' | 'paid' | 'failed' | 'expired';
@@ -240,14 +247,36 @@ const normalizeToken = (value: string) =>
 const parseCurrencyValue = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const normalized = value
+  const stripped = trimmed
     .replace(/\s/g, '')
     .replace(/R\$/gi, '')
-    .replace(/\./g, '')
-    .replace(',', '.');
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
+    .replace(/[^\d,.-]/g, '');
+  if (!stripped) return null;
+
+  const signal = stripped.startsWith('-') ? '-' : '';
+  const unsigned = stripped.replace(/^[+-]/, '');
+  const decimalIndex = Math.max(unsigned.lastIndexOf(','), unsigned.lastIndexOf('.'));
+  let normalized = unsigned;
+
+  if (decimalIndex >= 0) {
+    const integerPart = unsigned.slice(0, decimalIndex).replace(/[.,]/g, '');
+    const fractionPart = unsigned.slice(decimalIndex + 1).replace(/[.,]/g, '');
+    normalized = `${integerPart || '0'}.${fractionPart}`;
+  } else {
+    normalized = unsigned.replace(/[.,]/g, '');
+  }
+
+  const parsed = Number(`${signal}${normalized}`);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, parsed);
 };
+
+const PRICE_FILTER_PRESETS = [
+  { label: 'Ate R$ 50', from: '', to: '50' },
+  { label: 'R$ 50 a R$ 150', from: '50', to: '150' },
+  { label: 'R$ 150 a R$ 300', from: '150', to: '300' },
+  { label: 'Acima de R$ 300', from: '300', to: '' }
+] as const;
 
 const onlyDigits = (value: string) => value.replace(/\D/g, '');
 
@@ -793,6 +822,15 @@ export default function PublicStorefront({
   }, [categoryOptions]);
 
   useEffect(() => {
+    if (!settings.filterByPrice) return;
+    const timer = window.setTimeout(() => {
+      setPriceFromApplied((current) => (current === priceFromDraft ? current : priceFromDraft));
+      setPriceToApplied((current) => (current === priceToDraft ? current : priceToDraft));
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [priceFromDraft, priceToDraft, settings.filterByPrice]);
+
+  useEffect(() => {
     if (!toastMessage) return;
     const timer = window.setTimeout(() => setToastMessage(''), 2600);
     return () => window.clearTimeout(timer);
@@ -850,6 +888,22 @@ export default function PublicStorefront({
     setProductQuantity((prev) => Math.max(1, Math.min(prev, Math.max(1, selected.quantity || 1))));
   }, [view, selectedProductId, productsById]);
 
+  const priceFromDraftValue = useMemo(() => parseCurrencyValue(priceFromDraft), [priceFromDraft]);
+  const priceToDraftValue = useMemo(() => parseCurrencyValue(priceToDraft), [priceToDraft]);
+  const applyPriceRangeFilter = (from: string, to: string) => {
+    setPriceFromDraft(from);
+    setPriceToDraft(to);
+    setPriceFromApplied(from);
+    setPriceToApplied(to);
+  };
+
+  const clearCatalogFilters = () => {
+    setSearch('');
+    setSelectedBrands([]);
+    setSelectedCategories([]);
+    applyPriceRangeFilter('', '');
+  };
+
   const filteredProducts = useMemo(() => {
     const searchTerm = normalizeToken(search);
     const priceFrom = parseCurrencyValue(priceFromApplied);
@@ -887,6 +941,93 @@ export default function PublicStorefront({
     settings.filterByCategory,
     settings.filterByPrice
   ]);
+
+  const activeFilterChips = useMemo<ActiveFilterChip[]>(() => {
+    const chips: ActiveFilterChip[] = [];
+    const trimmedSearch = search.trim();
+    if (trimmedSearch) {
+      chips.push({ key: `search:${trimmedSearch}`, label: `Busca: ${trimmedSearch}`, kind: 'search' });
+    }
+
+    if (settings.filterByBrand) {
+      for (const brand of selectedBrands) {
+        const value = brand.trim();
+        if (!value) continue;
+        chips.push({ key: `brand:${normalizeToken(value)}`, label: value, kind: 'brand', value });
+      }
+    }
+
+    if (settings.filterByCategory) {
+      for (const category of selectedCategories) {
+        const value = category.trim();
+        if (!value) continue;
+        chips.push({ key: `category:${normalizeToken(value)}`, label: value, kind: 'category', value });
+      }
+    }
+
+    if (settings.filterByPrice) {
+      const from = parseCurrencyValue(priceFromApplied);
+      const to = parseCurrencyValue(priceToApplied);
+      if (from !== null) {
+        chips.push({
+          key: `price-from:${from}`,
+          label: `A partir de ${formatPrice(from)}`,
+          kind: 'price_from'
+        });
+      }
+      if (to !== null) {
+        chips.push({
+          key: `price-to:${to}`,
+          label: `Ate ${formatPrice(to)}`,
+          kind: 'price_to'
+        });
+      }
+    }
+
+    return chips;
+  }, [
+    priceFromApplied,
+    priceToApplied,
+    search,
+    selectedBrands,
+    selectedCategories,
+    settings.filterByBrand,
+    settings.filterByCategory,
+    settings.filterByPrice
+  ]);
+
+  const hasActiveFilters = activeFilterChips.length > 0;
+  const productsResultText = `${filteredProducts.length} ${filteredProducts.length === 1 ? 'produto encontrado' : 'produtos encontrados'}`;
+  const isPricePresetActive = (from: string, to: string) =>
+    parseCurrencyValue(from) === priceFromDraftValue && parseCurrencyValue(to) === priceToDraftValue;
+
+  const removeActiveFilter = (chip: ActiveFilterChip) => {
+    if (chip.kind === 'search') {
+      setSearch('');
+      return;
+    }
+
+    if (chip.kind === 'brand' && chip.value) {
+      const normalized = normalizeToken(chip.value);
+      setSelectedBrands((prev) => prev.filter((item) => normalizeToken(item) !== normalized));
+      return;
+    }
+
+    if (chip.kind === 'category' && chip.value) {
+      const normalized = normalizeToken(chip.value);
+      setSelectedCategories((prev) => prev.filter((item) => normalizeToken(item) !== normalized));
+      return;
+    }
+
+    if (chip.kind === 'price_from') {
+      applyPriceRangeFilter('', priceToDraft);
+      return;
+    }
+
+    if (chip.kind === 'price_to') {
+      applyPriceRangeFilter(priceFromDraft, '');
+    }
+  };
 
   const selectedProduct = useMemo(
     () => (selectedProductId ? productsById.get(selectedProductId) || null : null),
@@ -1556,11 +1697,23 @@ export default function PublicStorefront({
       {view === 'catalog' ? (
         <section className="public-stock-body">
           <aside className="public-stock-filters">
+            <div className="public-stock-filter-panel-head">
+              <strong>Filtros</strong>
+              {hasActiveFilters ? (
+                <button type="button" className="public-stock-filter-clear-inline" onClick={clearCatalogFilters}>
+                  Limpar tudo
+                </button>
+              ) : null}
+            </div>
+
             {settings.filterByBrand ? (
               <section className="public-stock-filter-card">
                 <button type="button" className="public-stock-filter-head" onClick={() => setBrandOpen((prev) => !prev)}>
                   <strong>Marca</strong>
-                  <span>{brandOpen ? '^' : 'v'}</span>
+                  <span className="public-stock-filter-head-meta">
+                    {selectedBrands.length > 0 ? <small>{selectedBrands.length}</small> : null}
+                    <span>{brandOpen ? '▾' : '▸'}</span>
+                  </span>
                 </button>
                 {brandOpen ? (
                   <div className="public-stock-filter-content">
@@ -1591,7 +1744,10 @@ export default function PublicStorefront({
                   onClick={() => setCategoryOpen((prev) => !prev)}
                 >
                   <strong>Categoria</strong>
-                  <span>{categoryOpen ? '^' : 'v'}</span>
+                  <span className="public-stock-filter-head-meta">
+                    {selectedCategories.length > 0 ? <small>{selectedCategories.length}</small> : null}
+                    <span>{categoryOpen ? '▾' : '▸'}</span>
+                  </span>
                 </button>
                 {categoryOpen ? (
                   <div className="public-stock-filter-content">
@@ -1618,7 +1774,10 @@ export default function PublicStorefront({
               <section className="public-stock-filter-card">
                 <button type="button" className="public-stock-filter-head" onClick={() => setPriceOpen((prev) => !prev)}>
                   <strong>Preço</strong>
-                  <span>{priceOpen ? '^' : 'v'}</span>
+                  <span className="public-stock-filter-head-meta">
+                    {priceFromApplied || priceToApplied ? <small>ativo</small> : null}
+                    <span>{priceOpen ? '▾' : '▸'}</span>
+                  </span>
                 </button>
                 {priceOpen ? (
                   <div className="public-stock-filter-content">
@@ -1628,6 +1787,13 @@ export default function PublicStorefront({
                         <input
                           value={priceFromDraft}
                           onChange={(event) => setPriceFromDraft(event.target.value)}
+                          inputMode="decimal"
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              applyPriceRangeFilter(priceFromDraft, priceToDraft);
+                            }
+                          }}
                           placeholder="Minimo"
                         />
                       </label>
@@ -1636,19 +1802,40 @@ export default function PublicStorefront({
                         <input
                           value={priceToDraft}
                           onChange={(event) => setPriceToDraft(event.target.value)}
+                          inputMode="decimal"
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              applyPriceRangeFilter(priceFromDraft, priceToDraft);
+                            }
+                          }}
                           placeholder="Maximo"
                         />
                       </label>
                     </div>
+
+                    <div className="public-stock-price-presets">
+                      {PRICE_FILTER_PRESETS.map((preset) => {
+                        const active = isPricePresetActive(preset.from, preset.to);
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            className={active ? 'public-stock-price-preset active' : 'public-stock-price-preset'}
+                            onClick={() => applyPriceRangeFilter(preset.from, preset.to)}
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     <button
                       type="button"
                       className="public-stock-filter-apply"
-                      onClick={() => {
-                        setPriceFromApplied(priceFromDraft);
-                        setPriceToApplied(priceToDraft);
-                      }}
+                      onClick={() => applyPriceRangeFilter(priceFromDraft, priceToDraft)}
                     >
-                      Aplicar
+                      Aplicar agora
                     </button>
                   </div>
                 ) : null}
@@ -1657,6 +1844,22 @@ export default function PublicStorefront({
           </aside>
 
           <section className="public-stock-products">
+            <header className="public-stock-products-head">
+              <strong>{productsResultText}</strong>
+              <span>{hasActiveFilters ? `${activeFilterChips.length} filtro(s) ativos` : 'Sem filtros ativos'}</span>
+            </header>
+
+            {activeFilterChips.length > 0 ? (
+              <div className="public-stock-active-filters">
+                {activeFilterChips.map((chip) => (
+                  <button key={chip.key} type="button" className="public-stock-active-chip" onClick={() => removeActiveFilter(chip)}>
+                    {chip.label}
+                    <span aria-hidden>×</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
             {unavailable ? (
               <article className="public-stock-empty">
                 <strong>Loja indisponivel</strong>

@@ -187,6 +187,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         user && 'id' in user ? `${(user as { id?: unknown }).id || ''}`.trim() : '';
       const roleFromUser =
         user && 'role' in user ? normalizeSessionRole((user as { role?: unknown }).role) : null;
+      const imageFromUser =
+        user && 'image' in user ? `${(user as { image?: unknown }).image || ''}`.trim() : '';
       const orgIdFromUser =
         user && 'organizationId' in user
           ? `${(user as { organizationId?: unknown }).organizationId || ''}`.trim()
@@ -206,6 +208,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.sub = userIdFromUser;
       }
 
+      if (imageFromUser) {
+        token.picture = imageFromUser;
+      }
+
       if (orgIdFromUser) {
         token.orgId = orgIdFromUser;
       }
@@ -218,21 +224,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as typeof session.user & { id?: string }).id =
-          typeof token.sub === 'string' ? token.sub : '';
-        (session.user as typeof session.user & {
+        const sessionUser = session.user as typeof session.user & {
+          id?: string;
+          image?: string | null;
           role?: string;
           organizationId?: string;
           storeId?: string;
-        }).role =
+        };
+        sessionUser.id =
+          typeof token.sub === 'string' ? token.sub : '';
+        sessionUser.role =
           typeof token.role === 'string' ? token.role : 'seller';
+        if (typeof token.picture === 'string' && token.picture.trim()) {
+          sessionUser.image = token.picture.trim();
+        }
 
         const orgId = typeof token.orgId === 'string' ? token.orgId.trim() : '';
         const storeId = typeof token.storeId === 'string' ? token.storeId.trim() : '';
-        const sessionUser = session.user as typeof session.user & {
-          organizationId?: string;
-          storeId?: string;
-        };
         if (orgId) {
           sessionUser.organizationId = orgId;
         } else {

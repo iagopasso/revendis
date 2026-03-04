@@ -14,7 +14,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       <Sidebar
         sessionUser={{
           name: session.user?.name || '',
-          email: session.user?.email || ''
+          email: session.user?.email || '',
+          image: session.user?.image || ''
         }}
       />
       <div className="content">{children}</div>

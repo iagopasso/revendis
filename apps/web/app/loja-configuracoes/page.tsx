@@ -399,7 +399,7 @@ export default function LojaConfiguracoesPage() {
 
       <div className="store-public-link-row">
         <span>Link da loja virtual:</span>
-        <a href={publicStoreUrl} target="_blank" rel="noreferrer" style={{ color: '#ffffff' }}>
+        <a href={publicStoreUrl} target="_blank" rel="noreferrer">
           {publicStoreUrl}
         </a>
       </div>
