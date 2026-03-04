@@ -178,6 +178,11 @@ type InventoryPanelProps = {
   viewParam: string;
 };
 
+type PanelFeedback = {
+  tone: 'error' | 'success';
+  text: string;
+};
+
 type BarcodeDetectorResult = { rawValue?: string };
 type BarcodeDetectorInstance = {
   detect: (source: HTMLVideoElement) => Promise<BarcodeDetectorResult[]>;
@@ -746,6 +751,8 @@ export default function InventoryPanel({
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
   const [formDraft, setFormDraft] = useState<ProductDraft>(emptyDraft);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingSkuSnapshot, setEditingSkuSnapshot] = useState('');
+  const [editingCodeSnapshot, setEditingCodeSnapshot] = useState('');
   const [openImport, setOpenImport] = useState(false);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -831,6 +838,7 @@ export default function InventoryPanel({
   const [scanLinkCode, setScanLinkCode] = useState('');
   const [scanLinkQuery, setScanLinkQuery] = useState('');
   const [scanLinkSavingId, setScanLinkSavingId] = useState<string | null>(null);
+  const [formFeedback, setFormFeedback] = useState<PanelFeedback | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [localProducts, setLocalProducts] = useState<Product[]>(products);
   const [allInventoryProducts, setAllInventoryProducts] = useState<Product[]>(allProducts);
@@ -1621,12 +1629,15 @@ export default function InventoryPanel({
     setFormMode('create');
     setFormDraft(emptyDraft);
     setEditingId(null);
+    setEditingSkuSnapshot('');
+    setEditingCodeSnapshot('');
     setCatalogQuery('');
     setCatalogProducts([]);
     setCatalogLoading(false);
     setCatalogLoaded(false);
     setCatalogError(null);
     setCatalogSourceInfo(null);
+    setFormFeedback(null);
   };
 
   const openCreateSearch = () => {
@@ -1638,12 +1649,15 @@ export default function InventoryPanel({
     setCreateStep('search');
     setFormDraft(emptyDraft);
     setEditingId(null);
+    setEditingSkuSnapshot('');
+    setEditingCodeSnapshot('');
     setCatalogQuery('');
     setCatalogProducts([]);
     setCatalogLoading(false);
     setCatalogLoaded(false);
     setCatalogError(null);
     setCatalogSourceInfo(null);
+    setFormFeedback(null);
   };
 
   const openForm = (draft: ProductDraft, mode: 'create' | 'edit', id?: string | null) => {
@@ -1655,21 +1669,29 @@ export default function InventoryPanel({
     setCreateStep('form');
     setFormDraft(draft);
     setEditingId(id ?? null);
+    setFormFeedback(null);
+    if (mode === 'create') {
+      setEditingSkuSnapshot('');
+      setEditingCodeSnapshot('');
+    }
   };
 
   const openEditForm = (product: Product) => {
     setSelectedProduct(null);
+    const draft = {
+      name: getProductNameOnly(product),
+      brand: product.brand || '',
+      brandCode: getProductCode(product),
+      category: product.category_id || '',
+      price: product.price ? formatCurrency(toNumber(product.price)) : '',
+      barcode: product.barcode || '',
+      imageUrl: getProductImage(product),
+      available: product.active
+    };
+    setEditingSkuSnapshot((product.sku || '').trim());
+    setEditingCodeSnapshot(draft.brandCode);
     openForm(
-      {
-        name: getProductNameOnly(product),
-        brand: product.brand || '',
-        brandCode: getProductCode(product),
-        category: product.category_id || '',
-        price: product.price ? formatCurrency(toNumber(product.price)) : '',
-        barcode: product.barcode || '',
-        imageUrl: getProductImage(product),
-        available: product.active
-      },
+      draft,
       'edit',
       product.id
     );
@@ -2730,7 +2752,7 @@ export default function InventoryPanel({
     }
   };
 
-  const buildSku = () => {
+  const buildCreateSku = () => {
     const productCodeToken = toDigits(formDraft.brandCode).slice(0, 40);
     const barcodeToken = toDigits(formDraft.barcode).slice(0, 40);
     if (productCodeToken) return productCodeToken;
@@ -2738,10 +2760,23 @@ export default function InventoryPanel({
     return Date.now().toString();
   };
 
+  const buildEditSku = () => {
+    const initialCodeToken = toDigits(editingCodeSnapshot).slice(0, 40);
+    const nextCodeToken = toDigits(formDraft.brandCode).slice(0, 40);
+    if (nextCodeToken && nextCodeToken !== initialCodeToken) return nextCodeToken;
+
+    const currentSku = editingSkuSnapshot.trim();
+    if (currentSku) return currentSku;
+
+    return buildCreateSku();
+  };
+
   const handleSaveForm = async () => {
+    setFormFeedback(null);
+    const sku = formMode === 'edit' ? buildEditSku() : buildCreateSku();
     const payload = {
       name: formDraft.name.trim(),
-      sku: buildSku(),
+      sku,
       brand: formDraft.brand.trim() || undefined,
       barcode: formDraft.barcode.trim() || undefined,
       imageUrl: normalizeProductImageUrl(formDraft.imageUrl) || undefined,
@@ -2752,11 +2787,15 @@ export default function InventoryPanel({
     };
 
     if (!payload.name) {
-      setToast('Informe o nome do produto');
+      const message = 'Informe o nome do produto';
+      setFormFeedback({ tone: 'error', text: message });
+      setToast(message);
       return;
     }
     if (formMode === 'edit' && !editingId) {
-      setToast('Produto invalido');
+      const message = 'Produto invalido';
+      setFormFeedback({ tone: 'error', text: message });
+      setToast(message);
       return;
     }
 
@@ -2781,7 +2820,9 @@ export default function InventoryPanel({
         | null;
 
       if (!res.ok) {
-        setToast(responsePayload?.message || 'Erro ao salvar o produto');
+        const message = responsePayload?.message || 'Erro ao salvar o produto';
+        setFormFeedback({ tone: 'error', text: message });
+        setToast(message);
         return;
       }
 
@@ -2805,7 +2846,9 @@ export default function InventoryPanel({
       router.refresh();
       setToast(formMode === 'edit' ? 'Produto atualizado' : 'Produto cadastrado');
     } catch {
-      setToast('Erro ao salvar o produto');
+      const message = 'Erro ao salvar o produto';
+      setFormFeedback({ tone: 'error', text: message });
+      setToast(message);
     }
   };
 
@@ -3638,6 +3681,15 @@ export default function InventoryPanel({
                     </div>
                   </div>
                 </div>
+                {formFeedback ? (
+                  <div
+                    className={`panel-feedback ${formFeedback.tone === 'error' ? 'error' : 'success'}`}
+                    role="alert"
+                    aria-live="polite"
+                  >
+                    {formFeedback.text}
+                  </div>
+                ) : null}
                 <div className="modal-footer">
                   {formMode === 'create' ? (
                     <button
@@ -5115,7 +5167,17 @@ export default function InventoryPanel({
         </div>
       ) : null}
 
-      {toast ? <div className="toast">{toast}</div> : null}
+      {toast ? (
+        <div
+          className={`toast${
+            /erro|nao foi possivel|invalido|falhou|negada|nenhuma/i.test(toast) ? ' error' : ''
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          {toast}
+        </div>
+      ) : null}
 
       <SalesDetailModal
         open={Boolean(saleModal)}
