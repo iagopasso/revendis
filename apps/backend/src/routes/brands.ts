@@ -5,6 +5,7 @@ import { query, withTransaction } from '../db';
 import { validateRequest } from '../middleware/validate';
 import { idParamSchema } from '../schemas/common';
 import { resellerBrandInputSchema, resellerBrandUpdateSchema } from '../schemas/brands';
+import { resolveCatalogBrandSlug } from '../services/brand-catalog';
 import { asyncHandler } from '../utils/async-handler';
 import { writeAudit } from '../utils/audit';
 
@@ -13,6 +14,24 @@ const router = Router();
 const normalizeOptional = (value?: string) => {
   const next = value?.trim();
   return next ? next : null;
+};
+
+const normalizeSourceBrand = (value?: string) => {
+  const normalized = normalizeOptional(value);
+  if (!normalized) return null;
+  return resolveCatalogBrandSlug(normalized) || normalized;
+};
+
+const resolveSourceBrandForCreate = ({
+  sourceBrand,
+  name
+}: {
+  sourceBrand?: string;
+  name: string;
+}) => {
+  const explicit = normalizeSourceBrand(sourceBrand);
+  if (explicit) return explicit;
+  return resolveCatalogBrandSlug(name) || null;
 };
 
 router.get(
@@ -53,6 +72,10 @@ router.post(
 
     const source = payload.source || 'manual';
     const profitability = Math.max(0, Math.min(100, Number(payload.profitability ?? 30)));
+    const sourceBrand = resolveSourceBrandForCreate({
+      sourceBrand: payload.sourceBrand,
+      name
+    });
 
     const result = await withTransaction(async (client) => {
       const inserted = await client.query(
@@ -82,7 +105,7 @@ router.post(
           orgId,
           name,
           source,
-          normalizeOptional(payload.sourceBrand),
+          sourceBrand,
           profitability,
           normalizeOptional(payload.logoUrl)
         ]
@@ -97,6 +120,7 @@ router.post(
         payload: {
           name,
           source,
+          sourceBrand,
           profitability
         }
       });
@@ -184,7 +208,7 @@ router.patch(
     }
     if (payload.sourceBrand !== undefined) {
       fields.push(`source_brand = $${fields.length + 1}`);
-      values.push(normalizeOptional(payload.sourceBrand));
+      values.push(normalizeSourceBrand(payload.sourceBrand));
     }
     if (payload.profitability !== undefined) {
       fields.push(`profitability = $${fields.length + 1}`);

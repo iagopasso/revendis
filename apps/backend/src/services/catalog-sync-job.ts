@@ -121,16 +121,16 @@ const parseRequestedBrands = (values?: string[] | null): CatalogBrandSlug[] => {
 
 const resolveConfiguredCatalogBrands = async (orgId: string): Promise<CatalogBrandSlug[]> => {
   const allowedBrands = new Set<CatalogBrandSlug>(CATALOG_BRANDS);
-  const result = await query<{ sourceBrand: string | null }>(
-    `SELECT source_brand AS "sourceBrand"
+  const result = await query<{ sourceBrand: string | null; name: string | null }>(
+    `SELECT source_brand AS "sourceBrand",
+            name
      FROM reseller_brands
-     WHERE organization_id = $1
-       AND source_brand IS NOT NULL`,
+     WHERE organization_id = $1`,
     [orgId]
   );
 
   const mapped = result.rows
-    .map((row) => resolveCatalogBrandSlug(row.sourceBrand || ''))
+    .map((row) => resolveCatalogBrandSlug(row.sourceBrand || '') || resolveCatalogBrandSlug(row.name || ''))
     .filter((value): value is CatalogBrandSlug => value !== null)
     .filter((value) => allowedBrands.has(value));
 
