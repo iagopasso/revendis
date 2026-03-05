@@ -6024,6 +6024,10 @@ button.dashboard-reminder-card {
 
 .modal-categories {
   width: min(520px, 100%);
+  max-height: min(78dvh, 720px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .category-manager-list {
@@ -6031,6 +6035,11 @@ button.dashboard-reminder-card {
   gap: 10px;
   margin-top: 8px;
   margin-bottom: 16px;
+  max-height: min(52dvh, 460px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 .category-manager-row {
