@@ -1,7 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { IconArrowLeft, IconCart, IconCopy, IconSearch, IconTrash, IconWhatsapp } from '../../(dash)/icons';
+import { useSearchParams } from 'next/navigation';
+import {
+  IconArrowLeft,
+  IconCart,
+  IconCopy,
+  IconLock,
+  IconSearch,
+  IconStar,
+  IconTrash,
+  IconTruck,
+  IconWhatsapp
+} from '../../(dash)/icons';
 import { API_BASE, buildMutationHeaders } from '../../(dash)/lib';
 import {
   DEFAULT_STOREFRONT_SETTINGS,
@@ -416,6 +427,137 @@ const toCountdownText = (seconds: number) => {
   return `${String(minutes).padStart(2, '0')}:${String(remaining).padStart(2, '0')}`;
 };
 
+type HeroVariant = 'a' | 'b';
+type AudienceSegment = 'revenda' | 'cliente-final' | 'atacado';
+
+type SegmentCopy = {
+  audienceLabel: string;
+  heroTitle: Record<HeroVariant, string>;
+  heroSubtitle: Record<HeroVariant, string>;
+  heroPrimaryCta: Record<HeroVariant, string>;
+  heroSecondaryCta: Record<HeroVariant, string>;
+  checkoutIntro: Record<HeroVariant, string>;
+  trust: [string, string, string];
+  checkoutAssurances: [string, string, string];
+};
+
+const SEGMENT_COPY: Record<AudienceSegment, SegmentCopy> = {
+  revenda: {
+    audienceLabel: 'foco em revenda',
+    heroTitle: {
+      a: 'Catalogo confiavel para acelerar sua revenda.',
+      b: 'Lucro rapido com pedido fechado hoje.'
+    },
+    heroSubtitle: {
+      a: 'Escolha seus itens com previsibilidade de estoque e pagamento simplificado.',
+      b: 'Aproveite as melhores oportunidades do dia e garanta margem no proximo ciclo.'
+    },
+    heroPrimaryCta: {
+      a: 'Ver catalogo completo',
+      b: 'Garantir oferta agora'
+    },
+    heroSecondaryCta: {
+      a: 'Montar carrinho',
+      b: 'Quero montar meu pedido'
+    },
+    checkoutIntro: {
+      a: 'Confirme seu pedido de revenda com pagamento seguro e acompanhamento claro.',
+      b: 'Feche seu pedido agora para nao perder condicoes e estoque.'
+    },
+    trust: ['Checkout protegido', 'Reposicao agil', 'Atendimento consultivo'],
+    checkoutAssurances: ['Ambiente protegido', 'Separacao prioritaria', 'Suporte rapido da loja']
+  },
+  'cliente-final': {
+    audienceLabel: 'compra para uso pessoal',
+    heroTitle: {
+      a: 'Compre com tranquilidade e receba sem complicacao.',
+      b: 'Leve agora o que voce precisa, sem burocracia.'
+    },
+    heroSubtitle: {
+      a: 'Produtos selecionados, pagamento seguro e atendimento proximo do inicio ao fim.',
+      b: 'Ofertas diretas com checkout rapido para concluir sua compra em minutos.'
+    },
+    heroPrimaryCta: {
+      a: 'Escolher produtos',
+      b: 'Comprar com desconto'
+    },
+    heroSecondaryCta: {
+      a: 'Ver carrinho',
+      b: 'Quero meu carrinho'
+    },
+    checkoutIntro: {
+      a: 'Revise seus itens e finalize com seguranca em um processo simples.',
+      b: 'Finalize agora para garantir preco e disponibilidade da sua selecao.'
+    },
+    trust: ['Pagamento seguro', 'Suporte humano', 'Entrega acompanhada'],
+    checkoutAssurances: ['Transacao protegida', 'Processo transparente', 'Suporte dedicado']
+  },
+  atacado: {
+    audienceLabel: 'compra em volume',
+    heroTitle: {
+      a: 'Pedido em volume com organizacao e controle.',
+      b: 'Volume alto, condicao forte e pedido fechado rapido.'
+    },
+    heroSubtitle: {
+      a: 'Monte lotes com visao clara de estoque, oferta e condicoes de pagamento.',
+      b: 'Aproveite a janela de oportunidade para garantir disponibilidade em escala.'
+    },
+    heroPrimaryCta: {
+      a: 'Montar pedido em lote',
+      b: 'Fechar lote agora'
+    },
+    heroSecondaryCta: {
+      a: 'Revisar carrinho',
+      b: 'Abrir meu pedido'
+    },
+    checkoutIntro: {
+      a: 'Valide seu pedido em volume e conclua com seguranca operacional.',
+      b: 'Conclua agora para garantir escala, prazo e condicao comercial.'
+    },
+    trust: ['Fluxo profissional', 'Separacao em escala', 'Atendimento especializado'],
+    checkoutAssurances: ['Checkout seguro', 'Processo com prioridade', 'Suporte para volume']
+  }
+};
+
+const normalizeAudienceSegment = (value: string): AudienceSegment => {
+  const normalized = normalizeToken(value || '');
+  if (!normalized) return 'revenda';
+  if (
+    normalized === 'cliente-final' ||
+    normalized === 'clientefinal' ||
+    normalized === 'consumidor' ||
+    normalized === 'varejo' ||
+    normalized === 'retail'
+  ) {
+    return 'cliente-final';
+  }
+  if (normalized === 'atacado' || normalized === 'volume' || normalized === 'lote' || normalized === 'bulk') {
+    return 'atacado';
+  }
+  return 'revenda';
+};
+
+const parseHeroVariant = (value: string): HeroVariant | null => {
+  const normalized = normalizeToken(value || '');
+  if (!normalized) return null;
+  if (normalized === 'a' || normalized === 'sobria' || normalized === 'sobrio' || normalized === 'controle') {
+    return 'a';
+  }
+  if (normalized === 'b' || normalized === 'agressiva' || normalized === 'agressivo' || normalized === 'bold') {
+    return 'b';
+  }
+  return null;
+};
+
+const pickHeroVariant = (seed: string): HeroVariant => {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash << 5) - hash + seed.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 2 === 0 ? 'a' : 'b';
+};
+
 export default function PublicStorefront({
   subdomain,
   initialProducts,
@@ -431,6 +573,11 @@ export default function PublicStorefront({
   initialProductId?: string | null;
   unavailable?: boolean;
 }) {
+  const searchParams = useSearchParams();
+  const segmentParam = searchParams.get('segmento') || searchParams.get('segment') || '';
+  const heroParam = searchParams.get('hero') || searchParams.get('ab') || '';
+  const audienceSegment = useMemo(() => normalizeAudienceSegment(segmentParam), [segmentParam]);
+
   const settings = useMemo(
     () =>
       normalizeStorefrontSettings({
@@ -462,6 +609,7 @@ export default function PublicStorefront({
   const [priceToDraft, setPriceToDraft] = useState(settings.priceTo || '');
   const [priceFromApplied, setPriceFromApplied] = useState(settings.priceFrom || '');
   const [priceToApplied, setPriceToApplied] = useState(settings.priceTo || '');
+  const [heroVariant, setHeroVariant] = useState<HeroVariant>(() => parseHeroVariant(heroParam) || 'a');
 
   const [cartOpen, setCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -511,6 +659,38 @@ export default function PublicStorefront({
   const pendingPaymentStorageKey = `${PENDING_PAYMENT_STORAGE_PREFIX}${viewStateSubdomain}`;
   const cartStorageKey = `${CART_STORAGE_PREFIX}${viewStateSubdomain}`;
   const checkoutDraftStorageKey = `${CHECKOUT_DRAFT_STORAGE_PREFIX}${viewStateSubdomain}`;
+
+  useEffect(() => {
+    const forcedVariant = parseHeroVariant(heroParam);
+    if (forcedVariant) {
+      setHeroVariant(forcedVariant);
+      return;
+    }
+
+    if (typeof window === 'undefined') return;
+
+    try {
+      const storageKey = `revendis:hero-variant:v1:${viewStateSubdomain}:${audienceSegment}`;
+      const persisted = window.localStorage.getItem(storageKey);
+      if (persisted === 'a' || persisted === 'b') {
+        setHeroVariant(persisted);
+        return;
+      }
+
+      const visitorKey = 'revendis:hero-visitor:v1';
+      let visitorId = window.localStorage.getItem(visitorKey);
+      if (!visitorId) {
+        visitorId = `v${Math.random().toString(36).slice(2, 10)}`;
+        window.localStorage.setItem(visitorKey, visitorId);
+      }
+
+      const nextVariant = pickHeroVariant(`${viewStateSubdomain}:${audienceSegment}:${visitorId}`);
+      window.localStorage.setItem(storageKey, nextVariant);
+      setHeroVariant(nextVariant);
+    } catch {
+      setHeroVariant('a');
+    }
+  }, [audienceSegment, heroParam, viewStateSubdomain]);
 
   const clearPendingPaymentSnapshot = () => {
     if (typeof window === 'undefined') return;
@@ -998,6 +1178,18 @@ export default function PublicStorefront({
 
   const hasActiveFilters = activeFilterChips.length > 0;
   const productsResultText = `${filteredProducts.length} ${filteredProducts.length === 1 ? 'produto encontrado' : 'produtos encontrados'}`;
+  const inStockProductsCount = useMemo(
+    () => productsByConfiguredOptions.filter((product) => product.quantity > 0).length,
+    [productsByConfiguredOptions]
+  );
+  const segmentCopy = useMemo(() => SEGMENT_COPY[audienceSegment], [audienceSegment]);
+  const promotionalProductsCount = useMemo(
+    () =>
+      productsByConfiguredOptions.filter(
+        (product) => typeof product.originalPrice === 'number' && product.originalPrice > product.price
+      ).length,
+    [productsByConfiguredOptions]
+  );
   const isPricePresetActive = (from: string, to: string) =>
     parseCurrencyValue(from) === priceFromDraftValue && parseCurrencyValue(to) === priceToDraftValue;
 
@@ -1128,6 +1320,17 @@ export default function PublicStorefront({
     () => cartDisplayItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
     [cartDisplayItems]
   );
+  const cartSavings = useMemo(
+    () =>
+      cartDisplayItems.reduce((sum, item) => {
+        const source = productsById.get(item.productId);
+        if (!source || typeof source.originalPrice !== 'number' || source.originalPrice <= source.price) {
+          return sum;
+        }
+        return sum + (source.originalPrice - source.price) * item.quantity;
+      }, 0),
+    [cartDisplayItems, productsById]
+  );
   const pixCopyPasteCode = useMemo(
     () =>
       buildPixCopyPasteCode({
@@ -1248,6 +1451,21 @@ export default function PublicStorefront({
     setCheckoutError(false);
     setPaymentHelperMessage('');
     setPaymentHelperError(false);
+  };
+
+  const scrollToCatalogProducts = () => {
+    if (typeof document === 'undefined') return;
+    const target = document.getElementById('public-stock-catalog-grid');
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleCatalogPrimaryAction = () => {
+    if (cartDisplayItems.length > 0) {
+      openCheckout();
+      return;
+    }
+    scrollToCatalogProducts();
   };
 
   const cancelPendingOrderByToken = async (snapshot: PendingPaymentSnapshot) => {
@@ -1651,6 +1869,21 @@ export default function PublicStorefront({
   const whatsappPhone = toWhatsappPhone(settings.whatsapp || '');
   const isPixAvailable = mercadoPagoEnabled || Boolean(pixKey);
   const isCreditCardAvailable = mercadoPagoEnabled || Boolean(creditCardLink);
+  const heroPrimaryCtaLabel =
+    cartCount > 0
+      ? heroVariant === 'b'
+        ? `Fechar pedido agora (${cartCount})`
+        : `Ir para checkout (${cartCount})`
+      : segmentCopy.heroPrimaryCta[heroVariant];
+  const heroSecondaryCtaLabel = cartCount > 0 ? 'Revisar carrinho' : segmentCopy.heroSecondaryCta[heroVariant];
+  const heroKicker =
+    heroVariant === 'b'
+      ? `${segmentCopy.audienceLabel} em destaque`
+      : `Loja oficial ${settings.shopName} · ${segmentCopy.audienceLabel}`;
+  const heroSubtitle =
+    promotionalProductsCount > 0
+      ? `${segmentCopy.heroSubtitle[heroVariant]} ${promotionalProductsCount} ofertas ativas e ${inStockProductsCount} itens em estoque.`
+      : `${segmentCopy.heroSubtitle[heroVariant]} ${inStockProductsCount} itens em estoque.`;
   const successPixQrCodeUrl = useMemo(
     () =>
       successPaymentMethod === 'pix' && successPaymentStatus === 'pending' && successPaymentReference
@@ -1695,237 +1928,303 @@ export default function PublicStorefront({
       </header>
 
       {view === 'catalog' ? (
-        <section className="public-stock-body">
-          <aside className="public-stock-filters">
-            <div className="public-stock-filter-panel-head">
-              <strong>Filtros</strong>
-              {hasActiveFilters ? (
-                <button type="button" className="public-stock-filter-clear-inline" onClick={clearCatalogFilters}>
-                  Limpar tudo
+        <>
+          <section
+            className={`public-stock-hero public-stock-hero-${heroVariant}`}
+            data-segment={audienceSegment}
+            data-variant={heroVariant}
+          >
+            <div className="public-stock-hero-copy">
+              <span className="public-stock-hero-kicker">{heroKicker}</span>
+              <h1>{segmentCopy.heroTitle[heroVariant]}</h1>
+              <p>{heroSubtitle}</p>
+              <div className="public-stock-hero-actions">
+                <button type="button" className="public-stock-hero-cta primary" onClick={handleCatalogPrimaryAction}>
+                  {heroPrimaryCtaLabel}
                 </button>
-              ) : null}
+                <button type="button" className="public-stock-hero-cta ghost" onClick={() => setCartOpen(true)}>
+                  {heroSecondaryCtaLabel}
+                </button>
+              </div>
+              <div className="public-stock-hero-trust">
+                <span>
+                  <IconLock />
+                  {segmentCopy.trust[0]}
+                </span>
+                <span>
+                  <IconTruck />
+                  {segmentCopy.trust[1]}
+                </span>
+                <span>
+                  {whatsappPhone ? <IconWhatsapp /> : <IconStar />}
+                  {segmentCopy.trust[2]}
+                </span>
+              </div>
             </div>
 
-            {settings.filterByBrand ? (
-              <section className="public-stock-filter-card">
-                <button type="button" className="public-stock-filter-head" onClick={() => setBrandOpen((prev) => !prev)}>
-                  <strong>Marca</strong>
-                  <span className="public-stock-filter-head-meta">
-                    {selectedBrands.length > 0 ? <small>{selectedBrands.length}</small> : null}
-                    <span>{brandOpen ? '▾' : '▸'}</span>
-                  </span>
-                </button>
-                {brandOpen ? (
-                  <div className="public-stock-filter-content">
-                    {brandOptions.length === 0 ? (
-                      <span className="public-stock-filter-empty">Nenhuma marca disponivel</span>
-                    ) : (
-                      brandOptions.map((brand) => (
-                        <label key={brand} className="public-stock-check">
-                          <input
-                            type="checkbox"
-                            checked={includesToken(selectedBrands, brand)}
-                            onChange={() => toggleSelection(brand, selectedBrands, setSelectedBrands)}
-                          />
-                          <span>{brand}</span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
+            <div className="public-stock-hero-metrics">
+              <article>
+                <strong>{productsByConfiguredOptions.length}</strong>
+                <span>itens no catalogo</span>
+              </article>
+              <article>
+                <strong>{inStockProductsCount}</strong>
+                <span>pronta entrega</span>
+              </article>
+              <article>
+                <strong>{promotionalProductsCount > 0 ? promotionalProductsCount : availablePaymentMethods.length}</strong>
+                <span>{promotionalProductsCount > 0 ? 'ofertas ativas' : 'formas de pagamento'}</span>
+              </article>
+            </div>
+          </section>
 
-            {settings.filterByCategory ? (
-              <section className="public-stock-filter-card">
-                <button
-                  type="button"
-                  className="public-stock-filter-head"
-                  onClick={() => setCategoryOpen((prev) => !prev)}
-                >
-                  <strong>Categoria</strong>
-                  <span className="public-stock-filter-head-meta">
-                    {selectedCategories.length > 0 ? <small>{selectedCategories.length}</small> : null}
-                    <span>{categoryOpen ? '▾' : '▸'}</span>
-                  </span>
-                </button>
-                {categoryOpen ? (
-                  <div className="public-stock-filter-content">
-                    {categoryOptions.length === 0 ? (
-                      <span className="public-stock-filter-empty">Nenhuma categoria disponivel</span>
-                    ) : (
-                      categoryOptions.map((category) => (
-                        <label key={category} className="public-stock-check">
-                          <input
-                            type="checkbox"
-                            checked={includesToken(selectedCategories, category)}
-                            onChange={() => toggleSelection(category, selectedCategories, setSelectedCategories)}
-                          />
-                          <span>{category}</span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
-
-            {settings.filterByPrice ? (
-              <section className="public-stock-filter-card">
-                <button type="button" className="public-stock-filter-head" onClick={() => setPriceOpen((prev) => !prev)}>
-                  <strong>Preço</strong>
-                  <span className="public-stock-filter-head-meta">
-                    {priceFromApplied || priceToApplied ? <small>ativo</small> : null}
-                    <span>{priceOpen ? '▾' : '▸'}</span>
-                  </span>
-                </button>
-                {priceOpen ? (
-                  <div className="public-stock-filter-content">
-                    <div className="public-stock-price-range">
-                      <label>
-                        De
-                        <input
-                          value={priceFromDraft}
-                          onChange={(event) => setPriceFromDraft(event.target.value)}
-                          inputMode="decimal"
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault();
-                              applyPriceRangeFilter(priceFromDraft, priceToDraft);
-                            }
-                          }}
-                          placeholder="Minimo"
-                        />
-                      </label>
-                      <label>
-                        Até
-                        <input
-                          value={priceToDraft}
-                          onChange={(event) => setPriceToDraft(event.target.value)}
-                          inputMode="decimal"
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault();
-                              applyPriceRangeFilter(priceFromDraft, priceToDraft);
-                            }
-                          }}
-                          placeholder="Maximo"
-                        />
-                      </label>
-                    </div>
-
-                    <div className="public-stock-price-presets">
-                      {PRICE_FILTER_PRESETS.map((preset) => {
-                        const active = isPricePresetActive(preset.from, preset.to);
-                        return (
-                          <button
-                            key={preset.label}
-                            type="button"
-                            className={active ? 'public-stock-price-preset active' : 'public-stock-price-preset'}
-                            onClick={() => applyPriceRangeFilter(preset.from, preset.to)}
-                          >
-                            {preset.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <button
-                      type="button"
-                      className="public-stock-filter-apply"
-                      onClick={() => applyPriceRangeFilter(priceFromDraft, priceToDraft)}
-                    >
-                      Aplicar agora
-                    </button>
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
-          </aside>
-
-          <section className="public-stock-products">
-            <header className="public-stock-products-head">
-              <strong>{productsResultText}</strong>
-              <span>{hasActiveFilters ? `${activeFilterChips.length} filtro(s) ativos` : 'Sem filtros ativos'}</span>
-            </header>
-
-            {activeFilterChips.length > 0 ? (
-              <div className="public-stock-active-filters">
-                {activeFilterChips.map((chip) => (
-                  <button key={chip.key} type="button" className="public-stock-active-chip" onClick={() => removeActiveFilter(chip)}>
-                    {chip.label}
-                    <span aria-hidden>×</span>
+          <section className="public-stock-body">
+            <aside className="public-stock-filters">
+              <div className="public-stock-filter-panel-head">
+                <strong>Filtros</strong>
+                {hasActiveFilters ? (
+                  <button type="button" className="public-stock-filter-clear-inline" onClick={clearCatalogFilters}>
+                    Limpar tudo
                   </button>
-                ))}
+                ) : null}
               </div>
-            ) : null}
 
-            {unavailable ? (
-              <article className="public-stock-empty">
-                <strong>Loja indisponivel</strong>
-                <span>O link "{subdomain}" nao foi encontrado agora.</span>
-              </article>
-            ) : filteredProducts.length === 0 ? (
-              <article className="public-stock-empty">
-                <strong>Nenhum produto encontrado</strong>
-                <span>Ajuste os filtros para visualizar mais itens.</span>
-              </article>
-            ) : (
-              <div className="public-stock-grid">
-                {filteredProducts.map((product) => {
-                  const outOfStock = product.quantity <= 0;
-                  return (
-                    <article
-                      key={product.id}
-                      className="public-stock-product"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => openProductDetails(product.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          openProductDetails(product.id);
-                        }
-                      }}
-                    >
-                      <div className="public-stock-product-image">
-                        {product.imageUrl ? (
-                          <img src={product.imageUrl} alt={product.name} loading="lazy" />
-                        ) : (
-                          <span className="public-stock-product-placeholder">Sem foto</span>
-                        )}
+              {settings.filterByBrand ? (
+                <section className="public-stock-filter-card">
+                  <button type="button" className="public-stock-filter-head" onClick={() => setBrandOpen((prev) => !prev)}>
+                    <strong>Marca</strong>
+                    <span className="public-stock-filter-head-meta">
+                      {selectedBrands.length > 0 ? <small>{selectedBrands.length}</small> : null}
+                      <span>{brandOpen ? '▾' : '▸'}</span>
+                    </span>
+                  </button>
+                  {brandOpen ? (
+                    <div className="public-stock-filter-content">
+                      {brandOptions.length === 0 ? (
+                        <span className="public-stock-filter-empty">Nenhuma marca disponivel</span>
+                      ) : (
+                        brandOptions.map((brand) => (
+                          <label key={brand} className="public-stock-check">
+                            <input
+                              type="checkbox"
+                              checked={includesToken(selectedBrands, brand)}
+                              onChange={() => toggleSelection(brand, selectedBrands, setSelectedBrands)}
+                            />
+                            <span>{brand}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {settings.filterByCategory ? (
+                <section className="public-stock-filter-card">
+                  <button
+                    type="button"
+                    className="public-stock-filter-head"
+                    onClick={() => setCategoryOpen((prev) => !prev)}
+                  >
+                    <strong>Categoria</strong>
+                    <span className="public-stock-filter-head-meta">
+                      {selectedCategories.length > 0 ? <small>{selectedCategories.length}</small> : null}
+                      <span>{categoryOpen ? '▾' : '▸'}</span>
+                    </span>
+                  </button>
+                  {categoryOpen ? (
+                    <div className="public-stock-filter-content">
+                      {categoryOptions.length === 0 ? (
+                        <span className="public-stock-filter-empty">Nenhuma categoria disponivel</span>
+                      ) : (
+                        categoryOptions.map((category) => (
+                          <label key={category} className="public-stock-check">
+                            <input
+                              type="checkbox"
+                              checked={includesToken(selectedCategories, category)}
+                              onChange={() => toggleSelection(category, selectedCategories, setSelectedCategories)}
+                            />
+                            <span>{category}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {settings.filterByPrice ? (
+                <section className="public-stock-filter-card">
+                  <button type="button" className="public-stock-filter-head" onClick={() => setPriceOpen((prev) => !prev)}>
+                    <strong>Preço</strong>
+                    <span className="public-stock-filter-head-meta">
+                      {priceFromApplied || priceToApplied ? <small>ativo</small> : null}
+                      <span>{priceOpen ? '▾' : '▸'}</span>
+                    </span>
+                  </button>
+                  {priceOpen ? (
+                    <div className="public-stock-filter-content">
+                      <div className="public-stock-price-range">
+                        <label>
+                          De
+                          <input
+                            value={priceFromDraft}
+                            onChange={(event) => setPriceFromDraft(event.target.value)}
+                            inputMode="decimal"
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                applyPriceRangeFilter(priceFromDraft, priceToDraft);
+                              }
+                            }}
+                            placeholder="Minimo"
+                          />
+                        </label>
+                        <label>
+                          Até
+                          <input
+                            value={priceToDraft}
+                            onChange={(event) => setPriceToDraft(event.target.value)}
+                            inputMode="decimal"
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                applyPriceRangeFilter(priceFromDraft, priceToDraft);
+                              }
+                            }}
+                            placeholder="Maximo"
+                          />
+                        </label>
                       </div>
 
-                      <div className="public-stock-product-info">
-                        <p>{product.name}</p>
-                        <small>
-                          {product.brand} • Cód: {product.code}
-                        </small>
-                        {typeof product.originalPrice === 'number' && product.originalPrice > product.price ? (
-                          <span className="public-stock-product-old-price">{formatPrice(product.originalPrice)}</span>
-                        ) : null}
-                        <strong>{formatPrice(product.price)}</strong>
+                      <div className="public-stock-price-presets">
+                        {PRICE_FILTER_PRESETS.map((preset) => {
+                          const active = isPricePresetActive(preset.from, preset.to);
+                          return (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              className={active ? 'public-stock-price-preset active' : 'public-stock-price-preset'}
+                              onClick={() => applyPriceRangeFilter(preset.from, preset.to)}
+                            >
+                              {preset.label}
+                            </button>
+                          );
+                        })}
                       </div>
 
                       <button
                         type="button"
-                        className={outOfStock ? 'public-stock-buy soldout' : 'public-stock-buy'}
-                        disabled={outOfStock}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          if (outOfStock) return;
-                          addToCart(product, 1);
+                        className="public-stock-filter-apply"
+                        onClick={() => applyPriceRangeFilter(priceFromDraft, priceToDraft)}
+                      >
+                        Aplicar agora
+                      </button>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+            </aside>
+
+            <section className="public-stock-products" id="public-stock-catalog-grid">
+              <header className="public-stock-products-head">
+                <strong>{productsResultText}</strong>
+                <span>{hasActiveFilters ? `${activeFilterChips.length} filtro(s) ativos` : 'Sem filtros ativos'}</span>
+              </header>
+
+              {activeFilterChips.length > 0 ? (
+                <div className="public-stock-active-filters">
+                  {activeFilterChips.map((chip) => (
+                    <button key={chip.key} type="button" className="public-stock-active-chip" onClick={() => removeActiveFilter(chip)}>
+                      {chip.label}
+                      <span aria-hidden>×</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              {unavailable ? (
+                <article className="public-stock-empty">
+                  <strong>Loja indisponivel</strong>
+                  <span>O link "{subdomain}" nao foi encontrado agora.</span>
+                </article>
+              ) : filteredProducts.length === 0 ? (
+                <article className="public-stock-empty">
+                  <strong>Nenhum produto encontrado</strong>
+                  <span>Ajuste os filtros para visualizar mais itens.</span>
+                </article>
+              ) : (
+                <div className="public-stock-grid">
+                  {filteredProducts.map((product) => {
+                    const outOfStock = product.quantity <= 0;
+                    const lowStock = product.quantity > 0 && product.quantity <= 3;
+                    const hasPromotion =
+                      typeof product.originalPrice === 'number' && product.originalPrice > product.price;
+                    const installmentCount = Math.min(6, Math.max(1, Math.floor(product.price / 30)));
+                    return (
+                      <article
+                        key={product.id}
+                        className="public-stock-product"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => openProductDetails(product.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            openProductDetails(product.id);
+                          }
                         }}
                       >
-                        {outOfStock ? 'Esgotado' : 'Adicionar'}
-                      </button>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
+                        <div className="public-stock-product-image">
+                          {hasPromotion ? (
+                            <span className="public-stock-product-badge promo">
+                              -{Math.max(1, Math.round(product.promotionDiscount || 0))}%
+                            </span>
+                          ) : null}
+                          {lowStock ? <span className="public-stock-product-badge low-stock">Ultimas unidades</span> : null}
+                          {product.imageUrl ? (
+                            <img src={product.imageUrl} alt={product.name} loading="lazy" />
+                          ) : (
+                            <span className="public-stock-product-placeholder">Sem foto</span>
+                          )}
+                        </div>
+
+                        <div className="public-stock-product-info">
+                          <p>{product.name}</p>
+                          <small>
+                            {product.brand} • Cód: {product.code}
+                          </small>
+                          {hasPromotion ? (
+                            <span className="public-stock-product-old-price">{formatPrice(product.originalPrice || 0)}</span>
+                          ) : null}
+                          <strong>{formatPrice(product.price)}</strong>
+                          {isCreditCardAvailable && installmentCount > 1 ? (
+                            <span className="public-stock-product-installments">
+                              ou {installmentCount}x de {formatPrice(product.price / installmentCount)}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <button
+                          type="button"
+                          className={outOfStock ? 'public-stock-buy soldout' : 'public-stock-buy'}
+                          disabled={outOfStock}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (outOfStock) return;
+                            addToCart(product, 1);
+                          }}
+                        >
+                          {outOfStock ? 'Esgotado' : 'Adicionar'}
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
           </section>
-        </section>
+        </>
       ) : null}
 
       {view === 'product' ? (
@@ -2018,6 +2317,9 @@ export default function PublicStorefront({
           </button>
 
           <h1>Finalizar Compra</h1>
+          <p className="public-stock-checkout-intro">
+            {segmentCopy.checkoutIntro[heroVariant]}
+          </p>
 
           <div className="public-stock-checkout-grid">
             <article className="public-stock-checkout-summary">
@@ -2064,6 +2366,12 @@ export default function PublicStorefront({
                 <strong>Total</strong>
                 <strong>{formatPrice(cartTotal)}</strong>
               </div>
+              {cartSavings > 0 ? (
+                <div className="public-stock-checkout-saving">
+                  <span>Economia no pedido</span>
+                  <strong>{formatPrice(cartSavings)}</strong>
+                </div>
+              ) : null}
             </article>
 
             <aside className="public-stock-checkout-form">
@@ -2206,6 +2514,21 @@ export default function PublicStorefront({
                     {paymentHelperMessage}
                   </p>
                 ) : null}
+              </div>
+
+              <div className="public-stock-checkout-assurances">
+                <span>
+                  <IconLock />
+                  {segmentCopy.checkoutAssurances[0]}
+                </span>
+                <span>
+                  <IconTruck />
+                  {segmentCopy.checkoutAssurances[1]}
+                </span>
+                <span>
+                  {whatsappPhone ? <IconWhatsapp /> : <IconStar />}
+                  {segmentCopy.checkoutAssurances[2]}
+                </span>
               </div>
 
               {checkoutMessage ? (
