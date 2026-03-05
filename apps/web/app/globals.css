@@ -19839,8 +19839,10 @@ html[data-theme='dark'] .store-secondary-item.active {
 }
 
 .public-stock-body {
+  align-items: start;
   padding-top: 16px;
   padding-bottom: 28px;
+  overflow: visible;
 }
 
 #public-stock-catalog-grid {
@@ -19850,6 +19852,25 @@ html[data-theme='dark'] .store-secondary-item.active {
 .public-stock-grid {
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 15px;
+}
+
+@media (min-width: 961px) {
+  .public-stock-filters {
+    position: sticky;
+    top: 14px;
+    align-self: start;
+    max-height: calc(100dvh - 28px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    padding-right: 4px;
+  }
+
+  .public-stock-products {
+    height: auto;
+    overflow: visible;
+    padding-right: 0;
+  }
 }
 
 .public-stock-product {
