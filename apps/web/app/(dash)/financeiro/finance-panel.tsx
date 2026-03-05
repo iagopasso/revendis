@@ -1014,13 +1014,17 @@ export default function FinancePanel({
                       <div className="meta">{entry.subtitle}</div>
                     </div>
                   </div>
-                  <div className="mono finance-value-cell">{formatCurrency(entry.amount)}</div>
+                  <div className="mono finance-value-cell finance-mobile-box finance-mobile-box-value">
+                    {formatCurrency(entry.amount)}
+                  </div>
                   <div>
                     <span className={`finance-status-badge ${statusClass(entry.status)}`}>
                       {statusLabel(entry)}
                     </span>
                   </div>
-                  <div className="mono">{formatDate(getEntryDisplayDate(entry))}</div>
+                  <div className="mono finance-mobile-box finance-mobile-box-date">
+                    {formatDate(getEntryDisplayDate(entry))}
+                  </div>
                 </div>
               );
             })}

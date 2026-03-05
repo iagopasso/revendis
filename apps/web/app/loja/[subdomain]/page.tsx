@@ -42,6 +42,7 @@ type StorefrontPayload = {
 };
 
 type PublicStoreSearchParams = Record<string, string | string[] | undefined>;
+const readSearchParam = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] || '' : value || '');
 
 export default async function PublicStorePage({
   params,
@@ -52,10 +53,9 @@ export default async function PublicStorePage({
 }) {
   const { subdomain } = await params;
   const resolvedSearch = (await searchParams) ?? {};
-  const productFromQueryRaw = resolvedSearch.produto;
-  const initialProductId = Array.isArray(productFromQueryRaw)
-    ? productFromQueryRaw[0] || ''
-    : productFromQueryRaw || '';
+  const initialProductId = readSearchParam(resolvedSearch.produto);
+  const initialSegmentParam = readSearchParam(resolvedSearch.segmento) || readSearchParam(resolvedSearch.segment);
+  const initialHeroParam = readSearchParam(resolvedSearch.hero) || readSearchParam(resolvedSearch.ab);
   const fallbackName = 'Revendis Prime';
 
   let storefront: StorefrontPayload | null = null;
@@ -78,6 +78,8 @@ export default async function PublicStorePage({
       initialStoreSettings={storefront?.settings}
       initialStoreName={storefront?.settings?.shopName || fallbackName}
       initialProductId={typeof initialProductId === 'string' ? initialProductId : ''}
+      initialSegmentParam={initialSegmentParam}
+      initialHeroParam={initialHeroParam}
       unavailable={!storefront}
     />
   );

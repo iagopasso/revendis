@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import {
   IconArrowLeft,
   IconCart,
@@ -164,6 +163,8 @@ const toIsoDate = (value: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+const toUtcIsoDate = (value: Date) => value.toISOString().slice(0, 10);
+
 const normalizeDateInput = (value: string) => {
   const raw = (value || '').trim();
   if (!raw) return '';
@@ -173,7 +174,8 @@ const normalizeDateInput = (value: string) => {
 };
 
 const resolvePromotionStatus = (startDate?: string, endDate?: string) => {
-  const today = normalizeDateInput(toIsoDate(new Date()));
+  // Use UTC date to keep SSR/client promotion status deterministic across timezones.
+  const today = normalizeDateInput(toUtcIsoDate(new Date()));
   const start = normalizeDateInput(startDate || '');
   const end = normalizeDateInput(endDate || '');
   if (end && end < today) return 'ended' as const;
@@ -564,6 +566,8 @@ export default function PublicStorefront({
   initialStoreName,
   initialStoreSettings,
   initialProductId,
+  initialSegmentParam,
+  initialHeroParam,
   unavailable
 }: {
   subdomain: string;
@@ -571,11 +575,12 @@ export default function PublicStorefront({
   initialStoreName: string;
   initialStoreSettings?: PublicStoreSettings;
   initialProductId?: string | null;
+  initialSegmentParam?: string;
+  initialHeroParam?: string;
   unavailable?: boolean;
 }) {
-  const searchParams = useSearchParams();
-  const segmentParam = searchParams.get('segmento') || searchParams.get('segment') || '';
-  const heroParam = searchParams.get('hero') || searchParams.get('ab') || '';
+  const segmentParam = (initialSegmentParam || '').trim();
+  const heroParam = (initialHeroParam || '').trim();
   const audienceSegment = useMemo(() => normalizeAudienceSegment(segmentParam), [segmentParam]);
 
   const settings = useMemo(
