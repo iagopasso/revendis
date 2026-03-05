@@ -127,6 +127,7 @@ type AcceptSaleItemState = {
 
 type Section = 'overview' | 'orders' | 'products' | 'promotions';
 const PRODUCTS_PAGE_SIZE = 10;
+const DEFAULT_STORE_LOGO_URL = '/logo.png';
 
 const toNumber = (value: unknown) => {
   if (typeof value === 'number') return value;
@@ -420,11 +421,13 @@ export default function StorefrontShell({
   initialCatalog,
   initialStoreName,
   initialStoreSettings,
+  initialStoreLogoUrl,
   initialRuntimeState
 }: {
   initialCatalog: StoreProduct[];
   initialStoreName?: string;
   initialStoreSettings?: Partial<StorefrontSettings>;
+  initialStoreLogoUrl?: string;
   initialRuntimeState?: StorefrontRuntimeState;
 }) {
   const router = useRouter();
@@ -443,6 +446,8 @@ export default function StorefrontShell({
         DEFAULT_STOREFRONT_SETTINGS.shopName
       })
   );
+  const [storeLogoUrl, setStoreLogoUrl] = useState(() => (initialStoreLogoUrl || '').trim());
+  const [storeLogoLoadFailed, setStoreLogoLoadFailed] = useState(false);
   const [catalogProducts, setCatalogProducts] = useState<StoreProduct[]>(() =>
     initialCatalog.filter((item) => item.active !== false)
   );
@@ -505,6 +510,14 @@ export default function StorefrontShell({
   const [acceptCustomersLoading, setAcceptCustomersLoading] = useState(false);
   const [acceptItems, setAcceptItems] = useState<AcceptSaleItemState[]>([]);
   const [selectedOrderSale, setSelectedOrderSale] = useState<SaleDetail | null>(null);
+
+  useEffect(() => {
+    setStoreLogoUrl((initialStoreLogoUrl || '').trim());
+  }, [initialStoreLogoUrl]);
+
+  useEffect(() => {
+    setStoreLogoLoadFailed(false);
+  }, [storeLogoUrl]);
 
   useEffect(() => {
     setPublicStoreOrigin(window.location.origin);
@@ -950,6 +963,8 @@ export default function StorefrontShell({
     promotionRows.length === 0 ? 0 : (promotionsPage - 1) * PRODUCTS_PAGE_SIZE + paginatedPromotionRows.length;
 
   const storeUrl = buildPublicStoreUrl(storeSettings.subdomain, publicStoreOrigin);
+  const resolvedStoreLogoUrl =
+    !storeLogoLoadFailed && storeLogoUrl ? storeLogoUrl : DEFAULT_STORE_LOGO_URL;
   const resolveAbsoluteStoreUrl = () => {
     if (/^https?:\/\//i.test(storeUrl)) return storeUrl;
     if (typeof window === 'undefined') return storeUrl;
@@ -1683,9 +1698,14 @@ export default function StorefrontShell({
           : 'Loja online';
 
   return (
-    <main className="store-screen" style={{ ['--store-accent' as string]: storeSettings.shopColor }}>
+    <main className="store-screen">
       <aside className="store-secondary">
-        <h2>Loja</h2>
+        <div className="store-secondary-header">
+          <span className="store-secondary-logo" aria-hidden="true">
+            <img src={DEFAULT_STORE_LOGO_URL} alt="" />
+          </span>
+          <h2>Loja</h2>
+        </div>
         <nav className="store-secondary-nav" aria-label="Navegação da loja">
           <SecondaryNavItem
             active={section === 'overview'}
@@ -1797,8 +1817,16 @@ export default function StorefrontShell({
           <article className="store-overview-card">
             <div className="store-overview-brand">
               <div className="store-overview-mark">
-                <div className="store-overview-logo">
-                  {storeSettings.shopName.slice(0, 2).toUpperCase()}
+                <div className="store-overview-logo has-image">
+                  <img
+                    src={resolvedStoreLogoUrl}
+                    alt={storeSettings.shopName}
+                    onError={() => {
+                      if (resolvedStoreLogoUrl !== DEFAULT_STORE_LOGO_URL) {
+                        setStoreLogoLoadFailed(true);
+                      }
+                    }}
+                  />
                 </div>
               </div>
               <div>

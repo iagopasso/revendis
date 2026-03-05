@@ -82,6 +82,14 @@ const STOREFRONT_SETTINGS_STORAGE_KEY = 'revendis:storefront-settings:v1';
 const STOREFRONT_RUNTIME_STORAGE_KEY = 'revendis:storefront-runtime:v1';
 
 const isClient = () => typeof window !== 'undefined';
+const withNoTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+const normalizeOrigin = (value: string) => withNoTrailingSlash(value.trim());
+
+export const resolvePublicStoreOrigin = (origin?: string) => {
+  const configuredOrigin = normalizeOrigin(process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN || '');
+  if (configuredOrigin) return configuredOrigin;
+  return normalizeOrigin(origin || '');
+};
 
 export const sanitizeSubdomain = (value: string) =>
   value
@@ -153,7 +161,7 @@ export const storefrontSettingsToPayload = (settings: StorefrontSettings): Store
 
 export const buildPublicStoreUrl = (subdomain: string, origin?: string) => {
   const cleanSubdomain = sanitizeSubdomain(subdomain) || DEFAULT_STOREFRONT_SETTINGS.subdomain;
-  const cleanOrigin = (origin || '').replace(/\/+$/, '');
+  const cleanOrigin = resolvePublicStoreOrigin(origin);
   if (!cleanOrigin) return `/loja/${cleanSubdomain}`;
   return `${cleanOrigin}/loja/${cleanSubdomain}`;
 };

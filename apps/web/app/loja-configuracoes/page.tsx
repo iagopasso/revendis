@@ -10,6 +10,7 @@ import {
   emitStorefrontSettingsUpdated,
   loadStorefrontSettings,
   normalizeStorefrontSettings,
+  resolvePublicStoreOrigin,
   sanitizeSubdomain,
   saveStorefrontSettings,
   storefrontSettingsFromPayload,
@@ -153,6 +154,7 @@ export default function LojaConfiguracoesPage() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>(DEFAULT_STOREFRONT_SETTINGS.selectedCategories);
   const [creditCardLink, setCreditCardLink] = useState(DEFAULT_STOREFRONT_SETTINGS.creditCardLink);
   const [boletoLink, setBoletoLink] = useState(DEFAULT_STOREFRONT_SETTINGS.boletoLink);
+  const [storeLogoUrl, setStoreLogoUrl] = useState('');
   const [catalogProducts, setCatalogProducts] = useState<PreviewProduct[]>(previewFallbackProducts);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveMessage, setSaveMessage] = useState('');
@@ -178,8 +180,10 @@ export default function LojaConfiguracoesPage() {
   };
 
   useEffect(() => {
-    setOrigin(window.location.origin);
-    setPublicStorePrefix(`${window.location.origin.replace(/\/+$/, '')}/loja/`);
+    const publicOrigin = resolvePublicStoreOrigin(window.location.origin);
+    const resolvedOrigin = publicOrigin || window.location.origin;
+    setOrigin(resolvedOrigin);
+    setPublicStorePrefix(`${resolvedOrigin.replace(/\/+$/, '')}/loja/`);
 
     const saved = loadStorefrontSettings();
     if (saved) applySettings(saved);
@@ -201,10 +205,11 @@ export default function LojaConfiguracoesPage() {
 
         if (settingsResponse.ok) {
           const payload = (await settingsResponse.json()) as {
-            data?: Partial<ReturnType<typeof storefrontSettingsToPayload>>;
+            data?: Partial<ReturnType<typeof storefrontSettingsToPayload>> & { logoUrl?: string };
           };
           const merged = storefrontSettingsFromPayload(payload?.data);
           applySettings(merged);
+          setStoreLogoUrl(typeof payload?.data?.logoUrl === 'string' ? payload.data.logoUrl.trim() : '');
           saveStorefrontSettings(merged);
           emitStorefrontSettingsUpdated(merged);
         } else if (!saved) {
@@ -283,9 +288,10 @@ export default function LojaConfiguracoesPage() {
       }
 
       const payload = (await response.json()) as {
-        data?: Partial<ReturnType<typeof storefrontSettingsToPayload>>;
+        data?: Partial<ReturnType<typeof storefrontSettingsToPayload>> & { logoUrl?: string };
       };
       const synced = storefrontSettingsFromPayload(payload?.data || settings);
+      setStoreLogoUrl(typeof payload?.data?.logoUrl === 'string' ? payload.data.logoUrl.trim() : storeLogoUrl);
       saveStorefrontSettings(synced);
       emitStorefrontSettingsUpdated(synced);
       applySettings(synced);
@@ -367,6 +373,7 @@ export default function LojaConfiguracoesPage() {
   const whatsappPhone = toWhatsappPhone(whatsapp);
 
   const publicStoreUrl = buildPublicStoreUrl(subdomain, origin);
+  const isLocalStoreUrl = /\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?:\/|$)/i.test(publicStoreUrl);
   const accentStyle = { ['--store-accent' as string]: shopColor };
 
   return (
@@ -403,6 +410,11 @@ export default function LojaConfiguracoesPage() {
           {publicStoreUrl}
         </a>
       </div>
+      {isLocalStoreUrl ? (
+        <div className="store-public-link-warning">
+          O preview de compartilhamento nao aparece com localhost. Configure `NEXT_PUBLIC_STOREFRONT_ORIGIN` com um dominio publico.
+        </div>
+      ) : null}
 
       <section className="store-config-shell">
         <aside className="store-config-sidebar">
@@ -573,7 +585,10 @@ export default function LojaConfiguracoesPage() {
 
         <section className="store-config-preview" style={accentStyle}>
           <div className="store-preview-top">
-            <strong>{shopName || 'Loja'}</strong>
+            <div className="store-preview-brand">
+              {storeLogoUrl ? <img src={storeLogoUrl} alt={shopName || 'Loja'} className="store-preview-brand-logo" /> : null}
+              <strong>{shopName || 'Loja'}</strong>
+            </div>
             <label className="store-preview-search readonly">
               <input
                 value={previewSearch}

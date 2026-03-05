@@ -593,7 +593,6 @@ export default function PublicStorefront({
     [initialStoreName, initialStoreSettings]
   );
 
-  const logoUrl = initialStoreSettings?.logoUrl?.trim() || '';
   const pixKey = initialStoreSettings?.pixKey?.trim() || '';
   const creditCardLink = initialStoreSettings?.creditCardLink?.trim() || '';
   const mercadoPagoEnabled = Boolean(initialStoreSettings?.mercadoPagoEnabled);
@@ -1898,7 +1897,6 @@ export default function PublicStorefront({
         : '',
     [successPaymentMethod, successPaymentStatus, successPaymentReference, successPixQrCodeBase64]
   );
-
   return (
     <main
       suppressHydrationWarning
@@ -1907,7 +1905,7 @@ export default function PublicStorefront({
     >
       <header className="public-stock-topbar">
         <div className="public-stock-brand">
-          {logoUrl ? <img src={logoUrl} alt={settings.shopName} className="public-stock-brand-logo" /> : null}
+          <span className="public-stock-brand-logo" aria-hidden="true" />
           <strong>{settings.shopName}</strong>
         </div>
 
