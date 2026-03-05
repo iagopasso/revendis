@@ -222,7 +222,10 @@ export default async function DashboardPage({
   return (
     <main className="page-content dashboard-home">
       <div className="dashboard-home-top">
-        <h1>Olá, {dashboardName}</h1>
+        <h1 className="dashboard-home-title">
+          <img src="/logo.png" alt="" className="dashboard-home-inline-logo" aria-hidden="true" />
+          Olá, {dashboardName}
+        </h1>
         <div className="dashboard-home-top-actions">
           <DateRangePicker defaultPreset="7d" defaultMonth={defaultMonth} />
         </div>

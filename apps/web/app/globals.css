@@ -374,8 +374,8 @@ main {
 }
 
 .sidebar .logo {
-  width: 44px;
-  height: 44px;
+  width: 2em;
+  height: 2em;
   border-radius: 14px;
   background: transparent;
   border: none;
@@ -11327,8 +11327,8 @@ html[data-theme='dark'] .modal.modal-receipt .receipt-actions .button.ghost:hove
 }
 
 .sidebar .logo {
-  width: 30px;
-  height: 30px;
+  width: 2em;
+  height: 2em;
   border-radius: 8px;
   margin: 16px auto 14px;
   border: none;
@@ -19474,8 +19474,8 @@ html[data-theme='dark'] .auth-submit {
   }
 
   .sidebar .logo {
-    width: 44px;
-    height: 44px;
+    width: 2em;
+    height: 2em;
     margin: 8px auto 16px;
     border-radius: 14px;
     border: none;
@@ -20533,6 +20533,9 @@ html[data-theme='dark'] .dashboard-reminder-card:hover {
       .installment-fields input,
       .sale-item-card,
       .unit-product,
+      .store-checkbox-row,
+      .store-checkbox-thumb,
+      .store-modal-list.promotion-products,
       .customer-photo-card,
       .customer-photo-preview,
       .customer-tags-select,
@@ -20898,4 +20901,32 @@ html[data-theme='dark'] .dashboard-reminder-card:hover {
   html[data-theme='dark'] .page-content a {
     color: #c9dbf2 !important;
   }
+}
+
+.dashboard-home-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
+
+.dashboard-home-inline-logo {
+  width: 2em;
+  height: 2em;
+  object-fit: contain;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.dashboard-home-top {
+  position: relative;
+  z-index: 20;
+}
+
+.dashboard-home .date-range {
+  position: relative;
+  z-index: 30;
+}
+
+.dashboard-home .date-range-popover {
+  z-index: 260;
 }
