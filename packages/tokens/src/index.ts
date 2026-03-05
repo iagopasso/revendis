@@ -1,14 +1,14 @@
 export const tokens = {
   color: {
-    bg: '#f7f7f7',
+    bg: '#f7f0ff',
     surface: '#ffffff',
-    text: '#1f2933',
-    muted: '#52616b',
-    primary: '#0f766e',
-    primaryDark: '#115e59',
-    accent: '#f59e0b',
-    danger: '#dc2626',
-    success: '#16a34a'
+    text: '#24153f',
+    muted: '#6d5b8b',
+    primary: '#8860db',
+    primaryDark: '#a973eb',
+    accent: '#d095f1',
+    danger: '#b458de',
+    success: '#63d2c7'
   },
   spacing: {
     xs: 4,
