@@ -36,12 +36,15 @@ export default async function LojaPage() {
 
   const initialSettings = storefrontSettingsFromPayload(settingsResponse?.data);
   const initialRuntimeState = storefrontRuntimeStateFromPayload(settingsResponse?.data?.runtimeState || null);
+  const initialStoreLogoUrl =
+    typeof settingsResponse?.data?.logoUrl === 'string' ? settingsResponse.data.logoUrl.trim() : '';
 
   return (
     <StorefrontShell
       initialCatalog={catalog}
       initialStoreName={initialSettings.shopName}
       initialStoreSettings={initialSettings}
+      initialStoreLogoUrl={initialStoreLogoUrl}
       initialRuntimeState={initialRuntimeState}
     />
   );
