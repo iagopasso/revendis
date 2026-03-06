@@ -1392,23 +1392,23 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
 
                     <div className="receipt-grid">
                       <div>
-                        <span>Cliente</span>
+                        <span className="receipt-grid-label">Cliente</span>
                         <strong>{sale.customer}</strong>
                       </div>
                       <div>
-                        <span>Data do pagamento</span>
+                        <span className="receipt-grid-label">Data do pagamento</span>
                         <strong>{formatDate(paymentDisplayDate)}</strong>
                       </div>
                       <div>
-                        <span>Valor total</span>
+                        <span className="receipt-grid-label">Valor total</span>
                         <strong>{formatCurrency(summary.total)}</strong>
                       </div>
                       <div>
-                        <span>Situação da entrega</span>
-                        <strong className={`receipt-status-pill ${statusClass(deliveryStatus)}`}>
+                        <span className="receipt-grid-label">Situação da entrega</span>
+                        <span className={`receipt-status-pill ${statusClass(deliveryStatus)}`}>
                           <span className="receipt-status-dot" />
                           {statusLabel(deliveryStatus)}
-                        </strong>
+                        </span>
                       </div>
                     </div>
 

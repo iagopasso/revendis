@@ -137,7 +137,6 @@ const buildPdfFromCanvas = (canvas: HTMLCanvasElement, format: PdfFormat) => {
     const offsetX = margin + (usablePageWidth - imgWidthMm) / 2;
     const offsetY = margin + (usablePageHeight - imgHeightMm) / 2;
     pdf.addImage(imgData, 'PNG', offsetX, offsetY, imgWidthMm, imgHeightMm);
-
     return pdf;
   }
 
