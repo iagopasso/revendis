@@ -135,7 +135,12 @@ if (googleClientId && googleClientSecret) {
   providers.push(
     Google({
       clientId: googleClientId,
-      clientSecret: googleClientSecret
+      clientSecret: googleClientSecret,
+      authorization: {
+        params: {
+          prompt: 'select_account'
+        }
+      }
     })
   );
 }
