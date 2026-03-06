@@ -1,5 +1,6 @@
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { downloadBlob } from './download';
 
 type PdfFormat = 'a4' | 'thermal-80' | 'thermal-58';
 
@@ -10,6 +11,7 @@ type PdfBaseOptions = {
 
 type PdfOptions = PdfBaseOptions & {
   filename: string;
+  iosTargetWindow?: Window | null;
 };
 
 const captureElementCanvas = async (element: HTMLElement) => {
@@ -89,8 +91,9 @@ export const buildPdfBlobUrl = async ({ element, format }: PdfBaseOptions) => {
   return String(pdf.output('bloburl'));
 };
 
-export const downloadPdf = async ({ element, filename, format }: PdfOptions) => {
+export const downloadPdf = async ({ element, filename, format, iosTargetWindow }: PdfOptions) => {
   const canvas = await captureElementCanvas(element);
   const pdf = buildPdfFromCanvas(canvas, format);
-  pdf.save(filename);
+  const blob = pdf.output('blob');
+  downloadBlob({ blob, filename, openInNewTabOnIos: true, iosTargetWindow });
 };

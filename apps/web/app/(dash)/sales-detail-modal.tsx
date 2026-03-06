@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { API_BASE, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from './lib';
 import { IconBox } from './icons';
 import { buildPdfBlobUrl, downloadPdf } from '../lib/pdf';
+import { closeDownloadWindow, prepareIosDownloadWindow } from '../lib/download';
 
 export type SaleDetail = {
   id: string;
@@ -886,11 +887,13 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     }
     const filename = `venda-${sale.id}-${receiptTab}.pdf`;
     const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
+    const iosTargetWindow = prepareIosDownloadWindow();
 
     try {
-      await downloadPdf({ element: node, filename, format });
+      await downloadPdf({ element: node, filename, format, iosTargetWindow });
       setToast('PDF gerado');
     } catch {
+      closeDownloadWindow(iosTargetWindow);
       setToast('Erro ao gerar PDF');
     }
   };
