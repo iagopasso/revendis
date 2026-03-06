@@ -955,7 +955,12 @@ export default function FinancePanel({
               const hasMenu = Boolean(entryLink) || canToggleStatus || canDelete;
 
               return (
-                <div key={entry.id} className="finance-list-row">
+                <div
+                  key={entry.id}
+                  className={`finance-list-row ${
+                    entry.kind === 'income' ? 'finance-list-row-income' : 'finance-list-row-expense'
+                  }`}
+                >
                   <div className="finance-desc-cell">
                     <span className={`finance-entry-dot ${entry.kind === 'expense' ? 'expense' : 'income'}`}>
                       {entry.kind === 'expense' ? '↓' : '↑'}
@@ -1014,7 +1019,13 @@ export default function FinancePanel({
                       <div className="meta">{entry.subtitle}</div>
                     </div>
                   </div>
-                  <div className="mono finance-value-cell finance-mobile-box finance-mobile-box-value">
+                  <div
+                    className={`mono finance-value-cell ${
+                      entry.kind === 'income'
+                        ? 'finance-mobile-line finance-mobile-line-value'
+                        : 'finance-mobile-box finance-mobile-box-value'
+                    }`}
+                  >
                     {formatCurrency(entry.amount)}
                   </div>
                   <div>
@@ -1022,7 +1033,13 @@ export default function FinancePanel({
                       {statusLabel(entry)}
                     </span>
                   </div>
-                  <div className="mono finance-mobile-box finance-mobile-box-date">
+                  <div
+                    className={`mono ${
+                      entry.kind === 'income'
+                        ? 'finance-mobile-line finance-mobile-line-date'
+                        : 'finance-mobile-box finance-mobile-box-date'
+                    }`}
+                  >
                     {formatDate(getEntryDisplayDate(entry))}
                   </div>
                 </div>
@@ -1224,6 +1241,70 @@ export default function FinancePanel({
         onClose={() => setSelectedSale(null)}
         sale={selectedSale}
       />
+
+      <style jsx global>{`
+        @media (max-width: 900px) {
+          .finance-list-row.finance-list-row-income {
+            border: 0;
+            border-top: 1px solid #dde5f0;
+            border-radius: 0;
+            margin-bottom: 0;
+            background: transparent;
+            box-shadow: none;
+          }
+
+          .finance-mobile-line {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            min-height: 0;
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            padding: 0;
+            white-space: nowrap;
+            line-height: 1.2;
+          }
+
+          .finance-mobile-line::before {
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--muted);
+            font-weight: 700;
+            flex-shrink: 0;
+          }
+
+          .finance-mobile-line-value::before {
+            content: 'Valor';
+          }
+
+          .finance-mobile-line-date::before {
+            content: 'Data';
+          }
+
+          .finance-mobile-line-value {
+            font-variant-numeric: tabular-nums;
+          }
+
+          html[data-theme='dark'] .page-content .finance-list-row.finance-list-row-income {
+            background: transparent !important;
+            border: 0 !important;
+            border-top: 1px solid var(--mobile-border) !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+          }
+
+          html[data-theme='dark'] .page-content .finance-list-row .finance-mobile-line {
+            color: var(--mobile-ink) !important;
+          }
+
+          html[data-theme='dark'] .page-content .finance-list-row .finance-mobile-line::before {
+            color: var(--mobile-muted) !important;
+          }
+        }
+      `}</style>
     </>
   );
 }
