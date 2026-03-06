@@ -83,12 +83,23 @@ const STOREFRONT_RUNTIME_STORAGE_KEY = 'revendis:storefront-runtime:v1';
 
 const isClient = () => typeof window !== 'undefined';
 const withNoTrailingSlash = (value: string) => value.replace(/\/+$/, '');
-const normalizeOrigin = (value: string) => withNoTrailingSlash(value.trim());
+const shouldDefaultToHttp = (value: string) => /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/|$)/i.test(value);
+const withHttpProtocolIfMissing = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^\/\//.test(trimmed)) return `https:${trimmed}`;
+  if (!/^[a-z0-9.-]+(?::\d+)?(\/.*)?$/i.test(trimmed)) return trimmed;
+  const protocol = shouldDefaultToHttp(trimmed) ? 'http://' : 'https://';
+  return `${protocol}${trimmed}`;
+};
+const normalizeOrigin = (value: string) => withNoTrailingSlash(withHttpProtocolIfMissing(value));
+const stripStorefrontPathSuffix = (value: string) => value.replace(/\/loja$/i, '');
 
 export const resolvePublicStoreOrigin = (origin?: string) => {
-  const configuredOrigin = normalizeOrigin(process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN || '');
+  const configuredOrigin = stripStorefrontPathSuffix(normalizeOrigin(process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN || ''));
   if (configuredOrigin) return configuredOrigin;
-  return normalizeOrigin(origin || '');
+  return stripStorefrontPathSuffix(normalizeOrigin(origin || ''));
 };
 
 export const sanitizeSubdomain = (value: string) =>

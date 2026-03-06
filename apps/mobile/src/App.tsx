@@ -381,6 +381,7 @@ const CATALOG_BRAND_SLUGS = [
 const LOW_STOCK_THRESHOLD = 2;
 const EXPIRING_DAYS = 7;
 const NEW_PRODUCT_DAYS = 120;
+const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 const toNumber = (value: unknown) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -419,6 +420,30 @@ const formatDate = (value?: string | null) => {
 const normalizeText = (value?: string | null) => (value || '').trim().toLowerCase();
 const digitsOnly = (value?: string | null) => (value || '').replace(/\D/g, '');
 
+const toDateInput = (value = new Date()) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateOnlyInput = (value: string) => {
+  const match = value.match(DATE_ONLY_REGEX);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+  return parsed;
+};
+
 const startOfToday = () => {
   const value = new Date();
   value.setHours(0, 0, 0, 0);
@@ -434,7 +459,11 @@ const resolveRangeStart = (preset: RangePreset) => {
 
 const parseDateCandidate = (value?: string | null) => {
   if (!value) return null;
-  const parsed = new Date(value.includes('T') ? value : `${value}T00:00:00`);
+  const raw = value.trim();
+  if (!raw) return null;
+  const dateOnly = parseDateOnlyInput(raw);
+  if (dateOnly) return dateOnly;
+  const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
 };
@@ -527,10 +556,6 @@ const toneStyle = (value?: string) => {
   return styles.badgeNeutral;
 };
 
-const toDateInput = (value = new Date()) => {
-  return value.toISOString().slice(0, 10);
-};
-
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 const buildMobileSku = (name: string) => {
@@ -596,13 +621,15 @@ const storefrontOrderStatusLabel = (value?: string) => {
 const normalizeDateInput = (value: string) => {
   const raw = (value || '').trim();
   if (!raw) return '';
-  const parsed = new Date(raw.includes('T') ? raw : `${raw}T00:00:00`);
+  const dateOnly = parseDateOnlyInput(raw);
+  if (dateOnly) return toDateInput(dateOnly);
+  const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return '';
-  return parsed.toISOString().slice(0, 10);
+  return toDateInput(parsed);
 };
 
 const resolvePromotionStatus = (startDate?: string, endDate?: string): 'active' | 'scheduled' | 'ended' => {
-  const today = normalizeDateInput(new Date().toISOString().slice(0, 10));
+  const today = toDateInput(new Date());
   const start = normalizeDateInput(startDate || '');
   const end = normalizeDateInput(endDate || '');
   if (end && end < today) return 'ended';

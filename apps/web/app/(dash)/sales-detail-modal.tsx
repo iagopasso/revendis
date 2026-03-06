@@ -192,11 +192,45 @@ const parseMoney = (value: string) => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+const UTC_NOON_HOUR = 12;
+
+const toIsoDate = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toUtcIsoDate = (value: Date) => {
+  const year = value.getUTCFullYear();
+  const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(value.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateOnlyAsUtcNoon = (value: string) => {
+  const match = value.match(DATE_ONLY_REGEX);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day, UTC_NOON_HOUR, 0, 0, 0));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return parsed;
+};
+
 const addMonths = (dateValue: string, months: number) => {
-  const base = new Date(`${dateValue}T00:00:00`);
-  if (Number.isNaN(base.getTime())) return dateValue;
-  base.setMonth(base.getMonth() + months);
-  return base.toISOString().split('T')[0];
+  const base = parseDateOnlyAsUtcNoon(dateValue);
+  if (!base) return dateValue;
+  base.setUTCMonth(base.getUTCMonth() + months);
+  return toUtcIsoDate(base);
 };
 
 const buildInstallments = (count: number, total: number, startDate: string): InstallmentInput[] => {
@@ -213,8 +247,6 @@ const buildInstallments = (count: number, total: number, startDate: string): Ins
     };
   });
 };
-
-const toIsoDate = (value: Date) => value.toISOString().split('T')[0];
 
 const statusLabel = (status: SaleDetail['status']) => {
   if (status === 'delivered') return 'Entregue';

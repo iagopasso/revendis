@@ -10232,10 +10232,15 @@ html[data-theme='dark'] .modal.modal-receipt .receipt-actions .button.ghost:hove
     grid-auto-flow: column;
     grid-template-rows: none;
     padding: 16px;
-    position: static;
+    position: fixed;
     top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
     align-self: stretch;
     height: auto;
+    z-index: 90;
   }
 
   .profile-menu {
