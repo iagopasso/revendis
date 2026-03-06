@@ -2,9 +2,11 @@ type DownloadBlobOptions = {
   blob: Blob;
   filename: string;
   openInNewTabOnIos?: boolean;
+  iosTargetWindow?: Window | null;
 };
 
-const isIosWeb = () => {
+export const isIosWeb = () => {
+  if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
   if (/iPad|iPhone|iPod/i.test(ua)) {
     return true;
@@ -12,12 +14,37 @@ const isIosWeb = () => {
   return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
 };
 
-export const downloadBlob = ({ blob, filename, openInNewTabOnIos = false }: DownloadBlobOptions) => {
+export const prepareIosDownloadWindow = () => {
+  if (typeof window === 'undefined' || !isIosWeb()) return null;
+  const popup = window.open('', '_blank');
+  if (!popup) return null;
+  try {
+    popup.document.title = 'Gerando PDF...';
+    popup.document.body.innerHTML = '<p style="font-family: sans-serif; padding: 24px;">Gerando PDF...</p>';
+  } catch {
+    // Ignore browser restrictions on pre-opened popup document writes.
+  }
+  return popup;
+};
+
+export const closeDownloadWindow = (targetWindow: Window | null | undefined) => {
+  if (!targetWindow || targetWindow.closed) return;
+  targetWindow.close();
+};
+
+export const downloadBlob = ({
+  blob,
+  filename,
+  openInNewTabOnIos = false,
+  iosTargetWindow = null
+}: DownloadBlobOptions) => {
   const href = URL.createObjectURL(blob);
 
   if (openInNewTabOnIos && isIosWeb()) {
-    const popup = window.open(href, '_blank', 'noopener,noreferrer');
-    if (!popup) {
+    const targetWindow = iosTargetWindow && !iosTargetWindow.closed ? iosTargetWindow : window.open('', '_blank');
+    if (targetWindow && !targetWindow.closed) {
+      targetWindow.location.href = href;
+    } else {
       window.location.href = href;
     }
     window.setTimeout(() => URL.revokeObjectURL(href), 60_000);

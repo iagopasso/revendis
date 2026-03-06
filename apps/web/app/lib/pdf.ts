@@ -11,6 +11,7 @@ type PdfBaseOptions = {
 
 type PdfOptions = PdfBaseOptions & {
   filename: string;
+  iosTargetWindow?: Window | null;
 };
 
 const captureElementCanvas = async (element: HTMLElement, format: PdfFormat) => {
@@ -109,9 +110,9 @@ export const buildPdfBlobUrl = async ({ element, format }: PdfBaseOptions) => {
   return String(pdf.output('bloburl'));
 };
 
-export const downloadPdf = async ({ element, filename, format }: PdfOptions) => {
+export const downloadPdf = async ({ element, filename, format, iosTargetWindow }: PdfOptions) => {
   const canvas = await captureElementCanvas(element, format);
   const pdf = buildPdfFromCanvas(canvas, format);
   const blob = pdf.output('blob');
-  downloadBlob({ blob, filename, openInNewTabOnIos: true });
+  downloadBlob({ blob, filename, openInNewTabOnIos: true, iosTargetWindow });
 };
