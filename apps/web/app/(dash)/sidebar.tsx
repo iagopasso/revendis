@@ -49,7 +49,7 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
 
   useEffect(() => {
     if (!profileMenuOpen) return;
-    const onMouseDown = (event: MouseEvent) => {
+    const onPointerDown = (event: MouseEvent | PointerEvent | TouchEvent) => {
       const target = event.target;
       if (!(target instanceof Node)) return;
       if (!profileMenuRef.current?.contains(target)) {
@@ -60,13 +60,25 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
       if (event.key === 'Escape') setProfileMenuOpen(false);
     };
 
-    document.addEventListener('mousedown', onMouseDown);
+    const supportsPointerEvents = typeof window !== 'undefined' && 'PointerEvent' in window;
+    const downEvent = supportsPointerEvents ? 'pointerdown' : 'mousedown';
+    document.addEventListener(downEvent, onPointerDown as EventListener);
+    if (!supportsPointerEvents) {
+      document.addEventListener('touchstart', onPointerDown as EventListener, { passive: true });
+    }
     document.addEventListener('keydown', onKeyDown);
     return () => {
-      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener(downEvent, onPointerDown as EventListener);
+      if (!supportsPointerEvents) {
+        document.removeEventListener('touchstart', onPointerDown as EventListener);
+      }
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [profileMenuOpen]);
+
+  useEffect(() => {
+    setProfileMenuOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     if (!accountFeedback) return;

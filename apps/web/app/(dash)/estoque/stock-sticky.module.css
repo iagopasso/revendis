@@ -1,31 +1,36 @@
 .stickyScope {
 }
 
-@media (min-width: 961px) {
-  .stickyScope :global(.split > .panel:first-child) {
-    position: sticky;
-    top: 12px;
-    align-self: start;
-    max-height: calc(100dvh - 24px);
-    overflow-y: auto;
-  }
+.stickyScope :global(.split > .panel:first-child) {
+  position: sticky;
+  top: 12px;
+  z-index: 6;
+  align-self: start;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
 
-  .stickyScope :global(.inventory-filters-panel) {
-    overflow: visible;
-  }
+.stickyScope :global(.inventory-filters-panel) {
+  overflow: visible;
+}
 
-  .stickyScope :global(.inventory-filters-panel .toolbar) {
-    position: sticky;
-    top: 12px;
-    z-index: 14;
-    padding-top: 10px;
-    padding-bottom: 12px;
-    margin-bottom: 12px;
-    background: inherit;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.28);
-  }
+.stickyScope :global(.inventory-filters-panel .toolbar) {
+  position: sticky;
+  top: 12px;
+  z-index: 14;
+  padding-top: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  background: inherit;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+}
 
-  :global(html[data-theme='dark']) .stickyScope :global(.inventory-filters-panel .toolbar) {
-    border-bottom-color: rgba(110, 141, 171, 0.35);
+:global(html[data-theme='dark']) .stickyScope :global(.inventory-filters-panel .toolbar) {
+  border-bottom-color: rgba(110, 141, 171, 0.35);
+}
+
+@media (max-width: 1100px) and (min-width: 769px) {
+  .stickyScope :global(.split) {
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   }
 }

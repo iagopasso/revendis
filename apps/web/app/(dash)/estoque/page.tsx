@@ -1,6 +1,5 @@
 import { fetchList, getStringParam, toNumber } from '../lib';
 import InventoryPanel from '../categorias/inventory-panel';
-import styles from './stock-sticky.module.css';
 
 type Product = {
   id: string;
@@ -159,7 +158,7 @@ export default async function EstoquePage({
   const viewParam = getStringParam(resolvedParams.view);
 
   return (
-    <main className={`page-content inventory-scope ${styles.stickyScope}`}>
+    <main className="page-content inventory-scope">
       <InventoryPanel
         products={filteredProducts}
         allProducts={products}

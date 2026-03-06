@@ -3117,8 +3117,8 @@ export default function InventoryPanel({
         </div>
       </div>
 
-      <div className="split">
-        <aside className="panel">
+      <div className="split inventory-layout">
+        <aside className="panel inventory-sidebar">
           <div className="panel-header">
             <div>
               <h2 className="panel-title">Categorias</h2>
@@ -3160,7 +3160,7 @@ export default function InventoryPanel({
           </div>
         </aside>
 
-        <section className="panel filters-panel-static inventory-filters-panel">
+        <section className="panel filters-panel-static inventory-filters-panel inventory-content-panel">
           <div className="toolbar">
             <form className="search search-with-label" method="get">
               <span className="search-field-label">Buscar produto</span>

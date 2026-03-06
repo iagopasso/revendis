@@ -117,18 +117,18 @@ AUTH_GOOGLE_SECRET=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 
-# Facebook (use AUTH_* or FACEBOOK_CLIENT_*)
-AUTH_FACEBOOK_ID=
-AUTH_FACEBOOK_SECRET=
-FACEBOOK_CLIENT_ID=
-FACEBOOK_CLIENT_SECRET=
+# Apple
+AUTH_APPLE_ID=
+AUTH_APPLE_SECRET=
 AUTH_ALLOWED_EMAILS=email1@dominio.com,email2@dominio.com
 ```
 
-Callbacks OAuth (Google/Facebook):
+Callbacks OAuth:
 
-- Producao: `https://app.seudominio.com/api/auth/callback/google`
-- Local: `http://localhost:3000/api/auth/callback/google`
+- Google (producao): `https://app.seudominio.com/api/auth/callback/google`
+- Google (local): `http://localhost:3000/api/auth/callback/google`
+- Apple (producao): `https://app.seudominio.com/api/auth/callback/apple`
+- Apple exige HTTPS e nao aceita `localhost` como callback.
 
 ## 6) Dominios
 

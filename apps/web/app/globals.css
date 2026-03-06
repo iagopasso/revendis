@@ -107,9 +107,12 @@ main {
 }
 
 .auth-page {
+  --auth-accent: #8860db;
+  --auth-accent-strong: #6a4bab;
   min-height: 100vh;
   min-height: 100dvh;
-  background: radial-gradient(circle at 40% -20%, rgba(146, 48, 238, 0.28), transparent 42%),
+  background: radial-gradient(circle at 14% -20%, rgba(136, 96, 219, 0.46), transparent 44%),
+    radial-gradient(circle at 100% 0%, rgba(106, 75, 171, 0.3), transparent 46%),
     linear-gradient(180deg, #0d141f 0%, #0b1118 100%);
   display: grid;
   place-items: center;
@@ -128,12 +131,38 @@ main {
   align-items: center;
   gap: 10px;
   color: #9f22ff;
+  color: var(--auth-accent);
 }
 
 .auth-brand strong {
-  font-size: clamp(2.2rem, 3vw, 3rem);
+  font-size: clamp(2rem, 2.6vw, 2.6rem);
   font-weight: 600;
   letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.auth-brand-inline-logo {
+  display: block;
+  width: auto;
+  height: clamp(2.8rem, 3.8vw, 4rem);
+  object-fit: contain;
+}
+
+.auth-brand-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(82, 118, 156, 0.45);
+  background: rgba(11, 17, 24, 0.72);
+  display: grid;
+  place-items: center;
+}
+
+.auth-brand-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .auth-brand-mark {
@@ -141,6 +170,7 @@ main {
   height: 32px;
   border-radius: 9px 5px 9px 5px;
   border: 7px solid #9f22ff;
+  border-color: var(--auth-accent);
   border-top-color: transparent;
   border-right-color: transparent;
   transform: rotate(45deg);
@@ -195,7 +225,9 @@ main {
 .auth-field select:focus,
 .auth-password-field input:focus {
   border-color: #8d22df;
+  border-color: color-mix(in srgb, var(--auth-accent) 82%, #1f3f66);
   box-shadow: 0 0 0 1px rgba(141, 34, 223, 0.45) inset;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--auth-accent) 36%, transparent) inset;
 }
 
 .auth-password-field {
@@ -223,6 +255,7 @@ main {
   border: 0;
   border-radius: 8px;
   background: linear-gradient(180deg, #a11eff 0%, #7a09d0 100%);
+  background: linear-gradient(180deg, var(--auth-accent) 0%, var(--auth-accent-strong) 100%);
   color: #f7edff;
   font: inherit;
   font-size: 1.16rem;
@@ -255,6 +288,7 @@ main {
 
 .auth-link-primary {
   color: #ba3dff;
+  color: var(--auth-accent);
   font-weight: 700;
 }
 
@@ -284,9 +318,9 @@ main {
   cursor: pointer;
 }
 
-.auth-social-button.facebook {
-  background: #1b5ebd;
-  border-color: #1b5ebd;
+.auth-social-button.apple {
+  background: #0f1115;
+  border-color: #3a3f4c;
   color: #f5f8ff;
 }
 
@@ -334,7 +368,8 @@ main {
 
 .page {
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: visible;
   display: grid;
   grid-template-columns: 88px 1fr;
   background: radial-gradient(circle at 10% 20%, rgba(63, 194, 255, 0.16), transparent 45%),
@@ -2263,6 +2298,33 @@ html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-product {
   grid-template-columns: 280px 1fr;
   gap: 20px;
   align-items: start;
+}
+
+.inventory-scope .inventory-layout {
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+  align-items: start;
+  animation: none;
+  transform: none;
+}
+
+.inventory-scope .inventory-sidebar {
+  position: sticky;
+  top: 12px;
+  align-self: start;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  z-index: 6;
+}
+
+.inventory-scope .inventory-content-panel {
+  min-height: calc(100dvh - 24px);
+}
+
+.inventory-scope .inventory-content-panel .toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 7;
+  background: inherit;
 }
 
 .select-wrapper {
@@ -4656,12 +4718,12 @@ button.dashboard-reminder-card {
 }
 
 .modal-purchase-create {
-  width: min(1040px, 100%);
+  width: min(1040px, calc(100vw - 32px));
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
-  max-height: calc(100vh - 48px);
-  overflow-y: auto;
-  overflow-x: hidden;
+  max-height: calc(100dvh - 48px);
+  overflow: hidden;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
@@ -4669,6 +4731,11 @@ button.dashboard-reminder-card {
 .purchase-create-step {
   display: grid;
   gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 
 .purchase-create-step .modal-field {
@@ -4724,7 +4791,7 @@ button.dashboard-reminder-card {
 }
 
 .purchase-create-products {
-  min-height: 560px;
+  min-height: 0;
   align-content: start;
 }
 
@@ -6287,8 +6354,10 @@ button.dashboard-reminder-card {
   box-shadow: 0 18px 70px rgba(15, 23, 42, 0.14);
   padding: 18px;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
-  max-height: min(92vh, 980px);
+  max-height: min(92dvh, 980px);
+  overflow: hidden;
 }
 
 .sale-overlay-header {
@@ -6344,6 +6413,7 @@ button.dashboard-reminder-card {
   grid-template-columns: minmax(0, 2.1fr) minmax(320px, 1fr);
   gap: 14px;
   align-items: start;
+  min-height: 0;
 }
 
 .sale-products-column {
@@ -6403,7 +6473,8 @@ button.dashboard-reminder-card {
   display: grid;
   grid-template-columns: 1fr;
   gap: 8px;
-  max-height: min(56vh, 520px);
+  min-height: 0;
+  max-height: 100%;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -6548,7 +6619,8 @@ button.dashboard-reminder-card {
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 12px;
-  max-height: 78vh;
+  min-height: 0;
+  max-height: 100%;
   overflow: hidden;
 }
 
@@ -6608,6 +6680,7 @@ button.dashboard-reminder-card {
 }
 
 .sale-cart-list {
+  min-height: 0;
   overflow-y: auto;
   display: grid;
   gap: 10px;
@@ -9353,9 +9426,9 @@ button.dashboard-reminder-card {
 }
 
 .receipt-tabs button {
-  border: 2px solid #9b51e0;
+  border: 1px solid #b8c5d6;
   background: #fff;
-  color: #6b21a8;
+  color: #1f2937;
   padding: 10px 14px;
   cursor: pointer;
   font-weight: 600;
@@ -9367,7 +9440,7 @@ button.dashboard-reminder-card {
   background: linear-gradient(90deg, #c93cff, #7c3aed);
   color: #fff;
   box-shadow: 0 8px 20px rgba(124, 58, 237, 0.25);
-  border-color: transparent;
+  border-color: #d5deeb;
 }
 
 .receipt-body {
@@ -9380,7 +9453,7 @@ button.dashboard-reminder-card {
 }
 
 .receipt-body.receipt-body-digital {
-  background: var(--chakra-colors-gray-50);
+  background: #edf2f7;
   border-radius: var(--chakra-radii-lg);
   border-width: 1px;
   max-height: 400px;
@@ -9405,7 +9478,7 @@ button.dashboard-reminder-card {
 
 .receipt-card {
   background: #ffffff;
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  border: 1px solid rgba(100, 116, 139, 0.34);
   border-radius: 16px;
   padding: 14px 16px;
   display: grid;
@@ -9419,7 +9492,7 @@ button.dashboard-reminder-card {
 }
 
 .receipt-hero {
-  background: var(--chakra-colors-gray-50);
+  background: #edf2f7;
   border-radius: 12px;
   padding: 16px 18px;
   display: grid;
@@ -9431,7 +9504,7 @@ button.dashboard-reminder-card {
 }
 
 .receipt-card + .receipt-card {
-  background: var(--chakra-colors-gray-50);
+  background: #edf2f7;
 }
 
 .receipt-header {
@@ -9452,7 +9525,7 @@ button.dashboard-reminder-card {
 }
 
 .receipt-meta {
-  color: var(--muted);
+  color: #475569;
   font-size: 0.85rem;
 }
 
@@ -9470,8 +9543,12 @@ button.dashboard-reminder-card {
 
 }
 
+.receipt-grid > div {
+  min-width: 0;
+}
+
 .receipt-grid span {
-  color: var(--muted);
+  color: #475569;
   font-size: 0.8rem;
   display: block;
 }
@@ -9485,7 +9562,7 @@ button.dashboard-reminder-card {
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.01em;
-  border: 1px solid transparent;
+  border: 0;
   background: rgba(148, 163, 184, 0.18);
   color: var(--ink);
   width: fit-content;
@@ -9500,20 +9577,16 @@ button.dashboard-reminder-card {
 
 .receipt-status-pill.delivered {
   color: #166534;
-  border-color: rgba(22, 101, 52, 0.45);
   background: rgba(22, 163, 74, 0.2);
-  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.24);
 }
 
 .receipt-status-pill.pending {
   color: #d97706;
-  border-color: rgba(217, 119, 6, 0.35);
   background: rgba(217, 119, 6, 0.12);
 }
 
 .receipt-status-pill.cancelled {
   color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.12);
 }
 
@@ -9527,7 +9600,7 @@ button.dashboard-reminder-card {
 
 .receipt-product-row {
   display: grid;
-  grid-template-columns: 44px 1fr auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   background: #ffffff;
@@ -9539,23 +9612,20 @@ button.dashboard-reminder-card {
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 0.75rem;
-  border: 1px solid transparent;
+  border: 0;
   background: #fff7cc;
 }
 
 .receipt-pill.pending {
   color: #a16207;
-  border-color: rgba(202, 138, 4, 0.35);
 }
 
 .receipt-pill.paid {
-  color: #86efac;
-  border-color: rgba(34, 197, 94, 0.45);
+  color: #166534;
 }
 
 .receipt-pill.partial {
-  color: #93c5fd;
-  border-color: rgba(59, 130, 246, 0.45);
+  color: #1d4ed8;
 }
 
 .receipt-payment-status {
@@ -9609,7 +9679,7 @@ button.dashboard-reminder-card {
 
 .receipt-payment-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   background: #ffffff;
@@ -9621,13 +9691,16 @@ button.dashboard-reminder-card {
 .receipt-payment-meta {
   display: grid;
   gap: 4px;
-  color: var(--muted);
+  color: #475569;
   font-size: 0.82rem;
+  min-width: 0;
 }
 
 .receipt-payment-meta strong {
   color: var(--ink);
   font-size: 0.9rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .receipt-badge {
@@ -9643,15 +9716,15 @@ button.dashboard-reminder-card {
 .receipt-summary div {
   display: flex;
   justify-content: space-between;
-  color: var(--muted);
+  color: #334155;
 }
 
 .receipt-summary strong {
-  color: var(--ink);
+  color: #0f172a;
 }
 
 .receipt-summary-table {
-  background: var(--chakra-colors-gray-50);
+  background: #edf2f7;
   border-radius: 0 0 12px 12px;
   padding: 12px;
 }
@@ -9703,7 +9776,7 @@ button.dashboard-reminder-card {
   flex: 1;
   justify-content: center;
   height: 48px;
-  border: 2px solid #9b51e0;
+  border: 1px solid #d5deeb;
 }
 
 .receipt-actions .button.primary {
@@ -9931,7 +10004,7 @@ html[data-theme='dark'] .modal.modal-receipt .receipt-actions .button.ghost:hove
   #print-root.receipt-body-digital .receipt-pill.pending {
     background: #fff7cc !important;
     color: #a16207 !important;
-    border-color: rgba(202, 138, 4, 0.35) !important;
+    border: 0 !important;
   }
 
   .receipt-thermal {
@@ -10257,6 +10330,25 @@ html[data-theme='dark'] .modal.modal-receipt .receipt-actions .button.ghost:hove
     gap: 14px;
   }
 
+  .inventory-scope .inventory-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-scope .inventory-sidebar {
+    position: static;
+    top: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .inventory-scope .inventory-content-panel {
+    min-height: 0;
+  }
+
+  .inventory-scope .inventory-content-panel .toolbar {
+    position: static;
+  }
+
   .topbar .actions {
     width: 100%;
     flex-wrap: wrap;
@@ -10480,6 +10572,7 @@ html[data-theme='dark'] .modal.modal-receipt .receipt-actions .button.ghost:hove
   .modal.modal-settings-member,
   .modal.modal-finance-expense,
   .modal.modal-customer-profile,
+  .modal.modal-receipt,
   .modal.modal-payment,
   .modal.modal-scanner,
   .modal.modal-scan-confirm,
@@ -10894,6 +10987,7 @@ html[data-theme='dark'] .modal.modal-receipt .receipt-actions .button.ghost:hove
   .finance-mobile-box-date::before {
     content: 'Data';
   }
+
 
   .finance-mobile-box-value {
     font-variant-numeric: tabular-nums;
@@ -16662,7 +16756,8 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
     align-items: center;
     justify-content: flex-start;
     gap: 8px;
-    width: 100%;
+    width: auto;
+    min-width: 0;
     padding: 0;
     flex: 1 1 auto;
     overflow-x: auto;
@@ -16687,10 +16782,11 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
     place-items: center;
     position: relative;
     flex: 0 0 auto;
-    margin-left: 4px;
+    margin-left: auto;
     padding-left: 8px;
     border-left: 1px solid #d6dce7;
-    z-index: 2;
+    z-index: 4;
+    pointer-events: auto;
   }
 
   .page > .sidebar > .sidebar-footer.profile-menu-wrapper .sidebar-avatar-btn {
@@ -16699,6 +16795,7 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
     margin: 0;
     border-width: 2px;
     font-size: 11px;
+    touch-action: manipulation;
   }
 
   .page > .sidebar > .sidebar-footer.profile-menu-wrapper .sidebar-avatar-btn span {
@@ -16710,6 +16807,7 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
     right: 0;
     bottom: calc(100% + 8px);
     width: min(280px, calc(100vw - 20px));
+    z-index: 220;
   }
 
   html[data-theme='dark'] .page > .sidebar > .sidebar-footer.profile-menu-wrapper {
@@ -19486,17 +19584,19 @@ html[data-theme='dark'] .auth-submit {
 
 .auth-page {
   background:
-    radial-gradient(circle at 14% -20%, rgba(136, 96, 219, 0.42), transparent 44%),
-    radial-gradient(circle at 100% 0%, rgba(33, 163, 232, 0.24), transparent 46%),
+    radial-gradient(circle at 14% -20%, rgba(136, 96, 219, 0.46), transparent 44%),
+    radial-gradient(circle at 100% 0%, rgba(106, 75, 171, 0.3), transparent 46%),
     linear-gradient(180deg, #0e151d 0%, #0a1118 100%);
 }
 
 .auth-brand {
   color: #a973eb;
+  color: var(--auth-accent);
 }
 
 .auth-brand-mark {
   border-color: #a973eb;
+  border-color: var(--auth-accent);
   border-top-color: transparent;
   border-right-color: transparent;
 }
@@ -19520,11 +19620,14 @@ html[data-theme='dark'] .auth-submit {
 .auth-field select:focus,
 .auth-password-field input:focus {
   border-color: rgba(169, 115, 235, 0.86);
+  border-color: color-mix(in srgb, var(--auth-accent) 82%, #35516e);
   box-shadow: 0 0 0 1px rgba(169, 115, 235, 0.32) inset;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--auth-accent) 32%, transparent) inset;
 }
 
 .auth-link-primary {
   color: #a973eb;
+  color: var(--auth-accent);
 }
 
 .store-screen {
@@ -20996,6 +21099,30 @@ html[data-theme='dark'] .dashboard-reminder-card:hover {
   html[data-theme='dark'] .page-content a {
     color: #c9dbf2 !important;
   }
+
+  html[data-theme='dark'] .page-content .modal.modal-receipt .receipt-pill.paid {
+    color: #166534 !important;
+  }
+
+  html[data-theme='dark'] .page-content .modal.modal-receipt :is(.receipt-pill.partial, .receipt-status-pill.partial) {
+    color: #1d4ed8 !important;
+  }
+
+  html[data-theme='dark'] .page-content .modal.modal-receipt :is(
+      .receipt-pill.pending,
+      .receipt-status-pill.pending,
+      .receipt-payment-status.pending
+    ) {
+    color: #a16207 !important;
+  }
+
+  html[data-theme='dark'] .page-content .modal.modal-receipt .receipt-status-pill.delivered {
+    color: #166534 !important;
+  }
+
+  html[data-theme='dark'] .page-content .modal.modal-receipt .receipt-status-pill.cancelled {
+    color: #b91c1c !important;
+  }
 }
 
 .dashboard-home-title {
@@ -21024,4 +21151,23 @@ html[data-theme='dark'] .dashboard-reminder-card:hover {
 
 .dashboard-home .date-range-popover {
   z-index: 260;
+}
+
+/* Sidebar lock: keep app left sidebar fixed across dashboard screens */
+.page > .sidebar {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  bottom: 0 !important;
+  z-index: 120 !important;
+}
+
+@media (max-width: 768px) {
+  .page > .sidebar {
+    top: auto !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    height: auto !important;
+  }
 }

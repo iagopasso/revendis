@@ -65,6 +65,8 @@ AUTH_SECRET=troque_por_um_segredo_longo
 AUTH_URL=https://app.seudominio.com
 AUTH_GOOGLE_ID=
 AUTH_GOOGLE_SECRET=
+AUTH_APPLE_ID=
+AUTH_APPLE_SECRET=
 ```
 
 ## 6) Dominio e DNS

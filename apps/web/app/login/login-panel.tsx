@@ -5,7 +5,7 @@ import { signIn } from 'next-auth/react';
 
 type LoginPanelProps = {
   googleEnabled: boolean;
-  facebookEnabled: boolean;
+  appleEnabled: boolean;
 };
 
 type LoginResult = {
@@ -35,11 +35,11 @@ const GoogleLogo = () => (
   </svg>
 );
 
-const FacebookLogo = () => (
+const AppleLogo = () => (
   <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true">
     <path
       fill="currentColor"
-      d="M13.5 21v-7.18h2.42l.37-2.8H13.5V9.24c0-.81.23-1.36 1.39-1.36h1.49V5.37c-.72-.08-1.45-.12-2.18-.12-2.16 0-3.63 1.33-3.63 3.76v2.01H8.14v2.8h2.43V21z"
+      d="M16.37 12.67c.02 2.07 1.82 2.76 1.84 2.77-.02.05-.29 1-.95 1.98-.57.84-1.16 1.67-2.09 1.69-.92.02-1.22-.55-2.28-.55-1.05 0-1.39.53-2.26.57-.9.03-1.58-.9-2.15-1.74-1.17-1.69-2.06-4.78-.86-6.86.59-1.03 1.65-1.68 2.8-1.7.87-.02 1.69.58 2.28.58.58 0 1.67-.72 2.81-.62.48.02 1.83.19 2.69 1.45-.07.04-1.61.94-1.59 2.43Zm-2.03-4.54c.48-.58.8-1.39.71-2.2-.69.03-1.52.46-2 .99-.44.49-.83 1.31-.73 2.09.77.06 1.55-.39 2.02-.88Z"
     />
   </svg>
 );
@@ -126,7 +126,7 @@ const requestCredentialSession = async (email: string, password: string): Promis
   }
 };
 
-export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPanelProps) {
+export default function LoginPanel({ googleEnabled, appleEnabled }: LoginPanelProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -137,23 +137,29 @@ export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPane
   const [submittingProvider, setSubmittingProvider] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string>('');
 
-  const hasProvider = googleEnabled || facebookEnabled;
+  const providerNames = useMemo(() => {
+    const names: string[] = [];
+    if (googleEnabled) names.push('Google');
+    if (appleEnabled) names.push('Apple');
+    return names;
+  }, [appleEnabled, googleEnabled]);
+  const hasProvider = providerNames.length > 0;
   const credentialsSubmitting = submittingProvider === 'credentials';
   const registerSubmitting = submittingProvider === 'register';
 
   const providerHint = useMemo(() => {
     if (mode === 'register') {
-      if (googleEnabled) {
-        return 'Cadastre por formulario ou use Google para criar acesso rapidamente.';
+      if (providerNames.length > 0) {
+        return `Cadastre por formulario ou continue com ${providerNames.join(' / ')}.`;
       }
       return 'Cadastre com nome, email e senha.';
     }
 
-    if (hasProvider) return 'Entre com o e-mail e senha da sua conta, ou use Google/Facebook.';
+    if (hasProvider) return `Entre com o e-mail e senha da sua conta, ou use ${providerNames.join(' / ')}.`;
     return 'Entre com o e-mail e senha da sua conta. O login social e opcional.';
-  }, [googleEnabled, hasProvider, mode]);
+  }, [hasProvider, mode, providerNames]);
 
-  const handleProviderSignIn = async (provider: 'google' | 'facebook') => {
+  const handleProviderSignIn = async (provider: 'google' | 'apple') => {
     setFeedback('');
     setSubmittingProvider(provider);
     try {
@@ -247,7 +253,7 @@ export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPane
   return (
     <section className="auth-login-wrap">
       <div className="auth-brand">
-        <span className="auth-brand-mark" />
+        <img className="auth-brand-inline-logo" src="/logo.png" alt="Revendis" />
         <strong>revendis</strong>
       </div>
 
@@ -366,34 +372,44 @@ export default function LoginPanel({ googleEnabled, facebookEnabled }: LoginPane
                   void handleProviderSignIn('google');
                   return;
                 }
+                if (appleEnabled) {
+                  void handleProviderSignIn('apple');
+                  return;
+                }
                 setFeedback('Use o formulario para finalizar seu cadastro.');
               }}
             >
-              Cadastrar com Google
+              {googleEnabled ? 'Cadastrar com Google' : appleEnabled ? 'Cadastrar com Apple' : 'Cadastrar com social'}
             </button>
           )}
         </div>
 
-        <div className="auth-social-row">
-          <button
-            type="button"
-            className="auth-social-button facebook"
-            onClick={() => void handleProviderSignIn('facebook')}
-            disabled={!facebookEnabled || submittingProvider !== null}
-          >
-            <FacebookLogo />
-            <span>{submittingProvider === 'facebook' ? 'Conectando...' : 'Facebook'}</span>
-          </button>
-          <button
-            type="button"
-            className="auth-social-button google"
-            onClick={() => void handleProviderSignIn('google')}
-            disabled={!googleEnabled || submittingProvider !== null}
-          >
-            <GoogleLogo />
-            <span>{submittingProvider === 'google' ? 'Conectando...' : 'Google'}</span>
-          </button>
-        </div>
+        {hasProvider ? (
+          <div className="auth-social-row">
+            {googleEnabled ? (
+              <button
+                type="button"
+                className="auth-social-button google"
+                onClick={() => void handleProviderSignIn('google')}
+                disabled={submittingProvider !== null}
+              >
+                <GoogleLogo />
+                <span>{submittingProvider === 'google' ? 'Conectando...' : 'Google'}</span>
+              </button>
+            ) : null}
+            {appleEnabled ? (
+              <button
+                type="button"
+                className="auth-social-button apple"
+                onClick={() => void handleProviderSignIn('apple')}
+                disabled={submittingProvider !== null}
+              >
+                <AppleLogo />
+                <span>{submittingProvider === 'apple' ? 'Conectando...' : 'Apple'}</span>
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         {feedback ? <p className="auth-feedback">{feedback}</p> : null}
         {!feedback && providerHint ? <p className="auth-feedback">{providerHint}</p> : null}

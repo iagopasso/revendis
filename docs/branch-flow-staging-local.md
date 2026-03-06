@@ -42,6 +42,8 @@ AUTH_SECRET=local-secret-forte
 AUTH_URL=http://localhost:3000
 AUTH_GOOGLE_ID=
 AUTH_GOOGLE_SECRET=
+AUTH_APPLE_ID=
+AUTH_APPLE_SECRET=
 EOF
 
 pnpm --filter web dev
@@ -98,3 +100,5 @@ git push origin main
 - Use `DATABASE_URL` diferente entre local e producao.
 - Nao rode migrations de teste no banco de producao.
 - Callback Google local: `http://localhost:3000/api/auth/callback/google`.
+- Callback Apple (producao): `https://app.seudominio.com/api/auth/callback/apple`.
+- Apple exige HTTPS e nao aceita callback em `localhost`.

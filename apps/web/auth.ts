@@ -1,7 +1,7 @@
 import NextAuth from 'next-auth';
 import type { NextAuthConfig } from 'next-auth';
+import Apple from 'next-auth/providers/apple';
 import Credentials from 'next-auth/providers/credentials';
-import Facebook from 'next-auth/providers/facebook';
 import Google from 'next-auth/providers/google';
 
 type AuthUserPayload = {
@@ -21,8 +21,8 @@ const mutationAuthToken =
   process.env.MUTATION_AUTH_TOKEN || process.env.NEXT_PUBLIC_MUTATION_AUTH_TOKEN || '';
 const googleClientId = `${process.env.AUTH_GOOGLE_ID || ''}`.trim();
 const googleClientSecret = `${process.env.AUTH_GOOGLE_SECRET || ''}`.trim();
-const facebookClientId = `${process.env.AUTH_FACEBOOK_ID || ''}`.trim();
-const facebookClientSecret = `${process.env.AUTH_FACEBOOK_SECRET || ''}`.trim();
+const appleClientId = `${process.env.AUTH_APPLE_ID || ''}`.trim();
+const appleClientSecret = `${process.env.AUTH_APPLE_SECRET || ''}`.trim();
 
 const withNoTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
@@ -140,11 +140,11 @@ if (googleClientId && googleClientSecret) {
   );
 }
 
-if (facebookClientId && facebookClientSecret) {
+if (appleClientId && appleClientSecret) {
   providers.push(
-    Facebook({
-      clientId: facebookClientId,
-      clientSecret: facebookClientSecret
+    Apple({
+      clientId: appleClientId,
+      clientSecret: appleClientSecret
     })
   );
 }
