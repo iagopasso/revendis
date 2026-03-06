@@ -145,6 +145,7 @@ export type PurchaseInput = {
   total: number;
   items: number;
   brand?: string;
+  orderNumber?: string;
   status?: 'pending' | 'received' | 'cancelled';
   purchaseDate?: string;
   purchaseItems?: PurchaseItemInput[];
@@ -159,6 +160,7 @@ export type PurchaseUpdateInput = {
   total?: number;
   items?: number;
   brand?: string;
+  orderNumber?: string;
   purchaseDate?: string;
   dueDate?: string;
   purchaseItems?: PurchaseItemInput[];

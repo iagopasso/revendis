@@ -45,6 +45,7 @@ test('creates, updates and deletes purchase', async () => {
     total: 450.75,
     items: 9,
     brand: 'Marca Teste',
+    orderNumber: 'PO-001',
     purchaseItems: [
       {
         productId,
@@ -56,6 +57,7 @@ test('creates, updates and deletes purchase', async () => {
 
   expect(createRes.status).toBe(201);
   expect(createRes.body.data.status).toBe('pending');
+  expect(createRes.body.data.order_number).toBe('PO-001');
   const purchaseId = createRes.body.data.id as string;
   const purchaseDate = createRes.body.data.purchase_date as string;
 
@@ -107,6 +109,7 @@ test('creates, updates and deletes purchase', async () => {
     total: 390.5,
     items: 7,
     brand: 'Marca Atualizada',
+    orderNumber: 'PO-001-EDIT',
     purchaseDate: '2026-01-15',
     purchaseItems: [
       {
@@ -127,7 +130,8 @@ test('creates, updates and deletes purchase', async () => {
     supplier: 'Fornecedor Atualizado',
     total: '390.50',
     items: 7,
-    brand: 'Marca Atualizada'
+    brand: 'Marca Atualizada',
+    order_number: 'PO-001-EDIT'
   });
   const updatedPurchaseDate = new Date(updateRes.body.data.purchase_date).toISOString().slice(0, 10);
   expect(updatedPurchaseDate).toBe('2026-01-15');

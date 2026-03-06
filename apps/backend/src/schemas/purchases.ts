@@ -19,6 +19,7 @@ export const purchaseInputSchema = z
     total: z.number().positive(),
     items: z.number().int().positive(),
     brand: z.string().optional(),
+    orderNumber: z.string().trim().min(1).optional(),
     status: purchaseStatusSchema.optional(),
     purchaseDate: z
       .string()
@@ -40,6 +41,7 @@ export const purchaseUpdateSchema = z
     total: z.number().positive().optional(),
     items: z.number().int().positive().optional(),
     brand: z.string().optional(),
+    orderNumber: z.string().trim().min(1).optional(),
     purchaseDate: z.string().optional(),
     dueDate: z.string().optional(),
     purchaseItems: z.array(purchaseItemSchema).optional()
