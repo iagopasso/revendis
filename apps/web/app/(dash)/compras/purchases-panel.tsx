@@ -1057,6 +1057,7 @@ export default function PurchasesPanel({
             items,
             total,
             brand: form.brand.trim(),
+            orderNumber: form.orderNumber.trim() || undefined,
             purchaseDate: normalizedPurchaseDate,
             dueDate: normalizedDueDate || undefined,
             purchaseItems
@@ -1114,6 +1115,7 @@ export default function PurchasesPanel({
           items,
           total,
           brand: form.brand.trim() || undefined,
+          orderNumber: form.orderNumber.trim() || undefined,
           purchaseDate: normalizedPurchaseDate,
           status: 'pending',
           purchaseItems

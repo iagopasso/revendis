@@ -157,12 +157,18 @@ const ensurePurchasesTable = async () => {
          store_id uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
          supplier text NOT NULL,
          brand text,
+         order_number text,
          status text NOT NULL DEFAULT 'pending',
          total numeric(12,2) NOT NULL,
          items integer NOT NULL,
          purchase_date date NOT NULL DEFAULT CURRENT_DATE,
          created_at timestamptz NOT NULL DEFAULT now()
        )`
+    );
+
+    await query(
+      `ALTER TABLE purchases
+       ADD COLUMN IF NOT EXISTS order_number text`
     );
 
     await query(
@@ -231,6 +237,10 @@ const ensurePurchasesTable = async () => {
     await query(
       `CREATE INDEX IF NOT EXISTS idx_purchases_brand
        ON purchases (brand)`
+    );
+    await query(
+      `CREATE INDEX IF NOT EXISTS idx_purchases_order_number
+       ON purchases (order_number)`
     );
     await query(
       `CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase
@@ -329,6 +339,7 @@ router.get(
       `SELECT p.id,
               p.supplier,
               p.brand,
+              p.order_number,
               p.status,
               p.total,
               p.items,
@@ -360,6 +371,7 @@ router.get(
       `SELECT p.id,
               p.supplier,
               p.brand,
+              p.order_number,
               p.status,
               p.total,
               p.items,
@@ -418,20 +430,21 @@ router.post(
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const userId = req.header('x-user-id') || null;
-    const { supplier, total, items, brand, status, purchaseDate, purchaseItems = [] } =
+    const { supplier, total, items, brand, orderNumber, status, purchaseDate, purchaseItems = [] } =
       req.body as PurchaseInput;
     const nextStatus = status || 'pending';
 
     try {
       const inserted = await withTransaction(async (client) => {
         const created = await client.query(
-          `INSERT INTO purchases (store_id, supplier, brand, status, total, items, purchase_date)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING id, supplier, brand, status, total, items, purchase_date, created_at`,
+          `INSERT INTO purchases (store_id, supplier, brand, order_number, status, total, items, purchase_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING id, supplier, brand, order_number, status, total, items, purchase_date, created_at`,
           [
             storeId,
             supplier.trim(),
             normalizeOptional(brand),
+            normalizeOptional(orderNumber),
             nextStatus,
             total,
             items,
@@ -505,6 +518,7 @@ router.post(
             total,
             items,
             brand: normalizeOptional(brand),
+            orderNumber: normalizeOptional(orderNumber),
             status: nextStatus,
             purchaseDate,
             purchaseItemsCount: purchaseItems.length
@@ -559,6 +573,11 @@ router.patch(
     if (payload.brand !== undefined) {
       fields.push(`brand = $${fields.length + 1}`);
       values.push(normalizeOptional(payload.brand));
+    }
+
+    if (payload.orderNumber !== undefined) {
+      fields.push(`order_number = $${fields.length + 1}`);
+      values.push(normalizeOptional(payload.orderNumber));
     }
 
     if (payload.total !== undefined) {
@@ -639,7 +658,7 @@ router.patch(
           `UPDATE purchases
            SET ${fields.join(', ')}
            WHERE id = $${fields.length + 1} AND store_id = $${fields.length + 2}
-           RETURNING id, store_id, supplier, brand, status, total, items, purchase_date, created_at`,
+           RETURNING id, store_id, supplier, brand, order_number, status, total, items, purchase_date, created_at`,
           [...values, id, storeId]
         );
         if (result.rows.length) {
@@ -647,7 +666,7 @@ router.patch(
         }
       } else {
         const existing = await client.query(
-          `SELECT id, store_id, supplier, brand, status, total, items, purchase_date, created_at
+          `SELECT id, store_id, supplier, brand, order_number, status, total, items, purchase_date, created_at
            FROM purchases
            WHERE id = $1 AND store_id = $2
            LIMIT 1`,
@@ -716,6 +735,7 @@ router.patch(
                 p.store_id,
                 p.supplier,
                 p.brand,
+                p.order_number,
                 p.status,
                 p.total,
                 p.items,
@@ -759,7 +779,7 @@ router.patch(
         `UPDATE purchases
          SET status = $3
          WHERE id = $1 AND store_id = $2
-         RETURNING id, store_id, supplier, brand, status, total, items, purchase_date, created_at`,
+         RETURNING id, store_id, supplier, brand, order_number, status, total, items, purchase_date, created_at`,
         [id, storeId, status]
       );
 
@@ -795,6 +815,7 @@ router.patch(
                 p.store_id,
                 p.supplier,
                 p.brand,
+                p.order_number,
                 p.status,
                 p.total,
                 p.items,

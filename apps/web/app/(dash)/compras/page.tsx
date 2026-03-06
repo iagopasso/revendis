@@ -14,6 +14,7 @@ type Purchase = {
   total: number | string;
   items: number | string;
   brand?: string | null;
+  order_number?: string | null;
   purchase_date: string;
   created_at: string;
 };
