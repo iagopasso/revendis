@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { API_BASE, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from './lib';
 import { IconBox } from './icons';
 import { buildPdfBlobUrl, downloadPdf } from '../lib/pdf';
-import { closeDownloadWindow, prepareIosDownloadWindow } from '../lib/download';
+import { closeDownloadWindow, isMobileWeb, prepareIosDownloadWindow } from '../lib/download';
 
 export type SaleDetail = {
   id: string;
@@ -875,6 +875,53 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     }
   };
 
+  const openReceiptPrintFallback = ({
+    node,
+    title,
+    targetWindow
+  }: {
+    node: HTMLElement;
+    title: string;
+    targetWindow?: Window | null;
+  }) => {
+    if (typeof window === 'undefined') return false;
+
+    const popup = targetWindow && !targetWindow.closed ? targetWindow : window.open('', '_blank');
+    if (!popup) return false;
+    const isThermal = node.classList.contains('receipt-thermal');
+    const printRootClass = isThermal ? 'receipt-body receipt-body-thermal' : 'receipt-body receipt-body-digital';
+
+    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map((styleNode) => styleNode.outerHTML)
+      .join('\n');
+
+    popup.document.open();
+    popup.document.write(`<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>${title}</title>
+    ${styles}
+    <style>
+      body { margin: 0; padding: 16px; background: #ffffff; color: #0f172a; }
+      .receipt-body-digital { max-width: 980px; margin: 0 auto; }
+      .receipt-body-thermal { margin: 0 auto; }
+      .receipt-thermal { background: #ffffff !important; border-color: #e2e8f0 !important; color: #0f172a !important; }
+      .receipt-thermal pre { color: #0f172a !important; background: transparent !important; }
+    </style>
+  </head>
+  <body>
+    <div id="print-root" class="${printRootClass}">
+      ${node.outerHTML}
+    </div>
+  </body>
+</html>`);
+    popup.document.close();
+    window.setTimeout(() => popup.print(), 350);
+    return true;
+  };
+
   const handleDownloadReceipt = async () => {
     if (!sale) return;
     const node =
@@ -893,8 +940,19 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
       await downloadPdf({ element: node, filename, format, iosTargetWindow });
       setToast('PDF gerado');
     } catch {
-      closeDownloadWindow(iosTargetWindow);
-      setToast('Erro ao gerar PDF');
+      const fallbackOpened = openReceiptPrintFallback({
+        node,
+        title: `Extrato da venda #${sale.id}`,
+        targetWindow: iosTargetWindow
+      });
+      if (!fallbackOpened) {
+        closeDownloadWindow(iosTargetWindow);
+      }
+      setToast(
+        fallbackOpened
+          ? 'Nao foi possivel gerar o PDF automaticamente. Use Imprimir/Compartilhar para salvar.'
+          : 'Erro ao gerar PDF'
+      );
     }
   };
 
@@ -909,6 +967,15 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
       return;
     }
     const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
+
+    if (isMobileWeb()) {
+      const opened = openReceiptPrintFallback({
+        node,
+        title: `Extrato da venda #${sale.id}`
+      });
+      setToast(opened ? 'Extrato aberto para impressao' : 'Erro ao imprimir extrato');
+      return;
+    }
 
     try {
       const blobUrl = await buildPdfBlobUrl({ element: node, format });
@@ -935,7 +1002,11 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
       iframe.src = blobUrl;
       document.body.appendChild(iframe);
     } catch {
-      setToast('Erro ao imprimir extrato');
+      const fallbackOpened = openReceiptPrintFallback({
+        node,
+        title: `Extrato da venda #${sale.id}`
+      });
+      setToast(fallbackOpened ? 'Extrato aberto para impressao' : 'Erro ao imprimir extrato');
     }
   };
 
