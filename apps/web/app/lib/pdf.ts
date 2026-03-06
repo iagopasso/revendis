@@ -112,7 +112,6 @@ const buildPdfFromCanvas = (canvas: HTMLCanvasElement, format: PdfFormat) => {
     const offsetX = margin + (usablePageWidth - imgWidthMm) / 2;
     const offsetY = margin + (usablePageHeight - imgHeightMm) / 2;
     pdf.addImage(imgData, 'PNG', offsetX, offsetY, imgWidthMm, imgHeightMm);
-
     return pdf;
   }
 
@@ -124,7 +123,7 @@ const buildPdfFromCanvas = (canvas: HTMLCanvasElement, format: PdfFormat) => {
   return pdf;
 };
 
-export const buildPdfBlob = async ({ element, format }: PdfBaseOptions) => {
+const buildPdfBlob = async ({ element, format }: PdfBaseOptions) => {
   const canvas = await captureElementCanvas(element, format);
   const pdf = buildPdfFromCanvas(canvas, format);
   return pdf.output('blob');
@@ -136,13 +135,7 @@ export const buildPdfBlobUrl = async ({ element, format }: PdfBaseOptions) => {
 };
 
 export const downloadPdf = async ({ element, filename, format }: PdfOptions) => {
-  const blob = await buildPdfBlob({ element, format });
-  const href = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = href;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  window.setTimeout(() => URL.revokeObjectURL(href), 1_000);
+  const canvas = await captureElementCanvas(element, format);
+  const pdf = buildPdfFromCanvas(canvas, format);
+  pdf.save(filename);
 };

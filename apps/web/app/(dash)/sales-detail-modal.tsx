@@ -4,8 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from './lib';
 import { IconBox } from './icons';
-import { buildPdfBlob, buildPdfBlobUrl } from '../lib/pdf';
-import { downloadBlob, isMobileWeb } from '../lib/download';
+import { buildPdfBlobUrl, downloadPdf } from '../lib/pdf';
 
 export type SaleDetail = {
   id: string;
@@ -889,37 +888,8 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
 
     try {
-      const blob = await buildPdfBlob({ element: node, format });
-      const nav = navigator as Navigator & {
-        canShare?: (data?: ShareData) => boolean;
-        share?: (data?: ShareData) => Promise<void>;
-      };
-      const canShare = typeof nav.share === 'function';
-      if (canShare) {
-        let shareFile: File | null = null;
-        try {
-          shareFile = new File([blob], filename, { type: 'application/pdf' });
-        } catch {
-          shareFile = null;
-        }
-        if (shareFile) {
-          const canShareFiles = typeof nav.canShare !== 'function' || nav.canShare({ files: [shareFile] });
-          if (canShareFiles) {
-            try {
-              await nav.share({ files: [shareFile], title: filename });
-              setToast('PDF pronto para envio ou salvamento');
-              return;
-            } catch (error) {
-              if (error instanceof DOMException && error.name === 'AbortError') {
-                return;
-              }
-            }
-          }
-        }
-      }
-
-      downloadBlob({ blob, filename });
-      setToast('PDF pronto para envio ou salvamento');
+      await downloadPdf({ element: node, filename, format });
+      setToast('PDF gerado');
     } catch {
       setToast('Erro ao gerar PDF');
     }
@@ -936,27 +906,9 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
       return;
     }
     const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
-    const mobilePrintWindow = isMobileWeb() ? window.open('', '_blank') : null;
 
     try {
       const blobUrl = await buildPdfBlobUrl({ element: node, format });
-      if (mobilePrintWindow && !mobilePrintWindow.closed) {
-        mobilePrintWindow.location.href = blobUrl;
-        window.setTimeout(() => {
-          try {
-            mobilePrintWindow.focus();
-            mobilePrintWindow.print();
-          } catch {
-            // Keep file open for manual print/share if programmatic print is blocked.
-          }
-        }, 650);
-        window.setTimeout(() => {
-          URL.revokeObjectURL(blobUrl);
-        }, 60_000);
-        setToast('Extrato aberto para impressao');
-        return;
-      }
-
       const iframe = document.createElement('iframe');
       iframe.style.position = 'fixed';
       iframe.style.right = '0';
@@ -980,9 +932,6 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
       iframe.src = blobUrl;
       document.body.appendChild(iframe);
     } catch {
-      if (mobilePrintWindow && !mobilePrintWindow.closed) {
-        mobilePrintWindow.close();
-      }
       setToast('Erro ao imprimir extrato');
     }
   };
@@ -1369,23 +1318,23 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
 
                     <div className="receipt-grid">
                       <div>
-                        <span>Cliente</span>
+                        <span className="receipt-grid-label">Cliente</span>
                         <strong>{sale.customer}</strong>
                       </div>
                       <div>
-                        <span>Data do pagamento</span>
+                        <span className="receipt-grid-label">Data do pagamento</span>
                         <strong>{formatDate(paymentDisplayDate)}</strong>
                       </div>
                       <div>
-                        <span>Valor total</span>
+                        <span className="receipt-grid-label">Valor total</span>
                         <strong>{formatCurrency(summary.total)}</strong>
                       </div>
                       <div>
-                        <span>Situação da entrega</span>
-                        <strong className={`receipt-status-pill ${statusClass(deliveryStatus)}`}>
+                        <span className="receipt-grid-label">Situação da entrega</span>
+                        <span className={`receipt-status-pill ${statusClass(deliveryStatus)}`}>
                           <span className="receipt-status-dot" />
                           {statusLabel(deliveryStatus)}
-                        </strong>
+                        </span>
                       </div>
                     </div>
 
