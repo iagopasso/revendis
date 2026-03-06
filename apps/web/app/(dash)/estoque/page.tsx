@@ -1,5 +1,6 @@
 import { fetchList, getStringParam, toNumber } from '../lib';
 import InventoryPanel from '../categorias/inventory-panel';
+import styles from './stock-sticky.module.css';
 
 type Product = {
   id: string;
@@ -158,7 +159,7 @@ export default async function EstoquePage({
   const viewParam = getStringParam(resolvedParams.view);
 
   return (
-    <main className="page-content inventory-scope">
+    <main className={`page-content inventory-scope ${styles.stickyScope}`}>
       <InventoryPanel
         products={filteredProducts}
         allProducts={products}
@@ -176,36 +177,6 @@ export default async function EstoquePage({
         baseParams={baseParams}
         viewParam={viewParam}
       />
-      <style jsx global>{`
-        @media (min-width: 961px) {
-          .inventory-scope .split > .panel:first-child {
-            position: sticky;
-            top: 12px;
-            align-self: start;
-            max-height: calc(100dvh - 24px);
-            overflow-y: auto;
-          }
-
-          .inventory-scope .inventory-filters-panel {
-            overflow: visible;
-          }
-
-          .inventory-scope .inventory-filters-panel .toolbar {
-            position: sticky;
-            top: 12px;
-            z-index: 14;
-            padding-top: 10px;
-            padding-bottom: 12px;
-            margin-bottom: 12px;
-            background: inherit;
-            border-bottom: 1px solid rgba(148, 163, 184, 0.28);
-          }
-
-          html[data-theme='dark'] .inventory-scope .inventory-filters-panel .toolbar {
-            border-bottom-color: rgba(110, 141, 171, 0.35);
-          }
-        }
-      `}</style>
     </main>
   );
 }
