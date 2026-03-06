@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from './lib';
 import { IconBox } from './icons';
-import { buildPdfBlobUrl, downloadPdf } from '../lib/pdf';
-import { closeDownloadWindow, isMobileWeb, prepareIosDownloadWindow } from '../lib/download';
+import { buildPdfBlob, buildPdfBlobUrl } from '../lib/pdf';
+import { downloadBlob, isMobileWeb } from '../lib/download';
 
 export type SaleDetail = {
   id: string;
@@ -875,53 +875,6 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     }
   };
 
-  const openReceiptPrintFallback = ({
-    node,
-    title,
-    targetWindow
-  }: {
-    node: HTMLElement;
-    title: string;
-    targetWindow?: Window | null;
-  }) => {
-    if (typeof window === 'undefined') return false;
-
-    const popup = targetWindow && !targetWindow.closed ? targetWindow : window.open('', '_blank');
-    if (!popup) return false;
-    const isThermal = node.classList.contains('receipt-thermal');
-    const printRootClass = isThermal ? 'receipt-body receipt-body-thermal' : 'receipt-body receipt-body-digital';
-
-    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-      .map((styleNode) => styleNode.outerHTML)
-      .join('\n');
-
-    popup.document.open();
-    popup.document.write(`<!doctype html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>${title}</title>
-    ${styles}
-    <style>
-      body { margin: 0; padding: 16px; background: #ffffff; color: #0f172a; }
-      .receipt-body-digital { max-width: 980px; margin: 0 auto; }
-      .receipt-body-thermal { margin: 0 auto; }
-      .receipt-thermal { background: #ffffff !important; border-color: #e2e8f0 !important; color: #0f172a !important; }
-      .receipt-thermal pre { color: #0f172a !important; background: transparent !important; }
-    </style>
-  </head>
-  <body>
-    <div id="print-root" class="${printRootClass}">
-      ${node.outerHTML}
-    </div>
-  </body>
-</html>`);
-    popup.document.close();
-    window.setTimeout(() => popup.print(), 350);
-    return true;
-  };
-
   const handleDownloadReceipt = async () => {
     if (!sale) return;
     const node =
@@ -934,25 +887,41 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     }
     const filename = `venda-${sale.id}-${receiptTab}.pdf`;
     const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
-    const iosTargetWindow = prepareIosDownloadWindow();
 
     try {
-      await downloadPdf({ element: node, filename, format, iosTargetWindow });
-      setToast('PDF gerado');
-    } catch {
-      const fallbackOpened = openReceiptPrintFallback({
-        node,
-        title: `Extrato da venda #${sale.id}`,
-        targetWindow: iosTargetWindow
-      });
-      if (!fallbackOpened) {
-        closeDownloadWindow(iosTargetWindow);
+      const blob = await buildPdfBlob({ element: node, format });
+      const nav = navigator as Navigator & {
+        canShare?: (data?: ShareData) => boolean;
+        share?: (data?: ShareData) => Promise<void>;
+      };
+      const canShare = typeof nav.share === 'function';
+      if (canShare) {
+        let shareFile: File | null = null;
+        try {
+          shareFile = new File([blob], filename, { type: 'application/pdf' });
+        } catch {
+          shareFile = null;
+        }
+        if (shareFile) {
+          const canShareFiles = typeof nav.canShare !== 'function' || nav.canShare({ files: [shareFile] });
+          if (canShareFiles) {
+            try {
+              await nav.share({ files: [shareFile], title: filename });
+              setToast('PDF pronto para envio ou salvamento');
+              return;
+            } catch (error) {
+              if (error instanceof DOMException && error.name === 'AbortError') {
+                return;
+              }
+            }
+          }
+        }
       }
-      setToast(
-        fallbackOpened
-          ? 'Nao foi possivel gerar o PDF automaticamente. Use Imprimir/Compartilhar para salvar.'
-          : 'Erro ao gerar PDF'
-      );
+
+      downloadBlob({ blob, filename });
+      setToast('PDF pronto para envio ou salvamento');
+    } catch {
+      setToast('Erro ao gerar PDF');
     }
   };
 
@@ -967,18 +936,27 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
       return;
     }
     const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
-
-    if (isMobileWeb()) {
-      const opened = openReceiptPrintFallback({
-        node,
-        title: `Extrato da venda #${sale.id}`
-      });
-      setToast(opened ? 'Extrato aberto para impressao' : 'Erro ao imprimir extrato');
-      return;
-    }
+    const mobilePrintWindow = isMobileWeb() ? window.open('', '_blank') : null;
 
     try {
       const blobUrl = await buildPdfBlobUrl({ element: node, format });
+      if (mobilePrintWindow && !mobilePrintWindow.closed) {
+        mobilePrintWindow.location.href = blobUrl;
+        window.setTimeout(() => {
+          try {
+            mobilePrintWindow.focus();
+            mobilePrintWindow.print();
+          } catch {
+            // Keep file open for manual print/share if programmatic print is blocked.
+          }
+        }, 650);
+        window.setTimeout(() => {
+          URL.revokeObjectURL(blobUrl);
+        }, 60_000);
+        setToast('Extrato aberto para impressao');
+        return;
+      }
+
       const iframe = document.createElement('iframe');
       iframe.style.position = 'fixed';
       iframe.style.right = '0';
@@ -1002,11 +980,10 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
       iframe.src = blobUrl;
       document.body.appendChild(iframe);
     } catch {
-      const fallbackOpened = openReceiptPrintFallback({
-        node,
-        title: `Extrato da venda #${sale.id}`
-      });
-      setToast(fallbackOpened ? 'Extrato aberto para impressao' : 'Erro ao imprimir extrato');
+      if (mobilePrintWindow && !mobilePrintWindow.closed) {
+        mobilePrintWindow.close();
+      }
+      setToast('Erro ao imprimir extrato');
     }
   };
 
