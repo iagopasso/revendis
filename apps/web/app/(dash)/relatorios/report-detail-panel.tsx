@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import DateRangePicker from '../date-range';
 import { IconDownload } from '../icons';
+import { downloadBlob } from '../../lib/download';
 
 type ReportColumn = {
   key: string;
@@ -44,18 +45,6 @@ type ReportDetailPanelProps = {
 };
 
 const csvEscape = (value: string) => `"${value.replace(/"/g, '""')}"`;
-
-const downloadBlob = (filename: string, content: BlobPart, type: string) => {
-  const blob = new Blob([content], { type });
-  const href = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = href;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(href);
-};
 
 export default function ReportDetailPanel({
   breadcrumb,
@@ -120,7 +109,10 @@ export default function ReportDetailPanel({
       .map((row) => columns.map((column) => csvEscape(row.values[column.key] || '')).join(';'))
       .join('\n');
     const csv = `\uFEFF${header}${body ? `\n${body}` : ''}`;
-    downloadBlob(`${exportBaseName}.csv`, csv, 'text/csv;charset=utf-8;');
+    downloadBlob({
+      blob: new Blob([csv], { type: 'text/csv;charset=utf-8;' }),
+      filename: `${exportBaseName}.csv`
+    });
     setDownloadOpen(false);
   };
 
@@ -227,7 +219,12 @@ export default function ReportDetailPanel({
       pdf.text(`Gerado em ${generatedAt} no Revendis Web`, pageWidth / 2, pageHeight - 20, { align: 'center' });
     }
 
-    pdf.save(`${exportBaseName}.pdf`);
+    const blob = pdf.output('blob');
+    downloadBlob({
+      blob,
+      filename: `${exportBaseName}.pdf`,
+      openInNewTabOnIos: true
+    });
     setDownloadOpen(false);
   };
 
