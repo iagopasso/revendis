@@ -14,6 +14,11 @@ export const isIosWeb = () => {
   return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
 };
 
+export const isMobileWeb = () => {
+  if (typeof navigator === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+};
+
 export const prepareIosDownloadWindow = () => {
   if (typeof window === 'undefined' || !isIosWeb()) return null;
   const popup = window.open('', '_blank');

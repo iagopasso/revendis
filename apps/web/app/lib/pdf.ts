@@ -1,6 +1,6 @@
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { downloadBlob } from './download';
+import { downloadBlob, isMobileWeb } from './download';
 
 type PdfFormat = 'a4' | 'thermal-80' | 'thermal-58';
 
@@ -56,18 +56,63 @@ const captureElementCanvas = async (element: HTMLElement, format: PdfFormat) => 
     captureNode.style.colorScheme = 'light';
   }
 
+  if (format !== 'a4') {
+    captureNode.style.setProperty('--ink', '#0f172a');
+    captureNode.style.setProperty('--muted', '#475569');
+    captureNode.style.background = '#ffffff';
+    captureNode.style.color = '#0f172a';
+    captureNode.style.colorScheme = 'light';
+
+    const thermalRoot = captureNode.classList.contains('receipt-thermal')
+      ? captureNode
+      : captureNode.querySelector<HTMLElement>('.receipt-thermal');
+    if (thermalRoot) {
+      thermalRoot.style.background = '#ffffff';
+      thermalRoot.style.borderColor = '#e2e8f0';
+      thermalRoot.style.color = '#0f172a';
+      const thermalPre = thermalRoot.querySelector<HTMLElement>('pre');
+      if (thermalPre) {
+        thermalPre.style.color = '#0f172a';
+        thermalPre.style.background = 'transparent';
+      }
+    }
+  }
+
   captureHost.appendChild(captureNode);
   document.body.appendChild(captureHost);
 
   let canvas: HTMLCanvasElement;
   try {
-    canvas = await html2canvas(captureNode, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      width: captureWidth,
-      windowWidth: captureWidth
-    });
+    const renderCanvas = async (scale: number, timeoutMs: number) => {
+      const renderPromise = html2canvas(captureNode, {
+        scale,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        width: captureWidth,
+        windowWidth: captureWidth,
+        imageTimeout: 8000,
+        logging: false
+      });
+      let timeoutId: number | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error('pdf_capture_timeout')), timeoutMs);
+      });
+      try {
+        return (await Promise.race([renderPromise, timeoutPromise])) as HTMLCanvasElement;
+      } finally {
+        if (timeoutId !== undefined) {
+          window.clearTimeout(timeoutId);
+        }
+      }
+    };
+
+    const preferredScale = isMobileWeb() ? 1 : 2;
+
+    try {
+      canvas = await renderCanvas(preferredScale, 8000);
+    } catch {
+      canvas = await renderCanvas(1, 6000);
+    }
   } finally {
     if (captureHost.parentNode) {
       captureHost.parentNode.removeChild(captureHost);
