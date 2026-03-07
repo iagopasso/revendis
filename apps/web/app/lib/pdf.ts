@@ -123,7 +123,7 @@ const buildPdfFromCanvas = (canvas: HTMLCanvasElement, format: PdfFormat) => {
   return pdf;
 };
 
-const buildPdfBlob = async ({ element, format }: PdfBaseOptions) => {
+export const buildPdfBlob = async ({ element, format }: PdfBaseOptions) => {
   const canvas = await captureElementCanvas(element, format);
   const pdf = buildPdfFromCanvas(canvas, format);
   return pdf.output('blob');
