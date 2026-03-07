@@ -6399,6 +6399,44 @@ button.dashboard-reminder-card {
   font-weight: 400;
 }
 
+.sale-product-tools {
+  display: grid;
+  gap: 10px;
+}
+
+.sale-scan-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.sale-scan-submit {
+  align-self: stretch;
+  min-height: 52px;
+  white-space: nowrap;
+}
+
+.sale-scan-hint {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.sale-scan-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sale-scan-camera {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .sale-product-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -16837,6 +16875,24 @@ html[data-theme='dark'] .sidebar-avatar-btn span {
     min-height: 0;
   }
 
+  .sales-page .sale-scan-form {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-page .sale-scan-submit {
+    width: 100%;
+  }
+
+  .sales-page .sale-scan-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sales-page .sale-scan-camera {
+    width: 100%;
+    justify-content: center;
+  }
+
   .sales-page .sale-product-grid {
     grid-template-columns: 1fr;
     max-height: 230px;
@@ -18284,6 +18340,16 @@ html[data-theme='dark'] .customer-picker-search .input-field-label,
 html[data-theme='dark'] .sale-product-search .search-icon,
 html[data-theme='dark'] .customer-picker-search .search-icon {
   color: #9fb4cb;
+}
+
+html[data-theme='dark'] .sale-scan-hint {
+  color: #9fb4cb;
+}
+
+html[data-theme='dark'] .sale-scan-camera {
+  border-color: #35516e;
+  background: #16283b;
+  color: #e5effc;
 }
 
 html[data-theme='dark'] .sale-cart-price input {

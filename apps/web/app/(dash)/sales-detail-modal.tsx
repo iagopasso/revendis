@@ -4,8 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from './lib';
 import { IconBox } from './icons';
-import { buildPdfBlobUrl, downloadPdf } from '../lib/pdf';
+import { downloadPdf } from '../lib/pdf';
 import { closeDownloadWindow, isMobileWeb, prepareIosDownloadWindow } from '../lib/download';
+import { printHtml } from '../lib/print';
 
 export type SaleDetail = {
   id: string;
@@ -962,11 +963,11 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
       receiptTab === 'digital'
         ? digitalReceiptRef.current?.querySelector<HTMLElement>('.receipt-card-group') ?? digitalReceiptRef.current
         : thermalReceiptRef.current?.querySelector<HTMLElement>('.receipt-thermal') ?? thermalReceiptRef.current;
-    if (!node) {
+    const printRoot = receiptTab === 'digital' ? digitalReceiptRef.current : thermalReceiptRef.current;
+    if (!node || !printRoot) {
       setToast('Extrato indisponivel para impressao');
       return;
     }
-    const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
 
     if (isMobileWeb()) {
       const opened = openReceiptPrintFallback({
@@ -978,29 +979,30 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     }
 
     try {
-      const blobUrl = await buildPdfBlobUrl({ element: node, format });
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      iframe.style.opacity = '0';
-      iframe.style.pointerEvents = 'none';
-      iframe.onload = () => {
-        try {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-        } finally {
-          window.setTimeout(() => {
-            URL.revokeObjectURL(blobUrl);
-            iframe.remove();
-          }, 1200);
-        }
-      };
-      iframe.src = blobUrl;
-      document.body.appendChild(iframe);
+      await printHtml({
+        html: printRoot.outerHTML,
+        title: `Extrato da venda ${sale.id}`,
+        styles: `
+          html, body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+          }
+          body {
+            color: #0f172a;
+          }
+        `,
+        pageStyle:
+          receiptTab === 'digital'
+            ? `
+                @page { size: A4 portrait; margin: 5mm; }
+                body { background: #ffffff !important; }
+              `
+            : `
+                @page { size: ${thermalWidthMm}mm auto; margin: 0; }
+                body { background: #ffffff !important; }
+              `
+      });
     } catch {
       const fallbackOpened = openReceiptPrintFallback({
         node,

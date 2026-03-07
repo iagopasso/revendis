@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { API_BASE, SALES_SYNC_STORAGE_KEY, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from '../lib';
 import { resizeImageToDataUrl } from '../image-upload';
-import { IconChart, IconCreditCard, IconDollar, IconPercent, IconSearch } from '../icons';
+import { IconChart, IconCreditCard, IconDollar, IconPercent, IconScan, IconSearch } from '../icons';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
 
 type PaymentStatus = 'paid' | 'pending' | 'overdue' | 'partial';
@@ -145,9 +145,30 @@ type SalesPanelProps = {
   initialCreateOpen?: boolean;
 };
 
+type BarcodeDetectorResult = { rawValue?: string };
+type BarcodeDetectorInstance = {
+  detect: (source: HTMLVideoElement) => Promise<BarcodeDetectorResult[]>;
+};
+type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => BarcodeDetectorInstance;
+type BarcodeScannerControls = {
+  stop: () => void;
+};
+type ZxingDecodeResult = {
+  getText: () => string;
+};
+type ZxingReaderInstance = {
+  decodeFromStream: (
+    stream: MediaStream,
+    preview: HTMLVideoElement,
+    callback: (result: ZxingDecodeResult | null | undefined) => void
+  ) => Promise<BarcodeScannerControls>;
+  decodeFromImageElement: (source: string | HTMLImageElement) => Promise<ZxingDecodeResult>;
+};
+
 const PAGE_SIZE = 6;
 const LOW_STOCK_THRESHOLD = 3;
 const UPLOAD_IMAGE_MAX_SIZE_PX = 520;
+const barcodeFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf'];
 const customerTagSuggestions = ['VIP', 'Frequente', 'Atacado', 'Recompra', 'Indicacao'];
 const paymentMethods = [
   'Dinheiro',
@@ -291,6 +312,31 @@ const getProductNumericCode = (product?: Product | null) => {
   if (skuDigits) return skuDigits;
   return digitsOnly(product?.barcode);
 };
+
+const normalizeCodeToken = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-_./]+/g, '');
+
+const normalizeDigitsToken = (value: string) => {
+  const digits = digitsOnly(value);
+  if (!digits) return '';
+  return digits.replace(/^0+/, '') || '0';
+};
+
+const getProductCodeCandidates = (product?: Product | null) =>
+  Array.from(
+    new Set(
+      [
+        (product?.barcode || '').trim(),
+        (product?.sku || '').trim(),
+        digitsOnly(product?.barcode),
+        digitsOnly(product?.sku),
+        getProductNumericCode(product)
+      ].filter(Boolean)
+    )
+  );
 
 const formatPhoneInput = (value: string) => {
   const digits = value.replace(/\D/g, '').slice(0, 11);
@@ -473,6 +519,20 @@ export default function SalesPanel({
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
 
+  const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
+  const scannerStreamRef = useRef<MediaStream | null>(null);
+  const scannerFrameRef = useRef<number | null>(null);
+  const scannerControlsRef = useRef<BarcodeScannerControls | null>(null);
+  const scannerPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const scannerDetectingRef = useRef(false);
+  const scannerResolvedRef = useRef(false);
+
+  const [saleBarcodeInput, setSaleBarcodeInput] = useState('');
+  const [saleBarcodeError, setSaleBarcodeError] = useState<string | null>(null);
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  const [barcodeScannerLoading, setBarcodeScannerLoading] = useState(false);
+  const [barcodeScannerPhotoLoading, setBarcodeScannerPhotoLoading] = useState(false);
+  const [barcodeScannerError, setBarcodeScannerError] = useState<string | null>(null);
   const [productSearch, setProductSearch] = useState('');
   const [productModalProduct, setProductModalProduct] = useState<Product | null>(null);
   const [productModalPrice, setProductModalPrice] = useState('');
@@ -490,6 +550,7 @@ export default function SalesPanel({
   const customerSearchRef = useRef<HTMLDivElement>(null);
   const customerTagsRef = useRef<HTMLLabelElement>(null);
   const saleCartColumnRef = useRef<HTMLElement>(null);
+  const saleBarcodeInputRef = useRef<HTMLInputElement>(null);
   const openedSaleFromQueryRef = useRef<string | null>(null);
   const saleIdFromQuery = (searchParams.get('saleId') || '').trim();
 
@@ -535,6 +596,35 @@ export default function SalesPanel({
       return haystack.includes(normalized);
     });
   }, [saleProducts, productSearch]);
+
+  const findSaleProductsByCode = useCallback(
+    (rawCode: string) => {
+      const normalizedCode = rawCode.trim().toLowerCase();
+      const compactCode = normalizeCodeToken(rawCode);
+      const digitsCode = digitsOnly(rawCode);
+      const digitsNormalized = normalizeDigitsToken(rawCode);
+      if (!normalizedCode && !compactCode && !digitsCode) return [];
+
+      return saleProducts.filter((product) =>
+        getProductCodeCandidates(product).some((candidate) => {
+          const candidateNormalized = candidate.toLowerCase();
+          const candidateCompact = normalizeCodeToken(candidate);
+          const candidateDigits = digitsOnly(candidate);
+          const candidateDigitsNormalized = normalizeDigitsToken(candidate);
+
+          if (normalizedCode && candidateNormalized === normalizedCode) return true;
+          if (compactCode && candidateCompact && candidateCompact === compactCode) return true;
+          if (digitsCode && candidateDigits && candidateDigits === digitsCode) return true;
+          return Boolean(
+            digitsNormalized &&
+              candidateDigitsNormalized &&
+              candidateDigitsNormalized === digitsNormalized
+          );
+        })
+      );
+    },
+    [saleProducts]
+  );
 
   const normalizedCustomerQuery = saleCustomerQuery.trim().toLowerCase();
   const selectedCustomerMatchesQuery =
@@ -793,6 +883,167 @@ export default function SalesPanel({
     closeAddProductModal();
   };
 
+  const handleAddProductByBarcode = useCallback(
+    (rawCode: string) => {
+      const normalizedCode = rawCode.trim();
+      if (!normalizedCode) {
+        setSaleBarcodeError('Escaneie ou digite um codigo para adicionar o produto.');
+        return;
+      }
+
+      const matches = findSaleProductsByCode(normalizedCode);
+      if (matches.length === 0) {
+        setSaleBarcodeError('Nenhum produto encontrado para este codigo.');
+        return;
+      }
+
+      if (matches.length > 1) {
+        setSaleBarcodeError('Mais de um produto encontrado para este codigo. Use a busca manual.');
+        return;
+      }
+
+      const product = matches[0];
+      const baseAvailable = Math.max(0, toNumber(product.quantity ?? 0));
+      const editAllowance = Math.max(0, toNumber(editingStockByProduct[product.id] ?? 0));
+      const available = baseAvailable + editAllowance;
+      const existing = saleItems.find((item) => item.productId === product.id);
+
+      if (!existing) {
+        const nextItem = createSaleDraftItem(product);
+        setSaleItems((prev) => [
+          ...prev,
+          {
+            ...nextItem,
+            origin: available > 0 ? 'stock' : 'order'
+          }
+        ]);
+      } else {
+        const currentQuantity = Math.max(1, Number.parseInt(existing.quantity || '1', 10) || 1);
+        if (existing.origin === 'stock' && available <= currentQuantity) {
+          setSaleBarcodeError(`Estoque maximo atingido para ${product.name}.`);
+          return;
+        }
+
+        setSaleItems((prev) =>
+          prev.map((item) =>
+            item.id === existing.id
+              ? {
+                  ...item,
+                  quantity: String(currentQuantity + 1)
+                }
+              : item
+          )
+        );
+      }
+
+      setSaleBarcodeInput('');
+      setSaleBarcodeError(null);
+      if (createSaleError) setCreateSaleError(null);
+      saleBarcodeInputRef.current?.focus();
+    },
+    [createSaleError, editingStockByProduct, findSaleProductsByCode, saleItems]
+  );
+
+  const stopBarcodeScanner = useCallback(() => {
+    if (scannerFrameRef.current !== null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(scannerFrameRef.current);
+      scannerFrameRef.current = null;
+    }
+    if (scannerControlsRef.current) {
+      scannerControlsRef.current.stop();
+      scannerControlsRef.current = null;
+    }
+    if (scannerStreamRef.current) {
+      scannerStreamRef.current.getTracks().forEach((track) => track.stop());
+      scannerStreamRef.current = null;
+    }
+    if (scannerVideoRef.current) {
+      scannerVideoRef.current.pause();
+      scannerVideoRef.current.srcObject = null;
+    }
+    scannerDetectingRef.current = false;
+  }, []);
+
+  const closeBarcodeScanner = useCallback(() => {
+    scannerResolvedRef.current = true;
+    stopBarcodeScanner();
+    setBarcodeScannerOpen(false);
+    setBarcodeScannerLoading(false);
+    setBarcodeScannerPhotoLoading(false);
+    setBarcodeScannerError(null);
+  }, [stopBarcodeScanner]);
+
+  const handleDetectedBarcode = useCallback(
+    async (rawCode: string) => {
+      const normalizedCode = rawCode.trim();
+      if (!normalizedCode) return;
+
+      scannerResolvedRef.current = true;
+      stopBarcodeScanner();
+      setBarcodeScannerOpen(false);
+      setBarcodeScannerLoading(false);
+      setBarcodeScannerPhotoLoading(false);
+      setBarcodeScannerError(null);
+      handleAddProductByBarcode(normalizedCode);
+    },
+    [handleAddProductByBarcode, stopBarcodeScanner]
+  );
+
+  const openBarcodeScanner = useCallback(() => {
+    setBarcodeScannerOpen(true);
+    setBarcodeScannerLoading(true);
+    setBarcodeScannerPhotoLoading(false);
+    setBarcodeScannerError(null);
+  }, []);
+
+  const openBarcodePhotoPicker = useCallback(() => {
+    scannerPhotoInputRef.current?.click();
+  }, []);
+
+  const handleBarcodePhotoSelected = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const input = event.currentTarget;
+      const file = input.files?.[0];
+      if (!file) return;
+
+      setBarcodeScannerPhotoLoading(true);
+      setBarcodeScannerError(null);
+
+      try {
+        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        const reader = new BrowserMultiFormatReader() as unknown as ZxingReaderInstance;
+        const objectUrl = URL.createObjectURL(file);
+
+        try {
+          const imageElement = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = () => reject(new Error('image-load-failed'));
+            image.src = objectUrl;
+          });
+
+          const result = await reader.decodeFromImageElement(imageElement);
+          const code = result?.getText?.().trim() || '';
+
+          if (!code) {
+            setBarcodeScannerError('Nao foi possivel ler o codigo nesta foto. Tente outra imagem.');
+            return;
+          }
+
+          await handleDetectedBarcode(code);
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      } catch {
+        setBarcodeScannerError('Nao foi possivel ler o codigo nesta foto. Tente outra imagem.');
+      } finally {
+        input.value = '';
+        setBarcodeScannerPhotoLoading(false);
+      }
+    },
+    [handleDetectedBarcode]
+  );
+
   const stepSaleItemQuantity = (itemId: string, delta: number) => {
     setSaleItems((prev) =>
       prev.map((item) => {
@@ -831,6 +1082,12 @@ export default function SalesPanel({
     setSaleRegisterMethod('');
     setSaleInstallments([]);
     setSaleDiscount('');
+    setSaleBarcodeInput('');
+    setSaleBarcodeError(null);
+    setBarcodeScannerOpen(false);
+    setBarcodeScannerLoading(false);
+    setBarcodeScannerPhotoLoading(false);
+    setBarcodeScannerError(null);
     setProductSearch('');
     setProductModalProduct(null);
     setProductModalPrice('');
@@ -872,6 +1129,179 @@ export default function SalesPanel({
   useEffect(() => {
     setLocalProducts(products);
   }, [products]);
+
+  useEffect(() => {
+    if (!createSaleOpen || customerPickerOpen || productModalProduct || barcodeScannerOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      saleBarcodeInputRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [barcodeScannerOpen, createSaleOpen, customerPickerOpen, productModalProduct]);
+
+  useEffect(() => {
+    if (!barcodeScannerOpen) return;
+
+    let cancelled = false;
+    scannerResolvedRef.current = false;
+    scannerDetectingRef.current = false;
+
+    const startScanner = async () => {
+      if (typeof window === 'undefined') return;
+      if (!window.isSecureContext) {
+        setBarcodeScannerLoading(false);
+        setBarcodeScannerError('Para ler com camera, acesse por HTTPS (ou localhost).');
+        return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setBarcodeScannerLoading(false);
+        setBarcodeScannerError('Este dispositivo nao permite acesso a camera no navegador.');
+        return;
+      }
+
+      const detectorConstructor = (
+        window as Window & {
+          BarcodeDetector?: BarcodeDetectorConstructor;
+        }
+      ).BarcodeDetector;
+      const supportsNativeDetector = Boolean(detectorConstructor);
+      let zxingReader: ZxingReaderInstance | null = null;
+
+      if (!supportsNativeDetector) {
+        try {
+          const { BrowserMultiFormatReader } = await import('@zxing/browser');
+          zxingReader = new BrowserMultiFormatReader() as unknown as ZxingReaderInstance;
+        } catch {
+          setBarcodeScannerLoading(false);
+          setBarcodeScannerError('Seu navegador ainda nao suporta leitura de codigo por camera.');
+          return;
+        }
+      }
+
+      try {
+        const detector = detectorConstructor ? new detectorConstructor({ formats: barcodeFormats }) : null;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        scannerStreamRef.current = stream;
+        const video = scannerVideoRef.current;
+        if (!video) {
+          setBarcodeScannerLoading(false);
+          setBarcodeScannerError('Nao foi possivel abrir o preview da camera.');
+          stopBarcodeScanner();
+          return;
+        }
+
+        video.srcObject = stream;
+        video.setAttribute('playsinline', 'true');
+        await video.play().catch(() => null);
+        if (cancelled) return;
+
+        setBarcodeScannerLoading(false);
+
+        if (supportsNativeDetector && detector) {
+          const detectLoop = async () => {
+            if (cancelled || scannerResolvedRef.current) return;
+
+            const currentVideo = scannerVideoRef.current;
+            if (!currentVideo) return;
+
+            if (currentVideo.readyState >= 2 && !scannerDetectingRef.current) {
+              scannerDetectingRef.current = true;
+              try {
+                const detections = await detector.detect(currentVideo);
+                const code =
+                  detections.find(
+                    (item) => typeof item.rawValue === 'string' && item.rawValue.trim().length > 0
+                  )?.rawValue || '';
+
+                if (code.trim()) {
+                  await handleDetectedBarcode(code);
+                  return;
+                }
+              } catch {
+                // Ignore frame-level detection errors and keep scanning.
+              } finally {
+                scannerDetectingRef.current = false;
+              }
+            }
+
+            scannerFrameRef.current = window.requestAnimationFrame(detectLoop);
+          };
+
+          scannerFrameRef.current = window.requestAnimationFrame(detectLoop);
+          return;
+        }
+
+        if (!zxingReader) {
+          setBarcodeScannerError('Seu navegador ainda nao suporta leitura de codigo por camera.');
+          stopBarcodeScanner();
+          return;
+        }
+
+        const detectLoop = async () => {
+          try {
+            const controls = await zxingReader.decodeFromStream(
+              stream,
+              video,
+              (result: ZxingDecodeResult | null | undefined) => {
+                if (cancelled || scannerResolvedRef.current) return;
+                const code = result?.getText?.().trim() || '';
+                if (!code) return;
+                void handleDetectedBarcode(code);
+              }
+            );
+
+            if (cancelled) {
+              controls.stop();
+              return;
+            }
+
+            scannerControlsRef.current = controls as BarcodeScannerControls;
+          } catch {
+            if (cancelled) return;
+            setBarcodeScannerError('Nao foi possivel iniciar a camera para leitura.');
+            stopBarcodeScanner();
+          }
+        };
+
+        void detectLoop();
+      } catch (error) {
+        if (cancelled) return;
+        const errorName = (error as { name?: string })?.name || '';
+        if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
+          setBarcodeScannerError('Permissao da camera negada. Libere o acesso para continuar.');
+        } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+          setBarcodeScannerError('Nenhuma camera encontrada neste dispositivo.');
+        } else {
+          setBarcodeScannerError('Nao foi possivel iniciar a camera para leitura.');
+        }
+        setBarcodeScannerLoading(false);
+        stopBarcodeScanner();
+      }
+    };
+
+    void startScanner();
+
+    return () => {
+      cancelled = true;
+      stopBarcodeScanner();
+    };
+  }, [barcodeScannerOpen, handleDetectedBarcode, stopBarcodeScanner]);
+
+  useEffect(() => {
+    if (createSaleOpen || !barcodeScannerOpen) return;
+    closeBarcodeScanner();
+  }, [barcodeScannerOpen, closeBarcodeScanner, createSaleOpen]);
 
   useEffect(() => {
     if (!saleIdFromQuery) {
@@ -1687,6 +2117,48 @@ export default function SalesPanel({
 
             <div className="sale-overlay-body">
               <section className="sale-products-column">
+                <div className="sale-product-tools">
+                  <form
+                    className="sale-scan-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      handleAddProductByBarcode(saleBarcodeInputRef.current?.value || saleBarcodeInput);
+                    }}
+                  >
+                    <label className="sale-product-search store-search large">
+                      <span className="input-field-label">Escanear codigo de barras</span>
+                      <input
+                        ref={saleBarcodeInputRef}
+                        aria-label="Escanear codigo de barras para venda"
+                        placeholder="Passe o leitor ou digite o codigo e pressione Enter"
+                        value={saleBarcodeInput}
+                        autoComplete="off"
+                        onChange={(event) => {
+                          setSaleBarcodeInput(event.target.value);
+                          if (saleBarcodeError) setSaleBarcodeError(null);
+                        }}
+                      />
+                      <span className="search-icon" aria-hidden="true">
+                        #
+                      </span>
+                    </label>
+                    <button
+                      className="button primary sale-scan-submit"
+                      type="submit"
+                    >
+                      Inserir
+                    </button>
+                  </form>
+                  <div className="sale-scan-actions">
+                    <button className="button ghost sale-scan-camera" type="button" onClick={openBarcodeScanner}>
+                      <IconScan />
+                      <span>Ler com camera</span>
+                    </button>
+                    <span className="sale-scan-hint">No mobile, use a camera para bipar o codigo.</span>
+                  </div>
+                  {saleBarcodeError ? <div className="field-error">{saleBarcodeError}</div> : null}
+                </div>
+
                 <label className="sale-product-search store-search large">
                   <span className="input-field-label">Buscar produto</span>
                   <input
@@ -2111,6 +2583,59 @@ export default function SalesPanel({
               </button>
               <button className="button primary" type="button" onClick={confirmAddProduct}>
                 Adicionar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {barcodeScannerOpen ? (
+        <div className="modal-backdrop modal-scanner-backdrop" onClick={closeBarcodeScanner}>
+          <div className="modal modal-scanner" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3>Ler codigo com camera</h3>
+                <span className="meta">Aponte a camera para o codigo de barras do produto.</span>
+              </div>
+              <button className="modal-close" type="button" onClick={closeBarcodeScanner}>
+                ✕
+              </button>
+            </div>
+            <div className="scan-preview">
+              <video ref={scannerVideoRef} autoPlay muted playsInline />
+              <div className="scan-overlay">
+                <span />
+              </div>
+            </div>
+            <div className="scan-status">
+              {barcodeScannerLoading ? <span>Iniciando camera...</span> : null}
+              {barcodeScannerPhotoLoading ? <span>Lendo foto do codigo...</span> : null}
+              {!barcodeScannerLoading && !barcodeScannerError ? (
+                <span>Posicione o codigo dentro da area destacada.</span>
+              ) : null}
+              {barcodeScannerError ? <span className="error">{barcodeScannerError}</span> : null}
+              <div className="inventory-scan-actions compact">
+                <button
+                  className="button ghost small"
+                  type="button"
+                  onClick={openBarcodePhotoPicker}
+                  disabled={barcodeScannerPhotoLoading}
+                >
+                  {barcodeScannerPhotoLoading ? 'Lendo foto...' : 'Ler por foto'}
+                </button>
+              </div>
+            </div>
+            <input
+              ref={scannerPhotoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleBarcodePhotoSelected}
+              style={{ display: 'none' }}
+            />
+            <div className="modal-footer">
+              <button className="button ghost" type="button" onClick={closeBarcodeScanner}>
+                Fechar
               </button>
             </div>
           </div>
