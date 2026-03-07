@@ -874,23 +874,23 @@ export default function InventoryPanel({
   const [toast, setToast] = useState<string | null>(null);
   const [localProducts, setLocalProducts] = useState<Product[]>(products);
   const [allInventoryProducts, setAllInventoryProducts] = useState<Product[]>(allProducts);
+  const autoOpenedCreateFromQueryRef = useRef(false);
 
   const view = viewParam === 'grid' ? 'grid' : 'list';
   const filterBrandOptions = uniqueBrands(brands);
   const productBrandOptions = uniqueBrands([...filterBrandOptions, formDraft.brand]);
+  const normalizedCatalogQuery = normalizeSearchText(catalogQuery);
+  const shouldShowCatalogResults = normalizedCatalogQuery.length > 0;
   const displayedCatalogProducts = useMemo(() => {
-    const normalizedQuery = normalizeSearchText(catalogQuery);
-    const baseList = normalizedQuery
-      ? catalogProducts.filter((product) => {
-          const searchText = normalizeSearchText(
-            `${product.code || ''} ${product.sku || ''} ${product.barcode || ''} ${product.name || ''} ${product.brand || ''} ${product.sourceBrand || ''} ${product.sourceCategory || ''}`
-          );
-          return searchText.includes(normalizedQuery);
-        })
-      : catalogProducts;
+    if (!shouldShowCatalogResults) return [];
 
-    return baseList;
-  }, [catalogProducts, catalogQuery]);
+    return catalogProducts.filter((product) => {
+      const searchText = normalizeSearchText(
+        `${product.code || ''} ${product.sku || ''} ${product.barcode || ''} ${product.name || ''} ${product.brand || ''} ${product.sourceBrand || ''} ${product.sourceCategory || ''}`
+      );
+      return searchText.includes(normalizedCatalogQuery);
+    });
+  }, [catalogProducts, normalizedCatalogQuery, shouldShowCatalogResults]);
   const normalizedCustomerQuery = sellCustomerQuery.trim().toLowerCase();
   const customerSearchResults = normalizedCustomerQuery
     ? customers.filter(
@@ -1276,6 +1276,19 @@ export default function InventoryPanel({
       clearTimeout(timer);
     };
   }, [createStep, formMode, openCreate]);
+
+  useEffect(() => {
+    const shouldOpenCreate = searchParams.get('newProduct') === '1';
+    if (!shouldOpenCreate) {
+      autoOpenedCreateFromQueryRef.current = false;
+      return;
+    }
+    if (autoOpenedCreateFromQueryRef.current) return;
+
+    autoOpenedCreateFromQueryRef.current = true;
+    openCreateSearch();
+    clearNewProductParam();
+  }, [searchParams]);
 
   useEffect(() => {
     if (!barcodeScannerOpen) return;
@@ -1690,6 +1703,13 @@ export default function InventoryPanel({
     setCatalogError(null);
     setCatalogSourceInfo(null);
     setFormFeedback(null);
+  };
+
+  const clearNewProductParam = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (!params.has('newProduct')) return;
+    params.delete('newProduct');
+    router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname);
   };
 
   const openForm = (draft: ProductDraft, mode: 'create' | 'edit', id?: string | null) => {
@@ -3504,12 +3524,21 @@ export default function InventoryPanel({
                     </button>
                   </div>
                   <div className="modal-suggestions-list store-modal-list">
-                    {catalogLoading ? <span className="meta">Carregando produtos pre-cadastrados...</span> : null}
+                    {!catalogError && !shouldShowCatalogResults ? (
+                      <span className="meta">Digite algo para buscar produtos do catalogo.</span>
+                    ) : null}
+                    {catalogLoading && shouldShowCatalogResults ? (
+                      <span className="meta">Carregando produtos pre-cadastrados...</span>
+                    ) : null}
                     {!catalogLoading && catalogError ? <span className="meta">{catalogError}</span> : null}
-                    {!catalogLoading && !catalogError && catalogLoaded && displayedCatalogProducts.length === 0 ? (
+                    {!catalogLoading &&
+                    !catalogError &&
+                    shouldShowCatalogResults &&
+                    catalogLoaded &&
+                    displayedCatalogProducts.length === 0 ? (
                       <span className="meta">Nenhum produto encontrado no catalogo.</span>
                     ) : null}
-                    {!catalogLoading && !catalogError
+                    {!catalogLoading && !catalogError && shouldShowCatalogResults
                       ? displayedCatalogProducts.map((item) => {
                           const code = toDigits(item.code || item.sku || item.barcode || item.id);
                           const meta = `${item.brand || 'Sem marca'}${code ? ` • ${code}` : ''}`;

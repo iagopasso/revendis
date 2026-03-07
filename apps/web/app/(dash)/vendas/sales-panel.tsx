@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { API_BASE, SALES_SYNC_STORAGE_KEY, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from '../lib';
 import { resizeImageToDataUrl } from '../image-upload';
@@ -144,6 +144,8 @@ type SalesPanelProps = {
   hasSalesInRange: boolean;
   initialCreateOpen?: boolean;
 };
+
+type ProductModalSource = 'search' | 'scan';
 
 type BarcodeDetectorResult = { rawValue?: string };
 type BarcodeDetectorInstance = {
@@ -523,20 +525,18 @@ export default function SalesPanel({
   const scannerStreamRef = useRef<MediaStream | null>(null);
   const scannerFrameRef = useRef<number | null>(null);
   const scannerControlsRef = useRef<BarcodeScannerControls | null>(null);
-  const scannerPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const scannerDetectingRef = useRef(false);
   const scannerResolvedRef = useRef(false);
+  const scannerCooldownUntilRef = useRef(0);
 
-  const [saleBarcodeInput, setSaleBarcodeInput] = useState('');
-  const [saleBarcodeError, setSaleBarcodeError] = useState<string | null>(null);
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [barcodeScannerLoading, setBarcodeScannerLoading] = useState(false);
-  const [barcodeScannerPhotoLoading, setBarcodeScannerPhotoLoading] = useState(false);
   const [barcodeScannerError, setBarcodeScannerError] = useState<string | null>(null);
   const [productSearch, setProductSearch] = useState('');
   const [productModalProduct, setProductModalProduct] = useState<Product | null>(null);
   const [productModalPrice, setProductModalPrice] = useState('');
   const [productModalOrigin, setProductModalOrigin] = useState<'stock' | 'order'>('stock');
+  const [productModalSource, setProductModalSource] = useState<ProductModalSource>('search');
   const [productModalError, setProductModalError] = useState<string | null>(null);
 
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
@@ -550,7 +550,7 @@ export default function SalesPanel({
   const customerSearchRef = useRef<HTMLDivElement>(null);
   const customerTagsRef = useRef<HTMLLabelElement>(null);
   const saleCartColumnRef = useRef<HTMLElement>(null);
-  const saleBarcodeInputRef = useRef<HTMLInputElement>(null);
+  const productSearchInputRef = useRef<HTMLInputElement>(null);
   const openedSaleFromQueryRef = useRef<string | null>(null);
   const saleIdFromQuery = (searchParams.get('saleId') || '').trim();
 
@@ -585,17 +585,19 @@ export default function SalesPanel({
     [editingStockByProduct, saleProducts, saleItems]
   );
 
+  const normalizedProductSearch = normalizeSearchText(productSearch);
+  const shouldShowProductResults = normalizedProductSearch.length > 0;
+
   const filteredProducts = useMemo(() => {
-    const normalized = normalizeSearchText(productSearch);
-    if (!normalized) return saleProducts;
+    if (!shouldShowProductResults) return [];
     return saleProducts.filter((product) => {
       const numericCode = getProductNumericCode(product);
       const haystack = normalizeSearchText(
         `${product.name || ''} ${product.brand || ''} ${product.sku || ''} ${product.barcode || ''} ${numericCode}`
       );
-      return haystack.includes(normalized);
+      return haystack.includes(normalizedProductSearch);
     });
-  }, [saleProducts, productSearch]);
+  }, [normalizedProductSearch, saleProducts, shouldShowProductResults]);
 
   const findSaleProductsByCode = useCallback(
     (rawCode: string) => {
@@ -811,21 +813,26 @@ export default function SalesPanel({
     if (createSaleError) setCreateSaleError(null);
   };
 
-  const openAddProductModal = (product: Product) => {
-    const existing = saleItems.find((item) => item.productId === product.id);
-    const available = Math.max(0, toNumber(product.quantity ?? 0));
-    setProductModalProduct(product);
-    setProductModalPrice(
-      existing ? existing.price : product.price ? formatCurrency(toNumber(product.price)) : ''
-    );
-    setProductModalOrigin(existing ? existing.origin : available > 0 ? 'stock' : 'order');
-    setProductModalError(null);
-  };
+  const openAddProductModal = useCallback(
+    (product: Product, source: ProductModalSource = 'search') => {
+      const existing = saleItems.find((item) => item.productId === product.id);
+      const available = Math.max(0, toNumber(product.quantity ?? 0));
+      setProductModalSource(source);
+      setProductModalProduct(product);
+      setProductModalPrice(
+        existing ? existing.price : product.price ? formatCurrency(toNumber(product.price)) : ''
+      );
+      setProductModalOrigin(existing ? existing.origin : available > 0 ? 'stock' : 'order');
+      setProductModalError(null);
+    },
+    [saleItems]
+  );
 
   const closeAddProductModal = () => {
     setProductModalProduct(null);
     setProductModalPrice('');
     setProductModalOrigin('stock');
+    setProductModalSource('search');
     setProductModalError(null);
   };
 
@@ -833,6 +840,9 @@ export default function SalesPanel({
     if (!productModalProduct) return;
     const unitPrice = parseMoney(productModalPrice);
     const available = Math.max(0, toNumber(productModalProduct.quantity ?? 0));
+    const existing = saleItems.find((item) => item.productId === productModalProduct.id);
+    const currentQuantity = existing ? Math.max(1, Number.parseInt(existing.quantity || '1', 10) || 1) : 0;
+    const shouldIncrementQuantity = productModalSource === 'scan';
 
     if (unitPrice <= 0) {
       setProductModalError('Informe um preco de venda');
@@ -844,14 +854,23 @@ export default function SalesPanel({
       return;
     }
 
+    if (shouldIncrementQuantity && existing && productModalOrigin === 'stock' && currentQuantity >= available) {
+      setProductModalError(`Estoque maximo atingido para ${productModalProduct.name}.`);
+      return;
+    }
+
     setSaleItems((prev) => {
-      const existing = prev.find((item) => item.productId === productModalProduct.id);
-      if (existing) {
-        const currentQuantity = Number.parseInt(existing.quantity || '1', 10) || 1;
+      const existingItem = prev.find((item) => item.productId === productModalProduct.id);
+      if (existingItem) {
+        const existingQuantity = Math.max(1, Number.parseInt(existingItem.quantity || '1', 10) || 1);
         const nextQuantity =
           productModalOrigin === 'stock'
-            ? Math.min(Math.max(currentQuantity, 1), Math.max(1, available))
-            : Math.max(currentQuantity, 1);
+            ? shouldIncrementQuantity
+              ? Math.min(existingQuantity + 1, Math.max(1, available))
+              : Math.min(existingQuantity, Math.max(1, available))
+            : shouldIncrementQuantity
+              ? existingQuantity + 1
+              : existingQuantity;
         return prev.map((item) =>
           item.productId === productModalProduct.id
             ? {
@@ -864,8 +883,7 @@ export default function SalesPanel({
         );
       }
 
-      const initialQuantity =
-        productModalOrigin === 'stock' ? Math.min(1, Math.max(available, 1)) : 1;
+      const initialQuantity = productModalOrigin === 'stock' ? Math.min(1, Math.max(available, 1)) : 1;
 
       return [
         ...prev,
@@ -883,65 +901,25 @@ export default function SalesPanel({
     closeAddProductModal();
   };
 
-  const handleAddProductByBarcode = useCallback(
+  const resolveProductByBarcode = useCallback(
     (rawCode: string) => {
       const normalizedCode = rawCode.trim();
       if (!normalizedCode) {
-        setSaleBarcodeError('Escaneie ou digite um codigo para adicionar o produto.');
-        return;
+        return { error: 'Nenhum codigo foi identificado. Aproxime a camera do codigo.' };
       }
 
       const matches = findSaleProductsByCode(normalizedCode);
       if (matches.length === 0) {
-        setSaleBarcodeError('Nenhum produto encontrado para este codigo.');
-        return;
+        return { error: 'Nenhum produto encontrado para este codigo.' };
       }
 
       if (matches.length > 1) {
-        setSaleBarcodeError('Mais de um produto encontrado para este codigo. Use a busca manual.');
-        return;
+        return { error: 'Mais de um produto encontrado para este codigo. Use a busca manual.' };
       }
 
-      const product = matches[0];
-      const baseAvailable = Math.max(0, toNumber(product.quantity ?? 0));
-      const editAllowance = Math.max(0, toNumber(editingStockByProduct[product.id] ?? 0));
-      const available = baseAvailable + editAllowance;
-      const existing = saleItems.find((item) => item.productId === product.id);
-
-      if (!existing) {
-        const nextItem = createSaleDraftItem(product);
-        setSaleItems((prev) => [
-          ...prev,
-          {
-            ...nextItem,
-            origin: available > 0 ? 'stock' : 'order'
-          }
-        ]);
-      } else {
-        const currentQuantity = Math.max(1, Number.parseInt(existing.quantity || '1', 10) || 1);
-        if (existing.origin === 'stock' && available <= currentQuantity) {
-          setSaleBarcodeError(`Estoque maximo atingido para ${product.name}.`);
-          return;
-        }
-
-        setSaleItems((prev) =>
-          prev.map((item) =>
-            item.id === existing.id
-              ? {
-                  ...item,
-                  quantity: String(currentQuantity + 1)
-                }
-              : item
-          )
-        );
-      }
-
-      setSaleBarcodeInput('');
-      setSaleBarcodeError(null);
-      if (createSaleError) setCreateSaleError(null);
-      saleBarcodeInputRef.current?.focus();
+      return { product: matches[0] };
     },
-    [createSaleError, editingStockByProduct, findSaleProductsByCode, saleItems]
+    [findSaleProductsByCode]
   );
 
   const stopBarcodeScanner = useCallback(() => {
@@ -969,80 +947,39 @@ export default function SalesPanel({
     stopBarcodeScanner();
     setBarcodeScannerOpen(false);
     setBarcodeScannerLoading(false);
-    setBarcodeScannerPhotoLoading(false);
     setBarcodeScannerError(null);
   }, [stopBarcodeScanner]);
 
   const handleDetectedBarcode = useCallback(
-    async (rawCode: string) => {
+    (rawCode: string) => {
+      if (Date.now() < scannerCooldownUntilRef.current) return;
+
       const normalizedCode = rawCode.trim();
       if (!normalizedCode) return;
+
+      const { product, error } = resolveProductByBarcode(normalizedCode);
+      if (!product) {
+        scannerCooldownUntilRef.current = Date.now() + 1800;
+        setBarcodeScannerError(error || 'Nao foi possivel identificar o produto.');
+        return;
+      }
 
       scannerResolvedRef.current = true;
       stopBarcodeScanner();
       setBarcodeScannerOpen(false);
       setBarcodeScannerLoading(false);
-      setBarcodeScannerPhotoLoading(false);
       setBarcodeScannerError(null);
-      handleAddProductByBarcode(normalizedCode);
+      openAddProductModal(product, 'scan');
     },
-    [handleAddProductByBarcode, stopBarcodeScanner]
+    [openAddProductModal, resolveProductByBarcode, stopBarcodeScanner]
   );
 
   const openBarcodeScanner = useCallback(() => {
+    scannerCooldownUntilRef.current = 0;
     setBarcodeScannerOpen(true);
     setBarcodeScannerLoading(true);
-    setBarcodeScannerPhotoLoading(false);
     setBarcodeScannerError(null);
   }, []);
-
-  const openBarcodePhotoPicker = useCallback(() => {
-    scannerPhotoInputRef.current?.click();
-  }, []);
-
-  const handleBarcodePhotoSelected = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const input = event.currentTarget;
-      const file = input.files?.[0];
-      if (!file) return;
-
-      setBarcodeScannerPhotoLoading(true);
-      setBarcodeScannerError(null);
-
-      try {
-        const { BrowserMultiFormatReader } = await import('@zxing/browser');
-        const reader = new BrowserMultiFormatReader() as unknown as ZxingReaderInstance;
-        const objectUrl = URL.createObjectURL(file);
-
-        try {
-          const imageElement = await new Promise<HTMLImageElement>((resolve, reject) => {
-            const image = new Image();
-            image.onload = () => resolve(image);
-            image.onerror = () => reject(new Error('image-load-failed'));
-            image.src = objectUrl;
-          });
-
-          const result = await reader.decodeFromImageElement(imageElement);
-          const code = result?.getText?.().trim() || '';
-
-          if (!code) {
-            setBarcodeScannerError('Nao foi possivel ler o codigo nesta foto. Tente outra imagem.');
-            return;
-          }
-
-          await handleDetectedBarcode(code);
-        } finally {
-          URL.revokeObjectURL(objectUrl);
-        }
-      } catch {
-        setBarcodeScannerError('Nao foi possivel ler o codigo nesta foto. Tente outra imagem.');
-      } finally {
-        input.value = '';
-        setBarcodeScannerPhotoLoading(false);
-      }
-    },
-    [handleDetectedBarcode]
-  );
 
   const stepSaleItemQuantity = (itemId: string, delta: number) => {
     setSaleItems((prev) =>
@@ -1082,16 +1019,14 @@ export default function SalesPanel({
     setSaleRegisterMethod('');
     setSaleInstallments([]);
     setSaleDiscount('');
-    setSaleBarcodeInput('');
-    setSaleBarcodeError(null);
     setBarcodeScannerOpen(false);
     setBarcodeScannerLoading(false);
-    setBarcodeScannerPhotoLoading(false);
     setBarcodeScannerError(null);
     setProductSearch('');
     setProductModalProduct(null);
     setProductModalPrice('');
     setProductModalOrigin('stock');
+    setProductModalSource('search');
     setProductModalError(null);
     setCreateSaleError(null);
     setCreateCustomerOpen(false);
@@ -1133,7 +1068,7 @@ export default function SalesPanel({
   useEffect(() => {
     if (!createSaleOpen || customerPickerOpen || productModalProduct || barcodeScannerOpen) return;
     const frame = window.requestAnimationFrame(() => {
-      saleBarcodeInputRef.current?.focus();
+      productSearchInputRef.current?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
   }, [barcodeScannerOpen, createSaleOpen, customerPickerOpen, productModalProduct]);
@@ -1225,8 +1160,8 @@ export default function SalesPanel({
                   )?.rawValue || '';
 
                 if (code.trim()) {
-                  await handleDetectedBarcode(code);
-                  return;
+                  handleDetectedBarcode(code);
+                  if (scannerResolvedRef.current) return;
                 }
               } catch {
                 // Ignore frame-level detection errors and keep scanning.
@@ -2105,7 +2040,7 @@ export default function SalesPanel({
                 <button
                   className="sale-link-button"
                   type="button"
-                  onClick={() => router.push('/categorias')}
+                  onClick={() => router.push('/estoque?newProduct=1')}
                 >
                   + Cadastrar produto
                 </button>
@@ -2118,52 +2053,21 @@ export default function SalesPanel({
             <div className="sale-overlay-body">
               <section className="sale-products-column">
                 <div className="sale-product-tools">
-                  <form
-                    className="sale-scan-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      handleAddProductByBarcode(saleBarcodeInputRef.current?.value || saleBarcodeInput);
-                    }}
-                  >
-                    <label className="sale-product-search store-search large">
-                      <span className="input-field-label">Escanear codigo de barras</span>
-                      <input
-                        ref={saleBarcodeInputRef}
-                        aria-label="Escanear codigo de barras para venda"
-                        placeholder="Passe o leitor ou digite o codigo e pressione Enter"
-                        value={saleBarcodeInput}
-                        autoComplete="off"
-                        onChange={(event) => {
-                          setSaleBarcodeInput(event.target.value);
-                          if (saleBarcodeError) setSaleBarcodeError(null);
-                        }}
-                      />
-                      <span className="search-icon" aria-hidden="true">
-                        #
-                      </span>
-                    </label>
-                    <button
-                      className="button primary sale-scan-submit"
-                      type="submit"
-                    >
-                      Inserir
-                    </button>
-                  </form>
                   <div className="sale-scan-actions">
                     <button className="button ghost sale-scan-camera" type="button" onClick={openBarcodeScanner}>
                       <IconScan />
                       <span>Ler com camera</span>
                     </button>
-                    <span className="sale-scan-hint">No mobile, use a camera para bipar o codigo.</span>
+                    <span className="sale-scan-hint">Use a camera para localizar o produto pelo codigo de barras.</span>
                   </div>
-                  {saleBarcodeError ? <div className="field-error">{saleBarcodeError}</div> : null}
                 </div>
 
                 <label className="sale-product-search store-search large">
                   <span className="input-field-label">Buscar produto</span>
                   <input
+                    ref={productSearchInputRef}
                     aria-label="Buscar produto para venda"
-                    placeholder="Busque usando o nome, codigo da marca ou codigo de barras"
+                    placeholder="Busque usando o nome, a marca ou o codigo de barras"
                     value={productSearch}
                     onChange={(event) => setProductSearch(event.target.value)}
                   />
@@ -2175,7 +2079,11 @@ export default function SalesPanel({
                 <strong className="store-modal-subtitle">Selecione os produtos</strong>
 
                 <div className="sale-product-grid store-modal-list promotion-products">
-                  {filteredProducts.length === 0 ? (
+                  {!saleProducts.length ? (
+                    <div className="sale-grid-empty">Nenhum produto disponivel para venda.</div>
+                  ) : !shouldShowProductResults ? (
+                    <div className="sale-grid-empty">Digite algo para buscar produtos.</div>
+                  ) : filteredProducts.length === 0 ? (
                     <div className="sale-grid-empty">Nenhum produto encontrado.</div>
                   ) : (
                     filteredProducts.map((product) => {
@@ -2516,7 +2424,12 @@ export default function SalesPanel({
         <div className="modal-backdrop" onClick={closeAddProductModal}>
           <div className="modal modal-add-product" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <h3>Adicionar produto</h3>
+              <div>
+                <h3>{productModalSource === 'scan' ? 'Produto escaneado' : 'Adicionar produto'}</h3>
+                {productModalSource === 'scan' ? (
+                  <span className="meta">Codigo identificado pela camera. Confirme para adicionar a venda.</span>
+                ) : null}
+              </div>
               <button className="modal-close" type="button" onClick={closeAddProductModal}>
                 ✕
               </button>
@@ -2582,7 +2495,7 @@ export default function SalesPanel({
                 Cancelar
               </button>
               <button className="button primary" type="button" onClick={confirmAddProduct}>
-                Adicionar
+                {productModalSource === 'scan' ? 'Adicionar a venda' : 'Adicionar'}
               </button>
             </div>
           </div>
@@ -2609,30 +2522,11 @@ export default function SalesPanel({
             </div>
             <div className="scan-status">
               {barcodeScannerLoading ? <span>Iniciando camera...</span> : null}
-              {barcodeScannerPhotoLoading ? <span>Lendo foto do codigo...</span> : null}
               {!barcodeScannerLoading && !barcodeScannerError ? (
                 <span>Posicione o codigo dentro da area destacada.</span>
               ) : null}
               {barcodeScannerError ? <span className="error">{barcodeScannerError}</span> : null}
-              <div className="inventory-scan-actions compact">
-                <button
-                  className="button ghost small"
-                  type="button"
-                  onClick={openBarcodePhotoPicker}
-                  disabled={barcodeScannerPhotoLoading}
-                >
-                  {barcodeScannerPhotoLoading ? 'Lendo foto...' : 'Ler por foto'}
-                </button>
-              </div>
             </div>
-            <input
-              ref={scannerPhotoInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handleBarcodePhotoSelected}
-              style={{ display: 'none' }}
-            />
             <div className="modal-footer">
               <button className="button ghost" type="button" onClick={closeBarcodeScanner}>
                 Fechar
