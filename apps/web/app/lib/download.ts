@@ -46,8 +46,8 @@ export const downloadBlob = ({
   const href = URL.createObjectURL(blob);
 
   if (openInNewTabOnIos && isIosWeb()) {
-    const targetWindow = iosTargetWindow && !iosTargetWindow.closed ? iosTargetWindow : window.open('', '_blank');
-    if (targetWindow && !targetWindow.closed) {
+    const targetWindow = iosTargetWindow && !iosTargetWindow.closed ? iosTargetWindow : null;
+    if (targetWindow) {
       targetWindow.location.href = href;
     } else {
       window.location.href = href;
