@@ -1,5 +1,6 @@
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { downloadBlob, isMobileWeb } from './download';
 
 type PdfFormat = 'a4' | 'thermal-80' | 'thermal-58';
 
@@ -10,6 +11,7 @@ type PdfBaseOptions = {
 
 type PdfOptions = PdfBaseOptions & {
   filename: string;
+  iosTargetWindow?: Window | null;
 };
 
 const captureElementCanvas = async (element: HTMLElement, format: PdfFormat) => {
@@ -81,13 +83,36 @@ const captureElementCanvas = async (element: HTMLElement, format: PdfFormat) => 
 
   let canvas: HTMLCanvasElement;
   try {
-    canvas = await html2canvas(captureNode, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      width: captureWidth,
-      windowWidth: captureWidth
-    });
+    const renderCanvas = async (scale: number, timeoutMs: number) => {
+      const renderPromise = html2canvas(captureNode, {
+        scale,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        width: captureWidth,
+        windowWidth: captureWidth,
+        imageTimeout: 8000,
+        logging: false
+      });
+      let timeoutId: number | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error('pdf_capture_timeout')), timeoutMs);
+      });
+      try {
+        return (await Promise.race([renderPromise, timeoutPromise])) as HTMLCanvasElement;
+      } finally {
+        if (timeoutId !== undefined) {
+          window.clearTimeout(timeoutId);
+        }
+      }
+    };
+
+    const preferredScale = isMobileWeb() ? 1 : 2;
+
+    try {
+      canvas = await renderCanvas(preferredScale, 8000);
+    } catch {
+      canvas = await renderCanvas(1, 6000);
+    }
   } finally {
     if (captureHost.parentNode) {
       captureHost.parentNode.removeChild(captureHost);
@@ -128,14 +153,15 @@ export const buildPdfBlob = async ({ element, format }: PdfBaseOptions) => {
   const pdf = buildPdfFromCanvas(canvas, format);
   return pdf.output('blob');
 };
-
 export const buildPdfBlobUrl = async ({ element, format }: PdfBaseOptions) => {
-  const blob = await buildPdfBlob({ element, format });
-  return URL.createObjectURL(blob);
-};
-
-export const downloadPdf = async ({ element, filename, format }: PdfOptions) => {
   const canvas = await captureElementCanvas(element, format);
   const pdf = buildPdfFromCanvas(canvas, format);
-  pdf.save(filename);
+  return String(pdf.output('bloburl'));
+};
+
+export const downloadPdf = async ({ element, filename, format, iosTargetWindow }: PdfOptions) => {
+  const canvas = await captureElementCanvas(element, format);
+  const pdf = buildPdfFromCanvas(canvas, format);
+  const blob = pdf.output('blob');
+  downloadBlob({ blob, filename, openInNewTabOnIos: true, iosTargetWindow });
 };
