@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { API_BASE, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from './lib';
 import { IconBox } from './icons';
 import { downloadPdf } from '../lib/pdf';
-import { closeDownloadWindow, isMobileWeb, prepareIosDownloadWindow } from '../lib/download';
+import { isMobileWeb } from '../lib/download';
 import { printHtml } from '../lib/print';
 
 export type SaleDetail = {
@@ -935,25 +935,12 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     }
     const filename = `venda-${sale.id}-${receiptTab}.pdf`;
     const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
-    const iosTargetWindow = prepareIosDownloadWindow();
 
     try {
-      await downloadPdf({ element: node, filename, format, iosTargetWindow });
+      await downloadPdf({ element: node, filename, format });
       setToast('PDF gerado');
     } catch {
-      const fallbackOpened = openReceiptPrintFallback({
-        node,
-        title: `Extrato da venda #${sale.id}`,
-        targetWindow: iosTargetWindow
-      });
-      if (!fallbackOpened) {
-        closeDownloadWindow(iosTargetWindow);
-      }
-      setToast(
-        fallbackOpened
-          ? 'Nao foi possivel gerar o PDF automaticamente. Use Imprimir/Compartilhar para salvar.'
-          : 'Erro ao gerar PDF'
-      );
+      setToast('Erro ao gerar PDF');
     }
   };
 
