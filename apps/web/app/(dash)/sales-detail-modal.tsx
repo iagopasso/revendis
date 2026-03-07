@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from './lib';
 import { IconBox } from './icons';
-import { downloadPdf } from '../lib/pdf';
-import { isMobileWeb } from '../lib/download';
+import { buildPdfBlob } from '../lib/pdf';
+import { downloadBlob, isMobileWeb } from '../lib/download';
 import { printHtml } from '../lib/print';
 
 export type SaleDetail = {
@@ -876,55 +876,42 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     }
   };
 
-  const openReceiptPrintFallback = ({
-    node,
-    title,
-    targetWindow
+  const openReceiptPendingWindow = (title: string, message: string) => {
+    if (typeof window === 'undefined') return null;
+    const popup = window.open('', '_blank');
+    if (!popup) return null;
+    try {
+      popup.document.title = title;
+      popup.document.body.innerHTML = `<div style="font-family: sans-serif; padding: 24px; color: #0f172a;">${message}</div>`;
+    } catch {
+      // Ignore browser restrictions on pre-opened popup document writes.
+    }
+    return popup;
+  };
+
+  const closeReceiptWindow = (targetWindow: Window | null | undefined) => {
+    if (!targetWindow || targetWindow.closed) return;
+    targetWindow.close();
+  };
+
+  const openReceiptPdfWindow = ({
+    targetWindow,
+    blobUrl
   }: {
-    node: HTMLElement;
-    title: string;
-    targetWindow?: Window | null;
+    targetWindow: Window | null;
+    blobUrl: string;
   }) => {
-    if (typeof window === 'undefined') return false;
-
-    const popup = targetWindow && !targetWindow.closed ? targetWindow : window.open('', '_blank');
-    if (!popup) return false;
-    const isThermal = node.classList.contains('receipt-thermal');
-    const printRootClass = isThermal ? 'receipt-body receipt-body-thermal' : 'receipt-body receipt-body-digital';
-
-    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-      .map((styleNode) => styleNode.outerHTML)
-      .join('\n');
-
-    popup.document.open();
-    popup.document.write(`<!doctype html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>${title}</title>
-    ${styles}
-    <style>
-      body { margin: 0; padding: 16px; background: #ffffff; color: #0f172a; }
-      .receipt-body-digital { max-width: 980px; margin: 0 auto; }
-      .receipt-body-thermal { margin: 0 auto; }
-      .receipt-thermal { background: #ffffff !important; border-color: #e2e8f0 !important; color: #0f172a !important; }
-      .receipt-thermal pre { color: #0f172a !important; background: transparent !important; }
-    </style>
-  </head>
-  <body>
-    <div id="print-root" class="${printRootClass}">
-      ${node.outerHTML}
-    </div>
-  </body>
-</html>`);
-    popup.document.close();
-    window.setTimeout(() => popup.print(), 350);
-    return true;
+    if (targetWindow && !targetWindow.closed) {
+      targetWindow.location.href = blobUrl;
+      return true;
+    }
+    const popup = window.open(blobUrl, '_blank');
+    return Boolean(popup);
   };
 
   const handleDownloadReceipt = async () => {
     if (!sale) return;
+    const mobileWeb = isMobileWeb();
     const node =
       receiptTab === 'digital'
         ? digitalReceiptRef.current?.querySelector<HTMLElement>('.receipt-card-group') ?? digitalReceiptRef.current
@@ -935,17 +922,64 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     }
     const filename = `venda-${sale.id}-${receiptTab}.pdf`;
     const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
+    const mobileReceiptWindow = mobileWeb
+      ? openReceiptPendingWindow('Gerando PDF...', 'Preparando extrato para salvar ou compartilhar...')
+      : null;
 
     try {
-      await downloadPdf({ element: node, filename, format });
+      const blob = await buildPdfBlob({ element: node, format });
+      const nav = navigator as Navigator & {
+        canShare?: (data?: ShareData) => boolean;
+        share?: (data?: ShareData) => Promise<void>;
+      };
+      if (mobileWeb && typeof nav.share === 'function') {
+        let shareFile: File | null = null;
+        try {
+          shareFile = new File([blob], filename, { type: 'application/pdf' });
+        } catch {
+          shareFile = null;
+        }
+        if (shareFile) {
+          const canShareFiles = typeof nav.canShare !== 'function' || nav.canShare({ files: [shareFile] });
+          if (canShareFiles) {
+            try {
+              await nav.share({ files: [shareFile], title: filename });
+              closeReceiptWindow(mobileReceiptWindow);
+              setToast('PDF pronto para salvar ou compartilhar');
+              return;
+            } catch (error) {
+              if (error instanceof DOMException && error.name === 'AbortError') {
+                closeReceiptWindow(mobileReceiptWindow);
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      if (mobileWeb) {
+        const blobUrl = URL.createObjectURL(blob);
+        const opened = openReceiptPdfWindow({ targetWindow: mobileReceiptWindow, blobUrl });
+        if (opened) {
+          window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+          setToast('PDF aberto para salvar ou compartilhar');
+          return;
+        }
+        URL.revokeObjectURL(blobUrl);
+      }
+
+      closeReceiptWindow(mobileReceiptWindow);
+      downloadBlob({ blob, filename, openInNewTabOnIos: true });
       setToast('PDF gerado');
     } catch {
+      closeReceiptWindow(mobileReceiptWindow);
       setToast('Erro ao gerar PDF');
     }
   };
 
   const handlePrintReceipt = async () => {
     if (!sale || typeof window === 'undefined') return;
+    const mobileWeb = isMobileWeb();
     const node =
       receiptTab === 'digital'
         ? digitalReceiptRef.current?.querySelector<HTMLElement>('.receipt-card-group') ?? digitalReceiptRef.current
@@ -956,13 +990,29 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
       return;
     }
 
-    if (isMobileWeb()) {
-      const opened = openReceiptPrintFallback({
-        node,
-        title: `Extrato da venda #${sale.id}`
-      });
-      setToast(opened ? 'Extrato aberto para impressao' : 'Erro ao imprimir extrato');
-      return;
+    if (mobileWeb) {
+      const mobileReceiptWindow = openReceiptPendingWindow(
+        'Abrindo PDF...',
+        'Preparando extrato para impressao...'
+      );
+      try {
+        const blob = await buildPdfBlob({ element: node, format: receiptTab === 'digital' ? 'a4' : thermalFormat });
+        const blobUrl = URL.createObjectURL(blob);
+        const opened = openReceiptPdfWindow({ targetWindow: mobileReceiptWindow, blobUrl });
+        if (!opened) {
+          closeReceiptWindow(mobileReceiptWindow);
+          URL.revokeObjectURL(blobUrl);
+          setToast('Erro ao abrir extrato para impressao');
+          return;
+        }
+        window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+        setToast('Extrato aberto em PDF. Use imprimir no navegador e feche a aba para voltar.');
+        return;
+      } catch {
+        closeReceiptWindow(mobileReceiptWindow);
+        setToast('Erro ao abrir extrato para impressao');
+        return;
+      }
     }
 
     try {
@@ -991,11 +1041,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
               `
       });
     } catch {
-      const fallbackOpened = openReceiptPrintFallback({
-        node,
-        title: `Extrato da venda #${sale.id}`
-      });
-      setToast(fallbackOpened ? 'Extrato aberto para impressao' : 'Erro ao imprimir extrato');
+      setToast('Erro ao imprimir extrato');
     }
   };
 
