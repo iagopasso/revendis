@@ -876,50 +876,71 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     }
   };
 
-  const openReceiptPrintFallback = ({
-    node,
-    title,
-    targetWindow
+  const tryShareReceiptPdf = async ({
+    blob,
+    filename,
+    title
   }: {
-    node: HTMLElement;
+    blob: Blob;
+    filename: string;
     title: string;
-    targetWindow?: Window | null;
+  }) => {
+    const nav = navigator as Navigator & {
+      canShare?: (data?: ShareData) => boolean;
+      share?: (data?: ShareData) => Promise<void>;
+    };
+    if (typeof nav.share !== 'function') return 'unsupported' as const;
+
+    let shareFile: File | null = null;
+    try {
+      shareFile = new File([blob], filename, { type: 'application/pdf' });
+    } catch {
+      shareFile = null;
+    }
+    if (!shareFile) return 'unsupported' as const;
+
+    let canShareFiles = true;
+    if (typeof nav.canShare === 'function') {
+      try {
+        canShareFiles = nav.canShare({ files: [shareFile] });
+      } catch {
+        canShareFiles = false;
+      }
+    }
+    if (!canShareFiles) return 'unsupported' as const;
+
+    try {
+      await nav.share({ files: [shareFile], title });
+      return 'shared' as const;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return 'aborted' as const;
+      }
+      return 'unsupported' as const;
+    }
+  };
+
+  const openReceiptPdfPreview = ({
+    blob,
+    filename
+  }: {
+    blob: Blob;
+    filename: string;
   }) => {
     if (typeof window === 'undefined') return false;
+    const blobUrl = URL.createObjectURL(blob);
 
-    const popup = targetWindow && !targetWindow.closed ? targetWindow : window.open('', '_blank');
-    if (!popup) return false;
-    const isThermal = node.classList.contains('receipt-thermal');
-    const printRootClass = isThermal ? 'receipt-body receipt-body-thermal' : 'receipt-body receipt-body-digital';
+    if (isMobileWeb()) {
+      const popup = window.open(blobUrl, '_blank');
+      if (!popup) {
+        window.location.href = blobUrl;
+      }
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+      return true;
+    }
 
-    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-      .map((styleNode) => styleNode.outerHTML)
-      .join('\n');
-
-    popup.document.open();
-    popup.document.write(`<!doctype html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>${title}</title>
-    ${styles}
-    <style>
-      body { margin: 0; padding: 16px; background: #ffffff; color: #0f172a; }
-      .receipt-body-digital { max-width: 980px; margin: 0 auto; }
-      .receipt-body-thermal { margin: 0 auto; }
-      .receipt-thermal { background: #ffffff !important; border-color: #e2e8f0 !important; color: #0f172a !important; }
-      .receipt-thermal pre { color: #0f172a !important; background: transparent !important; }
-    </style>
-  </head>
-  <body>
-    <div id="print-root" class="${printRootClass}">
-      ${node.outerHTML}
-    </div>
-  </body>
-</html>`);
-    popup.document.close();
-    window.setTimeout(() => popup.print(), 350);
+    downloadBlob({ blob, filename, openInNewTabOnIos: true });
+    URL.revokeObjectURL(blobUrl);
     return true;
   };
 
@@ -939,30 +960,14 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
 
     try {
       const blob = await buildPdfBlob({ element: node, format });
-      const nav = navigator as Navigator & {
-        canShare?: (data?: ShareData) => boolean;
-        share?: (data?: ShareData) => Promise<void>;
-      };
-      if (mobileWeb && typeof nav.share === 'function') {
-        let shareFile: File | null = null;
-        try {
-          shareFile = new File([blob], filename, { type: 'application/pdf' });
-        } catch {
-          shareFile = null;
+      if (mobileWeb) {
+        const shareStatus = await tryShareReceiptPdf({ blob, filename, title: filename });
+        if (shareStatus === 'shared') {
+          setToast('PDF pronto para salvar ou compartilhar');
+          return;
         }
-        if (shareFile) {
-          const canShareFiles = typeof nav.canShare !== 'function' || nav.canShare({ files: [shareFile] });
-          if (canShareFiles) {
-            try {
-              await nav.share({ files: [shareFile], title: filename });
-              setToast('PDF pronto para salvar ou compartilhar');
-              return;
-            } catch (error) {
-              if (error instanceof DOMException && error.name === 'AbortError') {
-                return;
-              }
-            }
-          }
+        if (shareStatus === 'aborted') {
+          return;
         }
       }
       downloadBlob({ blob, filename, openInNewTabOnIos: true });
@@ -986,11 +991,23 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     }
 
     if (mobileWeb) {
-      const opened = openReceiptPrintFallback({
-        node,
-        title: `Extrato da venda #${sale.id}`
-      });
-      setToast(opened ? 'Extrato aberto para impressao' : 'Erro ao imprimir extrato');
+      try {
+        const filename = `venda-${sale.id}-${receiptTab}.pdf`;
+        const blob = await buildPdfBlob({ element: node, format: receiptTab === 'digital' ? 'a4' : thermalFormat });
+        const shareStatus = await tryShareReceiptPdf({
+          blob,
+          filename,
+          title: `Extrato da venda #${sale.id}`
+        });
+        if (shareStatus === 'shared' || shareStatus === 'aborted') {
+          return;
+        }
+
+        const opened = openReceiptPdfPreview({ blob, filename });
+        setToast(opened ? 'PDF aberto. Use compartilhar > Imprimir no navegador.' : 'Erro ao imprimir extrato');
+      } catch {
+        setToast('Erro ao imprimir extrato');
+      }
       return;
     }
 
@@ -1020,11 +1037,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
               `
       });
     } catch {
-      const fallbackOpened = openReceiptPrintFallback({
-        node,
-        title: `Extrato da venda #${sale.id}`
-      });
-      setToast(fallbackOpened ? 'Extrato aberto para impressao' : 'Erro ao imprimir extrato');
+      setToast('Erro ao imprimir extrato');
     }
   };
 
