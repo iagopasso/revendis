@@ -29,6 +29,49 @@ const isUniqueConstraintError = (error: unknown): error is { code: string } =>
 const isUndefinedTableError = (error: unknown): error is { code: string } =>
   Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === '42P01');
 
+const ensurePrimaryStoreForOrganization = async (organizationId: string) => {
+  const orgId = organizationId.trim();
+  if (!orgId) return null;
+
+  return withTransaction(async (client) => {
+    await client.query(`SELECT id FROM organizations WHERE id = $1 LIMIT 1 FOR UPDATE`, [orgId]);
+
+    const existingStore = await client.query<{ id: string }>(
+      `SELECT id
+       FROM stores
+       WHERE organization_id = $1
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [orgId]
+    );
+
+    const storeId = existingStore.rows[0]?.id || null;
+    if (storeId) return storeId;
+
+    const createdStore = await client.query<{ id: string }>(
+      `INSERT INTO stores (organization_id, name, timezone)
+       VALUES ($1, $2, $3)
+       RETURNING id`,
+      [orgId, 'Loja Principal', 'America/Sao_Paulo']
+    );
+
+    return createdStore.rows[0]?.id || null;
+  });
+};
+
+const hydrateUserStore = async (user: AuthUserRow | null) => {
+  if (!user) return null;
+  if (user.store_id) return user;
+
+  const storeId = await ensurePrimaryStoreForOrganization(user.organization_id || DEFAULT_ORG_ID);
+  if (!storeId) return user;
+
+  return {
+    ...user,
+    store_id: storeId
+  };
+};
+
 const createIsolatedReseller = async (
   name: string,
   email: string,
@@ -158,7 +201,7 @@ router.post(
         [email]
       );
 
-      const existingUser = existing.rows[0];
+      const existingUser = await hydrateUserStore(existing.rows[0] || null);
       if (existingUser) {
         if (!existingUser.active) {
           return res.status(403).json({
@@ -214,7 +257,7 @@ router.post(
            LIMIT 1`,
           [email]
         );
-        const user = existing.rows[0];
+        const user = await hydrateUserStore(existing.rows[0] || null);
         if (user) {
           return res.json({
             data: {
@@ -270,7 +313,7 @@ router.post(
         [payload.email.trim().toLowerCase(), payload.password]
       );
 
-      const user = result.rows[0] || null;
+      const user = await hydrateUserStore(result.rows[0] || null);
       if (!user) {
         return res.status(401).json({
           code: 'invalid_credentials',
