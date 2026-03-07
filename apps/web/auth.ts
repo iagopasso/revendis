@@ -25,14 +25,99 @@ const appleClientId = `${process.env.AUTH_APPLE_ID || ''}`.trim();
 const appleClientSecret = `${process.env.AUTH_APPLE_SECRET || ''}`.trim();
 
 const withNoTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+const sanitizeEnvUrl = (value: string) =>
+  withNoTrailingSlash((value || '').trim().replace(/^['"]|['"]$/g, ''));
+const isAbsoluteUrl = (value: string) => /^https?:\/\//i.test(value);
 
-const resolveApiBase = () => {
-  const envBase = withNoTrailingSlash(process.env.AUTH_API_BASE || process.env.NEXT_PUBLIC_API_URL || '');
-  if (envBase) return envBase;
-  return 'http://localhost:3001/api';
+const normalizeOrigin = (value: string) => {
+  const normalized = sanitizeEnvUrl(value);
+  if (!normalized) return '';
+  if (isAbsoluteUrl(normalized)) return normalized;
+  if (/^[a-z0-9.-]+(?::\d+)?$/i.test(normalized)) {
+    return `https://${normalized}`;
+  }
+  return '';
 };
 
-const AUTH_API_BASE = resolveApiBase();
+const resolveAppOrigin = () => {
+  const explicitOrigin = normalizeOrigin(
+    process.env.AUTH_URL ||
+      process.env.NEXTAUTH_URL ||
+      process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      ''
+  );
+  if (explicitOrigin) return explicitOrigin;
+  return normalizeOrigin(process.env.VERCEL_URL || '');
+};
+
+const toAbsoluteUrl = (origin: string, value: string) => {
+  try {
+    return withNoTrailingSlash(new URL(value, `${origin}/`).toString());
+  } catch {
+    return '';
+  }
+};
+
+const pushApiBaseCandidate = (candidates: string[], value: string) => {
+  const normalized = sanitizeEnvUrl(value);
+  if (!normalized || candidates.includes(normalized)) return;
+  candidates.push(normalized);
+};
+
+const resolveApiBases = () => {
+  const candidates: string[] = [];
+  const appOrigin = resolveAppOrigin();
+  const explicitTarget = sanitizeEnvUrl(process.env.API_PROXY_TARGET || process.env.AUTH_API_BASE || '');
+  const publicApiBase = sanitizeEnvUrl(process.env.NEXT_PUBLIC_API_URL || '');
+
+  if (explicitTarget) {
+    if (isAbsoluteUrl(explicitTarget)) {
+      pushApiBaseCandidate(candidates, explicitTarget);
+    } else if (appOrigin && explicitTarget.startsWith('/')) {
+      pushApiBaseCandidate(candidates, toAbsoluteUrl(appOrigin, explicitTarget));
+    }
+  }
+
+  if (publicApiBase) {
+    if (isAbsoluteUrl(publicApiBase)) {
+      pushApiBaseCandidate(candidates, publicApiBase);
+    } else if (appOrigin && publicApiBase.startsWith('/')) {
+      pushApiBaseCandidate(candidates, toAbsoluteUrl(appOrigin, publicApiBase));
+    }
+  }
+
+  if (appOrigin) {
+    pushApiBaseCandidate(candidates, `${appOrigin}/api/backend`);
+  }
+
+  pushApiBaseCandidate(candidates, 'http://127.0.0.1:3001/api');
+  return candidates;
+};
+
+const AUTH_API_BASES = resolveApiBases();
+
+const fetchAuthApi = async (path: string, init: RequestInit) => {
+  let lastError: unknown = null;
+
+  for (const [index, base] of AUTH_API_BASES.entries()) {
+    try {
+      const response = await fetch(`${base}${path}`, {
+        ...init,
+        cache: 'no-store'
+      });
+      const hasNextCandidate = index < AUTH_API_BASES.length - 1;
+      if (!response.ok && hasNextCandidate && [404, 502, 503].includes(response.status)) {
+        continue;
+      }
+      return response;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`Unable to reach auth API for ${path}.`);
+};
 
 const normalizeSessionRole = (value: unknown): 'owner' | 'seller' => {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -45,7 +130,7 @@ const authenticateWithBackendCredentials = async (
   password: string
 ): Promise<AuthUserPayload | null> => {
   try {
-    const response = await fetch(`${AUTH_API_BASE}/auth/login`, {
+    const response = await fetchAuthApi('/auth/login', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -54,15 +139,18 @@ const authenticateWithBackendCredentials = async (
       body: JSON.stringify({
         email,
         password
-      }),
-      cache: 'no-store'
+      })
     });
 
     if (!response.ok) return null;
     const payload = (await response.json().catch(() => null)) as { data?: AuthUserPayload } | null;
     if (!payload?.data?.id || !payload.data.email) return null;
     return payload.data;
-  } catch {
+  } catch (error) {
+    console.error('[auth] credentials login request failed', {
+      bases: AUTH_API_BASES,
+      error: error instanceof Error ? error.message : 'unknown_error'
+    });
     return null;
   }
 };
@@ -80,21 +168,24 @@ const syncSocialUser = async (email: string, name: string): Promise<AuthUserPayl
   }
 
   try {
-    const syncResponse = await fetch(`${AUTH_API_BASE}/auth/social-sync`, {
+    const syncResponse = await fetchAuthApi('/auth/social-sync', {
       method: 'POST',
       headers,
       body: JSON.stringify({
         name: name.trim() || 'Revendedor(a)',
         email: normalizedEmail
-      }),
-      cache: 'no-store'
+      })
     });
 
     if (!syncResponse.ok) return null;
     const payload = (await syncResponse.json().catch(() => null)) as { data?: AuthUserPayload } | null;
     if (!payload?.data?.id || !payload.data.email) return null;
     return payload.data;
-  } catch {
+  } catch (error) {
+    console.error('[auth] social sync request failed', {
+      bases: AUTH_API_BASES,
+      error: error instanceof Error ? error.message : 'unknown_error'
+    });
     return null;
   }
 };
