@@ -95,6 +95,22 @@ const withHttpProtocolIfMissing = (value: string) => {
 };
 const normalizeOrigin = (value: string) => withNoTrailingSlash(withHttpProtocolIfMissing(value));
 const stripStorefrontPathSuffix = (value: string) => value.replace(/\/loja$/i, '');
+const normalizeStorageScope = (value?: string | null) =>
+  (value || '')
+    .trim()
+    .replace(/[^a-z0-9:_-]+/gi, '')
+    .slice(0, 160);
+const resolveScopedStorageKey = (baseKey: string, scope?: string | null) => {
+  const normalizedScope = normalizeStorageScope(scope);
+  return normalizedScope ? `${baseKey}:${normalizedScope}` : baseKey;
+};
+
+export const buildStorefrontStorageScope = (organizationId?: string | null, storeId?: string | null) => {
+  const org = normalizeStorageScope(organizationId);
+  const store = normalizeStorageScope(storeId);
+  if (!org || !store) return '';
+  return `${org}:${store}`;
+};
 
 export const resolvePublicStoreOrigin = (origin?: string) => {
   const configuredOrigin = stripStorefrontPathSuffix(normalizeOrigin(process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN || ''));
@@ -177,10 +193,10 @@ export const buildPublicStoreUrl = (subdomain: string, origin?: string) => {
   return `${cleanOrigin}/loja/${cleanSubdomain}`;
 };
 
-export const loadStorefrontSettings = (): StorefrontSettings | null => {
+export const loadStorefrontSettings = (scope?: string | null): StorefrontSettings | null => {
   if (!isClient()) return null;
   try {
-    const raw = window.localStorage.getItem(STOREFRONT_SETTINGS_STORAGE_KEY);
+    const raw = window.localStorage.getItem(resolveScopedStorageKey(STOREFRONT_SETTINGS_STORAGE_KEY, scope));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StorefrontSettings>;
     return normalizeStorefrontSettings(parsed);
@@ -189,10 +205,10 @@ export const loadStorefrontSettings = (): StorefrontSettings | null => {
   }
 };
 
-export const saveStorefrontSettings = (settings: StorefrontSettings) => {
+export const saveStorefrontSettings = (settings: StorefrontSettings, scope?: string | null) => {
   if (!isClient()) return;
   window.localStorage.setItem(
-    STOREFRONT_SETTINGS_STORAGE_KEY,
+    resolveScopedStorageKey(STOREFRONT_SETTINGS_STORAGE_KEY, scope),
     JSON.stringify(normalizeStorefrontSettings(settings))
   );
 };
@@ -313,10 +329,10 @@ export const hasStorefrontRuntimeStateData = (state?: Partial<StorefrontRuntimeS
   );
 };
 
-export const loadStorefrontRuntimeState = (): StorefrontRuntimeState | null => {
+export const loadStorefrontRuntimeState = (scope?: string | null): StorefrontRuntimeState | null => {
   if (!isClient()) return null;
   try {
-    const raw = window.localStorage.getItem(STOREFRONT_RUNTIME_STORAGE_KEY);
+    const raw = window.localStorage.getItem(resolveScopedStorageKey(STOREFRONT_RUNTIME_STORAGE_KEY, scope));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StorefrontRuntimeState>;
     return normalizeStorefrontRuntimeState(parsed);
@@ -325,11 +341,11 @@ export const loadStorefrontRuntimeState = (): StorefrontRuntimeState | null => {
   }
 };
 
-export const saveStorefrontRuntimeState = (state: StorefrontRuntimeState) => {
+export const saveStorefrontRuntimeState = (state: StorefrontRuntimeState, scope?: string | null) => {
   if (!isClient()) return;
   const normalized = normalizeStorefrontRuntimeState(state);
   window.localStorage.setItem(
-    STOREFRONT_RUNTIME_STORAGE_KEY,
+    resolveScopedStorageKey(STOREFRONT_RUNTIME_STORAGE_KEY, scope),
     JSON.stringify({
       activeProducts: normalized.activeProducts,
       promotions: normalized.promotions,

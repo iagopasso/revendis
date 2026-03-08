@@ -236,6 +236,20 @@ type AccessMember = {
   role: string;
   active: boolean;
   created_at?: string;
+  store_id?: string | null;
+  store_name?: string | null;
+};
+
+type AccessMigrationResult = AccessMember & {
+  previous_store_id?: string | null;
+};
+
+type AccessMigrationResponse = {
+  data?: {
+    primaryMember: AccessMember;
+    migratedMembers: AccessMigrationResult[];
+    remainingMembers: AccessMember[];
+  };
 };
 
 type StorefrontSettings = {
@@ -494,6 +508,24 @@ const daysUntil = (value?: string | null) => {
 const isExpiring = (value?: string | null) => {
   const remaining = daysUntil(value);
   return remaining !== null && remaining >= 0 && remaining <= EXPIRING_DAYS;
+};
+
+const compareAccessMemberPriority = (left: AccessMember, right: AccessMember) => {
+  const leftDate = parseDateCandidate(left.created_at)?.getTime() || 0;
+  const rightDate = parseDateCandidate(right.created_at)?.getTime() || 0;
+  if (leftDate !== rightDate) return leftDate - rightDate;
+  return normalizeText(left.email).localeCompare(normalizeText(right.email));
+};
+
+const resolvePrimaryAccessMember = (members: AccessMember[], ownerEmail: string) => {
+  const normalizedOwnerEmail = normalizeText(ownerEmail);
+  const emailMatch = members.find((member) => normalizeText(member.email) === normalizedOwnerEmail);
+  if (emailMatch) return emailMatch;
+
+  const ownerRoleMatch = members.find((member) => normalizeText(member.role) === 'owner');
+  if (ownerRoleMatch) return ownerRoleMatch;
+
+  return [...members].sort(compareAccessMemberPriority)[0] || null;
 };
 
 const salePaymentStatus = (
@@ -794,6 +826,9 @@ export default function App() {
   const [memberEmailInput, setMemberEmailInput] = useState('');
   const [memberRoleInput, setMemberRoleInput] = useState('seller');
   const [memberActiveInput, setMemberActiveInput] = useState(true);
+  const [memberCreateSeparateAccountInput, setMemberCreateSeparateAccountInput] = useState(false);
+  const [memberPasswordInput, setMemberPasswordInput] = useState('');
+  const [memberPasswordConfirmInput, setMemberPasswordConfirmInput] = useState('');
   const [memberEditingId, setMemberEditingId] = useState('');
 
   const rangeStart = useMemo(() => resolveRangeStart(rangePreset), [rangePreset]);
@@ -1333,6 +1368,10 @@ export default function App() {
   const sidebarWidth = screenWidth >= 900 ? 80 : screenWidth >= 700 ? 74 : 68;
   const filteredProductSuggestions = filteredProducts.slice(0, 12);
   const filteredCustomerSuggestions = filteredCustomers.slice(0, 12);
+  const primaryAccessMember = useMemo(
+    () => resolvePrimaryAccessMember(accessMembers, accountOwnerEmail),
+    [accessMembers, accountOwnerEmail]
+  );
 
   const runAction = useCallback(
     async (label: string, operation: () => Promise<void>) => {
@@ -2112,6 +2151,9 @@ export default function App() {
     setMemberEmailInput('');
     setMemberRoleInput('seller');
     setMemberActiveInput(true);
+    setMemberCreateSeparateAccountInput(false);
+    setMemberPasswordInput('');
+    setMemberPasswordConfirmInput('');
   };
 
   const startEditMember = (member: AccessMember) => {
@@ -2120,19 +2162,51 @@ export default function App() {
     setMemberEmailInput(member.email || '');
     setMemberRoleInput(member.role || 'seller');
     setMemberActiveInput(member.active !== false);
+    setMemberCreateSeparateAccountInput(false);
+    setMemberPasswordInput('');
+    setMemberPasswordConfirmInput('');
   };
 
   const saveAccessMember = async () => {
     const name = memberNameInput.trim();
     const email = memberEmailInput.trim().toLowerCase();
     const role = memberRoleInput.trim().toLowerCase() || 'seller';
+    const creatingSeparateAccount = !memberEditingId && memberCreateSeparateAccountInput;
 
     if (!name) {
-      setActionMessage({ tone: 'error', text: 'Informe o nome do membro.' });
+      setActionMessage({ tone: 'error', text: creatingSeparateAccount ? 'Informe o nome da conta.' : 'Informe o nome do membro.' });
       return;
     }
     if (!email) {
-      setActionMessage({ tone: 'error', text: 'Informe o email do membro.' });
+      setActionMessage({
+        tone: 'error',
+        text: creatingSeparateAccount ? 'Informe o email da nova conta.' : 'Informe o email do membro.'
+      });
+      return;
+    }
+
+    if (creatingSeparateAccount) {
+      if (memberPasswordInput.length < 6) {
+        setActionMessage({ tone: 'error', text: 'Defina uma senha com pelo menos 6 caracteres.' });
+        return;
+      }
+
+      if (memberPasswordInput !== memberPasswordConfirmInput) {
+        setActionMessage({ tone: 'error', text: 'A confirmacao da senha nao confere.' });
+        return;
+      }
+
+      const success = await runAction('Conta criada com loja propria', async () => {
+        await backendRequest('/settings/access/separate-account', {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            email,
+            password: memberPasswordInput
+          })
+        });
+      });
+      if (success) resetMemberForm();
       return;
     }
 
@@ -2163,6 +2237,45 @@ export default function App() {
         body: JSON.stringify({ active: !member.active })
       });
     });
+  };
+
+  const migrateLegacyAccessMembers = async () => {
+    if (accessMembers.length <= 1) {
+      setActionMessage({ tone: 'error', text: 'Nenhuma conta antiga compartilhada para migrar.' });
+      return;
+    }
+
+    if (!primaryAccessMember?.id) {
+      setActionMessage({
+        tone: 'error',
+        text: 'Nao foi possivel identificar a conta principal para migracao.'
+      });
+      return;
+    }
+
+    let migratedCount = 0;
+    const success = await runAction('Migracao de contas antigas', async () => {
+      const response = await backendRequest<AccessMigrationResponse>('/settings/access/migrate-legacy', {
+        method: 'POST',
+        headers: {
+          'x-user-id': primaryAccessMember.id
+        },
+        body: JSON.stringify({})
+      });
+
+      migratedCount = response.data?.migratedMembers.length || 0;
+    });
+
+    if (!success) return;
+
+    setActionMessage({
+      tone: 'success',
+      text:
+        migratedCount > 0
+          ? `${migratedCount} conta${migratedCount === 1 ? '' : 's'} antiga${migratedCount === 1 ? '' : 's'} migrada${migratedCount === 1 ? '' : 's'} para lojas proprias.`
+          : 'Nenhuma conta antiga compartilhada encontrada.'
+    });
+    resetMemberForm();
   };
 
   const handleModuleChange = useCallback(
@@ -3968,47 +4081,120 @@ export default function App() {
               {settingsSection === 'access' ? (
                 <>
                   <View style={styles.panel}>
-                    <Text style={styles.panelTitle}>{memberEditingId ? 'Editar acesso' : 'Novo acesso'}</Text>
+                    <Text style={styles.panelTitle}>
+                      {memberEditingId
+                        ? 'Editar acesso'
+                        : memberCreateSeparateAccountInput
+                          ? 'Nova conta'
+                          : 'Novo acesso'}
+                    </Text>
+                    {!memberEditingId ? (
+                      <Text style={styles.panelSubtitle}>
+                        Escolha entre equipe da mesma loja ou conta separada com loja propria.
+                      </Text>
+                    ) : null}
+                    {!memberEditingId ? (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                        <Pressable
+                          style={[styles.chipButton, !memberCreateSeparateAccountInput ? styles.chipButtonActive : null]}
+                          onPress={() => setMemberCreateSeparateAccountInput(false)}
+                        >
+                          <Text
+                            style={[
+                              styles.chipButtonText,
+                              !memberCreateSeparateAccountInput ? styles.chipButtonTextActive : null
+                            ]}
+                          >
+                            Acesso da equipe
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.chipButton, memberCreateSeparateAccountInput ? styles.chipButtonActive : null]}
+                          onPress={() => setMemberCreateSeparateAccountInput(true)}
+                        >
+                          <Text
+                            style={[
+                              styles.chipButtonText,
+                              memberCreateSeparateAccountInput ? styles.chipButtonTextActive : null
+                            ]}
+                          >
+                            Conta separada
+                          </Text>
+                        </Pressable>
+                      </ScrollView>
+                    ) : null}
                     <TextInput
                       style={styles.actionInput}
-                      placeholder="Nome"
+                      placeholder={memberCreateSeparateAccountInput && !memberEditingId ? 'Nome da nova conta' : 'Nome'}
                       value={memberNameInput}
                       onChangeText={setMemberNameInput}
                     />
                     <TextInput
                       style={styles.actionInput}
-                      placeholder="Email"
+                      placeholder={
+                        memberCreateSeparateAccountInput && !memberEditingId ? 'nova-conta@empresa.com' : 'Email'
+                      }
                       value={memberEmailInput}
                       onChangeText={setMemberEmailInput}
                       autoCapitalize="none"
                       keyboardType="email-address"
                     />
-                    <TextInput
-                      style={styles.actionInput}
-                      placeholder="Perfil (owner, manager, seller...)"
-                      value={memberRoleInput}
-                      onChangeText={setMemberRoleInput}
-                    />
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-                      <Pressable
-                        style={[styles.chipButton, memberActiveInput ? styles.chipButtonActive : null]}
-                        onPress={() => setMemberActiveInput(true)}
-                      >
-                        <Text style={[styles.chipButtonText, memberActiveInput ? styles.chipButtonTextActive : null]}>
-                          Ativo
+                    {memberCreateSeparateAccountInput && !memberEditingId ? (
+                      <>
+                        <TextInput
+                          style={styles.actionInput}
+                          placeholder="Senha (minimo de 6 caracteres)"
+                          value={memberPasswordInput}
+                          onChangeText={setMemberPasswordInput}
+                          secureTextEntry
+                        />
+                        <TextInput
+                          style={styles.actionInput}
+                          placeholder="Confirmar senha"
+                          value={memberPasswordConfirmInput}
+                          onChangeText={setMemberPasswordConfirmInput}
+                          secureTextEntry
+                        />
+                        <Text style={styles.panelHint}>
+                          Essa conta tera uma loja propria na mesma operacao e entrara vendo apenas o estoque dessa loja.
                         </Text>
-                      </Pressable>
-                      <Pressable
-                        style={[styles.chipButton, !memberActiveInput ? styles.chipButtonActive : null]}
-                        onPress={() => setMemberActiveInput(false)}
-                      >
-                        <Text style={[styles.chipButtonText, !memberActiveInput ? styles.chipButtonTextActive : null]}>
-                          Inativo
-                        </Text>
-                      </Pressable>
-                    </ScrollView>
+                      </>
+                    ) : (
+                      <>
+                        <TextInput
+                          style={styles.actionInput}
+                          placeholder="Perfil (owner, manager, seller...)"
+                          value={memberRoleInput}
+                          onChangeText={setMemberRoleInput}
+                        />
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                          <Pressable
+                            style={[styles.chipButton, memberActiveInput ? styles.chipButtonActive : null]}
+                            onPress={() => setMemberActiveInput(true)}
+                          >
+                            <Text style={[styles.chipButtonText, memberActiveInput ? styles.chipButtonTextActive : null]}>
+                              Ativo
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.chipButton, !memberActiveInput ? styles.chipButtonActive : null]}
+                            onPress={() => setMemberActiveInput(false)}
+                          >
+                            <Text style={[styles.chipButtonText, !memberActiveInput ? styles.chipButtonTextActive : null]}>
+                              Inativo
+                            </Text>
+                          </Pressable>
+                        </ScrollView>
+                      </>
+                    )}
                     <ActionButton
-                      label={memberEditingId ? 'Salvar acesso' : 'Adicionar acesso'}
+                      label={
+                        memberEditingId
+                          ? 'Salvar acesso'
+                          : memberCreateSeparateAccountInput
+                            ? 'Criar conta'
+                            : 'Adicionar acesso'
+                      }
                       onPress={saveAccessMember}
                       disabled={actionBusy}
                       variant="primary"
@@ -4025,11 +4211,25 @@ export default function App() {
 
                   <View style={styles.panel}>
                     <Text style={styles.panelTitle}>Equipe ({accessMembers.length})</Text>
+                    {accessMembers.length > 1 ? (
+                      <>
+                        <Text style={styles.panelHint}>
+                          A migracao cria uma loja propria para cada conta antiga que ainda usa a loja principal.
+                        </Text>
+                        <ActionButton
+                          label="Migrar contas antigas"
+                          onPress={migrateLegacyAccessMembers}
+                          disabled={actionBusy || !primaryAccessMember}
+                          variant="muted"
+                        />
+                      </>
+                    ) : null}
                     {accessMembers.map((member) => (
                       <View key={member.id} style={styles.listRow}>
                         <View style={styles.listMain}>
                           <Text style={styles.listTitle}>{member.name}</Text>
                           <Text style={styles.listMeta}>{member.email}</Text>
+                          <Text style={styles.listMeta}>Loja: {member.store_name || 'Loja principal'}</Text>
                           <Text style={styles.listMeta}>{member.role}</Text>
                         </View>
                         <View style={styles.listRight}>
@@ -4856,6 +5056,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748b',
     marginTop: -2
+  },
+  panelHint: {
+    fontSize: 12,
+    color: '#64748b',
+    lineHeight: 18
   },
   helperText: {
     fontSize: 12,

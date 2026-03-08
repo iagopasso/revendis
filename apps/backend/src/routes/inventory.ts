@@ -576,7 +576,7 @@ router.post(
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     const { sku, quantity, reason, storeId, cost, expiresAt } =
       req.body as InventoryAdjustmentInput;
-    const targetStore = storeId || DEFAULT_STORE_ID;
+    const targetStore = storeId || req.header('x-store-id') || DEFAULT_STORE_ID;
     const movementType = quantity >= 0 ? 'adjustment_in' : 'adjustment_out';
 
     try {

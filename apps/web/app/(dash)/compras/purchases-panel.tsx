@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { IconBox, IconDots, IconEdit, IconPlus, IconSearch, IconTrash } from '../icons';
-import { API_BASE, buildMutationHeaders, formatCurrency, toNumber, digitsOnly } from '../lib';
+import { API_BASE, buildMutationHeaders, buildScopedStorageKey, formatCurrency, toNumber, digitsOnly } from '../lib';
 import { resolveBrandLogo } from '../brand-logos';
 import DateRangePicker from '../date-range';
 
@@ -58,6 +58,7 @@ type PurchasesPanelProps = {
   products: Product[];
   initialCreateOpen?: boolean;
   initialOpenPurchaseId?: string;
+  storageScope?: string;
 };
 
 type PurchaseForm = {
@@ -429,7 +430,7 @@ const parseDraftPurchase = (value: unknown): Purchase | null => {
   };
 };
 
-const readPersistedDrafts = () => {
+const readPersistedDrafts = (storageScope?: string) => {
   if (typeof window === 'undefined') {
     return {
       draftPurchases: [] as Purchase[],
@@ -437,7 +438,8 @@ const readPersistedDrafts = () => {
     };
   }
 
-  const raw = window.localStorage.getItem(PURCHASE_DRAFTS_STORAGE_KEY);
+  const storageKey = buildScopedStorageKey(PURCHASE_DRAFTS_STORAGE_KEY, storageScope);
+  const raw = window.localStorage.getItem(storageKey);
   if (!raw) {
     return {
       draftPurchases: [] as Purchase[],
@@ -448,7 +450,7 @@ const readPersistedDrafts = () => {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.drafts)) {
-      window.localStorage.removeItem(PURCHASE_DRAFTS_STORAGE_KEY);
+      window.localStorage.removeItem(storageKey);
       return {
         draftPurchases: [] as Purchase[],
         snapshots: {} as Record<string, DraftSnapshot>
@@ -471,7 +473,7 @@ const readPersistedDrafts = () => {
 
     return { draftPurchases, snapshots };
   } catch {
-    window.localStorage.removeItem(PURCHASE_DRAFTS_STORAGE_KEY);
+    window.localStorage.removeItem(storageKey);
     return {
       draftPurchases: [] as Purchase[],
       snapshots: {} as Record<string, DraftSnapshot>
@@ -479,8 +481,13 @@ const readPersistedDrafts = () => {
   }
 };
 
-const persistDrafts = (purchases: Purchase[], draftSnapshots: Record<string, DraftSnapshot>) => {
+const persistDrafts = (
+  purchases: Purchase[],
+  draftSnapshots: Record<string, DraftSnapshot>,
+  storageScope?: string
+) => {
   if (typeof window === 'undefined') return;
+  const storageKey = buildScopedStorageKey(PURCHASE_DRAFTS_STORAGE_KEY, storageScope);
 
   const draftEntries: PersistedDraftEntry[] = purchases
     .filter((purchase) => purchase.status === 'draft')
@@ -490,7 +497,7 @@ const persistDrafts = (purchases: Purchase[], draftSnapshots: Record<string, Dra
     }));
 
   if (!draftEntries.length) {
-    window.localStorage.removeItem(PURCHASE_DRAFTS_STORAGE_KEY);
+    window.localStorage.removeItem(storageKey);
     return;
   }
 
@@ -498,7 +505,7 @@ const persistDrafts = (purchases: Purchase[], draftSnapshots: Record<string, Dra
     version: 1,
     drafts: draftEntries
   };
-  window.localStorage.setItem(PURCHASE_DRAFTS_STORAGE_KEY, JSON.stringify(payload));
+  window.localStorage.setItem(storageKey, JSON.stringify(payload));
 };
 
 export default function PurchasesPanel({
@@ -506,7 +513,8 @@ export default function PurchasesPanel({
   availableBrands,
   products,
   initialCreateOpen = false,
-  initialOpenPurchaseId = ''
+  initialOpenPurchaseId = '',
+  storageScope
 }: PurchasesPanelProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -559,7 +567,7 @@ export default function PurchasesPanel({
   }, [initialPurchases]);
 
   useEffect(() => {
-    const { draftPurchases, snapshots } = readPersistedDrafts();
+    const { draftPurchases, snapshots } = readPersistedDrafts(storageScope);
     if (!draftPurchases.length) return;
 
     setDraftSnapshots((prev) => ({
@@ -568,11 +576,11 @@ export default function PurchasesPanel({
     }));
 
     setPurchases((prev) => mergePurchasesKeepingDrafts(prev, draftPurchases));
-  }, []);
+  }, [storageScope]);
 
   useEffect(() => {
-    persistDrafts(purchases, draftSnapshots);
-  }, [purchases, draftSnapshots]);
+    persistDrafts(purchases, draftSnapshots, storageScope);
+  }, [purchases, draftSnapshots, storageScope]);
 
   useEffect(() => {
     if (!initialCreateOpen) return;

@@ -260,6 +260,14 @@ export type SettingsStorefrontRuntimeStateInput = {
   storePriceOverrides?: Record<string, number>;
 };
 
+export type AccessSeparateAccountInput = {
+  name: string;
+  email: string;
+  password: string;
+  role?: string;
+  active?: boolean;
+};
+
 export type SettingsStorefrontInput = {
   shopName?: string;
   subdomain?: string;

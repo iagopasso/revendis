@@ -5,6 +5,7 @@ import { query, withTransaction } from '../db';
 import { validateRequest } from '../middleware/validate';
 import { idParamSchema } from '../schemas/common';
 import { saleInputSchema, salePaymentInputSchema, saleStatusUpdateSchema } from '../schemas/sales';
+import { ensureCustomerStoreColumn } from '../services/customer-store';
 import { asyncHandler } from '../utils/async-handler';
 import { writeAudit } from '../utils/audit';
 import { parseSaleCreatedAt } from '../utils/sale-date';
@@ -17,6 +18,37 @@ const buildError = (status: number, code: string, message: string) => {
   error.status = status;
   error.code = code;
   return error;
+};
+
+const assertCustomerBelongsToStore = async (
+  client: { query: (text: string, params?: Array<unknown>) => Promise<{ rows: Array<{ id: string }> }> },
+  {
+    customerId,
+    organizationId,
+    storeId
+  }: {
+    customerId?: string | null;
+    organizationId: string;
+    storeId: string;
+  }
+) => {
+  const normalizedCustomerId = `${customerId || ''}`.trim();
+  if (!normalizedCustomerId) return;
+  await ensureCustomerStoreColumn();
+
+  const customerRes = await client.query(
+    `SELECT id
+     FROM customers
+     WHERE id = $1
+       AND organization_id = $2
+       AND store_id = $3
+     LIMIT 1`,
+    [normalizedCustomerId, organizationId, storeId]
+  );
+
+  if (!customerRes.rows.length) {
+    throw buildError(404, 'customer_not_found', 'Cliente nao encontrado para esta loja.');
+  }
 };
 
 const toQueryString = (value: unknown) => {
@@ -142,6 +174,11 @@ router.post(
     try {
       const sale = await withTransaction(async (client) => {
         const userId = req.header('x-user-id') || null;
+        await assertCustomerBelongsToStore(client, {
+          customerId,
+          organizationId: orgId,
+          storeId: targetStore
+        });
         const saleRes = await client.query(
           `INSERT INTO sales (store_id, customer_id, customer_name, status, subtotal, discount_total, total, created_at)
            VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)
@@ -313,6 +350,12 @@ router.patch(
         if (!existingSaleRes.rows.length) {
           throw buildError(404, 'not_found', 'Venda nao encontrada.');
         }
+
+        await assertCustomerBelongsToStore(client, {
+          customerId,
+          organizationId: orgId,
+          storeId: targetStore
+        });
 
         const previousStockRes = await client.query(
           `SELECT product_id, COUNT(*)::int AS quantity

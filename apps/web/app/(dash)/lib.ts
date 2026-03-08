@@ -16,6 +16,11 @@ export const BUSINESS_TIMEZONE = process.env.NEXT_PUBLIC_BUSINESS_TIMEZONE || 'A
 const MUTATION_AUTH_TOKEN = process.env.NEXT_PUBLIC_MUTATION_AUTH_TOKEN || '';
 const API_TIMEOUT_MS = Math.max(2000, Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 10000));
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const normalizeTenantScopePart = (value?: string | null) =>
+  `${value || ''}`
+    .trim()
+    .replace(/[^a-z0-9:_-]+/gi, '')
+    .slice(0, 160);
 
 export const buildMutationHeaders = (extra?: HeadersInit) => {
   const headers = new Headers(extra || {});
@@ -26,6 +31,18 @@ export const buildMutationHeaders = (extra?: HeadersInit) => {
     headers.set('x-mutation-token', MUTATION_AUTH_TOKEN);
   }
   return headers;
+};
+
+export const buildTenantStorageScope = (organizationId?: string | null, storeId?: string | null) => {
+  const org = normalizeTenantScopePart(organizationId);
+  const store = normalizeTenantScopePart(storeId);
+  if (!org || !store) return '';
+  return `${org}:${store}`;
+};
+
+export const buildScopedStorageKey = (baseKey: string, scope?: string | null) => {
+  const normalizedScope = normalizeTenantScopePart(scope);
+  return normalizedScope ? `${baseKey}:${normalizedScope}` : baseKey;
 };
 
 const resolveTenantHeaders = async (): Promise<HeadersInit | null> => {

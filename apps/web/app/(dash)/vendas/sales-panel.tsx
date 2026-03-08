@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { API_BASE, SALES_SYNC_STORAGE_KEY, buildMutationHeaders, digitsOnly, formatCurrency, toNumber } from '../lib';
+import {
+  API_BASE,
+  SALES_SYNC_STORAGE_KEY,
+  buildMutationHeaders,
+  buildScopedStorageKey,
+  digitsOnly,
+  formatCurrency,
+  toNumber
+} from '../lib';
 import { resizeImageToDataUrl } from '../image-upload';
 import { IconChart, IconCreditCard, IconDollar, IconPercent, IconScan, IconSearch } from '../icons';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from '../sales-detail-modal';
@@ -143,6 +151,7 @@ type SalesPanelProps = {
   totalReceivable: number;
   hasSalesInRange: boolean;
   initialCreateOpen?: boolean;
+  storageScope?: string;
 };
 
 type ProductModalSource = 'search' | 'scan';
@@ -488,11 +497,13 @@ export default function SalesPanel({
   profit,
   totalReceivable,
   hasSalesInRange,
-  initialCreateOpen = false
+  initialCreateOpen = false,
+  storageScope
 }: SalesPanelProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const salesSyncStorageKey = buildScopedStorageKey(SALES_SYNC_STORAGE_KEY, storageScope);
 
   const [selectedSale, setSelectedSale] = useState<SaleDetail | null>(null);
   const [localSales, setLocalSales] = useState<Sale[]>(sales);
@@ -1051,11 +1062,11 @@ export default function SalesPanel({
   }, [sales]);
 
   useEffect(() => {
-    const pendingSync = window.localStorage.getItem(SALES_SYNC_STORAGE_KEY);
+    const pendingSync = window.localStorage.getItem(salesSyncStorageKey);
     if (!pendingSync) return;
-    window.localStorage.removeItem(SALES_SYNC_STORAGE_KEY);
+    window.localStorage.removeItem(salesSyncStorageKey);
     router.refresh();
-  }, [router]);
+  }, [router, salesSyncStorageKey]);
 
   useEffect(() => {
     setLocalCustomers(customers);
