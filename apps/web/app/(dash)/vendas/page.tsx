@@ -2,12 +2,14 @@ import Link from 'next/link';
 import DateRangePicker from '../date-range';
 import { FilterSelect } from '../filters';
 import {
+  buildTenantStorageScope,
   fetchList,
   getDateRangeFromSearchParams,
   getStringParam,
   isInDateRange,
   toNumber
 } from '../lib';
+import { auth } from '../../../auth';
 import SalesPanel from './sales-panel';
 
 export const dynamic = 'force-dynamic';
@@ -87,6 +89,7 @@ export default async function VendasPage({
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
+  const session = await auth();
   const resolvedParams = (await searchParams) ?? {};
   const [salesResponse, receivablesResponse, customersResponse, productsResponse] = await Promise.all([
     fetchList<Sale>('/sales/orders'),
@@ -94,6 +97,10 @@ export default async function VendasPage({
     fetchList<Customer>('/customers'),
     fetchList<Product>('/inventory/products')
   ]);
+  const storageScope = buildTenantStorageScope(
+    (session?.user as { organizationId?: string } | undefined)?.organizationId,
+    (session?.user as { storeId?: string } | undefined)?.storeId
+  );
 
   const sales = salesResponse?.data ?? [];
   const receivables = receivablesResponse?.data ?? [];
@@ -257,6 +264,7 @@ export default async function VendasPage({
         totalReceivable={totalReceivable}
         hasSalesInRange={hasSalesInRange}
         initialCreateOpen={initialCreateOpen}
+        storageScope={storageScope}
       />
     </main>
   );

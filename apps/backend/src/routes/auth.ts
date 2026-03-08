@@ -4,6 +4,11 @@ import { DEFAULT_ORG_ID } from '../config';
 import { query, withTransaction } from '../db';
 import { validateRequest } from '../middleware/validate';
 import { authLoginSchema, authRegisterSchema, authSocialSyncSchema } from '../schemas/auth';
+import {
+  createIsolatedOrganizationForUser,
+  ensureUserStoreAssignment,
+  ensureUserStoreColumn
+} from '../services/account-provisioning';
 import { asyncHandler } from '../utils/async-handler';
 
 type AuthUserRow = QueryResultRow & {
@@ -29,50 +34,44 @@ const isUniqueConstraintError = (error: unknown): error is { code: string } =>
 const isUndefinedTableError = (error: unknown): error is { code: string } =>
   Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === '42P01');
 
+const hydrateUserStore = async (user: AuthUserRow | null) => {
+  if (!user) return null;
+  await ensureUserStoreColumn();
+  const storeId = await ensureUserStoreAssignment({ query }, {
+    userId: user.id,
+    organizationId: user.organization_id || DEFAULT_ORG_ID,
+    preferredStoreId: user.store_id
+  });
+  if (!storeId) return user;
+
+  return {
+    ...user,
+    store_id: storeId
+  };
+};
+
 const createIsolatedReseller = async (
   name: string,
   email: string,
   password?: string
 ) => {
   return withTransaction(async (client) => {
-    const organizationName = `Conta ${name.trim()}`;
+    await ensureUserStoreColumn();
     const normalizedName = name.trim();
     const normalizedEmail = email.trim().toLowerCase();
-    const createdOrganization = await client.query<{ id: string }>(
-      `INSERT INTO organizations (name)
-       VALUES ($1)
-       RETURNING id`,
-      [organizationName]
-    );
-    const orgId = createdOrganization.rows[0]?.id;
-    if (!orgId) {
-      throw new Error('failed_to_create_organization');
-    }
-
-    const createdStore = await client.query<{ id: string }>(
-      `INSERT INTO stores (organization_id, name, timezone)
-       VALUES ($1, $2, $3)
-       RETURNING id`,
-      [orgId, 'Loja Principal', 'America/Sao_Paulo']
-    );
-    const storeId = createdStore.rows[0]?.id || null;
-
-    await client.query(
-      `INSERT INTO organization_settings (organization_id, owner_name, owner_email, business_name)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (organization_id) DO NOTHING`,
-      [orgId, normalizedName, normalizedEmail, organizationName]
-    );
+    const isolatedTenant = await createIsolatedOrganizationForUser(client, {
+      accountName: normalizedName,
+      accountEmail: normalizedEmail
+    });
 
     const inserted = await client.query<AuthUserRow>(
-      `INSERT INTO users (organization_id, name, email, role, active, created_at)
-       VALUES ($1, $2, $3, 'seller', true, now())
-       RETURNING id, name, email, role, active, organization_id, NULL::uuid AS store_id`,
-      [orgId, normalizedName, normalizedEmail]
+      `INSERT INTO users (organization_id, store_id, name, email, role, active, created_at)
+       VALUES ($1, $2, $3, $4, 'seller', true, now())
+       RETURNING id, name, email, role, active, organization_id, store_id`,
+      [isolatedTenant.organizationId, isolatedTenant.storeId, normalizedName, normalizedEmail]
     );
 
     const user = inserted.rows[0];
-    user.store_id = storeId;
 
     if (password) {
       await client.query(
@@ -137,6 +136,7 @@ router.post(
     const name = payload.name?.trim() || 'Revendedora';
 
     try {
+      await ensureUserStoreColumn();
       const existing = await query<AuthUserRow>(
         `SELECT u.id,
                 u.name,
@@ -144,21 +144,14 @@ router.post(
                 u.role,
                 u.active,
                 u.organization_id,
-                first_store.id AS store_id
+                u.store_id
          FROM users u
-         LEFT JOIN LATERAL (
-           SELECT s.id
-           FROM stores s
-           WHERE s.organization_id = u.organization_id
-           ORDER BY s.created_at ASC
-           LIMIT 1
-         ) first_store ON true
          WHERE lower(u.email) = lower($1)
          LIMIT 1`,
         [email]
       );
 
-      const existingUser = existing.rows[0];
+      const existingUser = await hydrateUserStore(existing.rows[0] || null);
       if (existingUser) {
         if (!existingUser.active) {
           return res.status(403).json({
@@ -201,20 +194,13 @@ router.post(
                   u.role,
                   u.active,
                   u.organization_id,
-                  first_store.id AS store_id
+                  u.store_id
            FROM users u
-           LEFT JOIN LATERAL (
-             SELECT s.id
-             FROM stores s
-             WHERE s.organization_id = u.organization_id
-             ORDER BY s.created_at ASC
-             LIMIT 1
-           ) first_store ON true
            WHERE lower(u.email) = lower($1)
            LIMIT 1`,
           [email]
         );
-        const user = existing.rows[0];
+        const user = await hydrateUserStore(existing.rows[0] || null);
         if (user) {
           return res.json({
             data: {
@@ -246,6 +232,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const payload = req.body as { email: string; password: string };
     try {
+      await ensureUserStoreColumn();
       const result = await query<AuthUserRow>(
         `SELECT u.id,
                 u.name,
@@ -253,16 +240,9 @@ router.post(
                 u.role,
                 u.active,
                 u.organization_id,
-                first_store.id AS store_id
+                u.store_id
          FROM users u
          INNER JOIN user_credentials c ON c.user_id = u.id
-         LEFT JOIN LATERAL (
-           SELECT s.id
-           FROM stores s
-           WHERE s.organization_id = u.organization_id
-           ORDER BY s.created_at ASC
-           LIMIT 1
-         ) first_store ON true
          WHERE lower(u.email) = lower($1)
            AND u.active = true
            AND c.password_hash = crypt($2, c.password_hash)
@@ -270,7 +250,7 @@ router.post(
         [payload.email.trim().toLowerCase(), payload.password]
       );
 
-      const user = result.rows[0] || null;
+      const user = await hydrateUserStore(result.rows[0] || null);
       if (!user) {
         return res.status(401).json({
           code: 'invalid_credentials',

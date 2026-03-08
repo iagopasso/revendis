@@ -21,7 +21,7 @@ import {
   IconTrash,
   IconWhatsapp
 } from './icons';
-import { API_BASE, SALES_SYNC_STORAGE_KEY, buildMutationHeaders } from './lib';
+import { API_BASE, SALES_SYNC_STORAGE_KEY, buildMutationHeaders, buildScopedStorageKey } from './lib';
 import SalesDetailModal, { type SaleDetail, type SaleUpdate } from './sales-detail-modal';
 import {
   buildPublicStoreUrl,
@@ -422,17 +422,20 @@ export default function StorefrontShell({
   initialStoreName,
   initialStoreSettings,
   initialStoreLogoUrl,
-  initialRuntimeState
+  initialRuntimeState,
+  storageScope
 }: {
   initialCatalog: StoreProduct[];
   initialStoreName?: string;
   initialStoreSettings?: Partial<StorefrontSettings>;
   initialStoreLogoUrl?: string;
   initialRuntimeState?: StorefrontRuntimeState;
+  storageScope?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const salesSyncStorageKey = buildScopedStorageKey(SALES_SYNC_STORAGE_KEY, storageScope);
   const sectionFromQuery = parseSection(searchParams.get('section'));
   const [section, setCurrentSection] = useState<Section>(sectionFromQuery);
 
@@ -521,22 +524,22 @@ export default function StorefrontShell({
 
   useEffect(() => {
     setPublicStoreOrigin(window.location.origin);
-    const savedSettings = loadStorefrontSettings();
+    const savedSettings = loadStorefrontSettings(storageScope);
     const mergedSettings = normalizeStorefrontSettings({
       ...DEFAULT_STOREFRONT_SETTINGS,
-      ...(initialStoreSettings || {}),
       ...(savedSettings || {}),
+      ...(initialStoreSettings || {}),
       shopName:
-        savedSettings?.shopName ||
         initialStoreSettings?.shopName ||
+        savedSettings?.shopName ||
         initialStoreName?.trim() ||
         DEFAULT_STOREFRONT_SETTINGS.shopName
     });
     setStoreSettings(mergedSettings);
-    saveStorefrontSettings(mergedSettings);
+    saveStorefrontSettings(mergedSettings, storageScope);
 
     const runtimeFromServer = normalizeStorefrontRuntimeState(initialRuntimeState || null);
-    const savedRuntime = loadStorefrontRuntimeState();
+    const savedRuntime = loadStorefrontRuntimeState(storageScope);
     const runtimeToApply =
       hasStorefrontRuntimeStateData(runtimeFromServer) || !savedRuntime ? runtimeFromServer : savedRuntime;
 
@@ -549,7 +552,7 @@ export default function StorefrontShell({
       lastRuntimeSyncedPayloadRef.current = JSON.stringify(storefrontRuntimeStateToPayload(runtimeToApply));
     }
     runtimeHydratedRef.current = true;
-  }, [initialRuntimeState, initialStoreName, initialStoreSettings]);
+  }, [initialRuntimeState, initialStoreName, initialStoreSettings, storageScope]);
 
   useEffect(() => {
     setCatalogProducts(initialCatalog.filter((item) => item.active !== false));
@@ -564,7 +567,7 @@ export default function StorefrontShell({
       productDescriptions,
       storePriceOverrides
     });
-    saveStorefrontRuntimeState(runtimeState);
+    saveStorefrontRuntimeState(runtimeState, storageScope);
 
     const runtimePayload = storefrontRuntimeStateToPayload(runtimeState);
     const serializedPayload = JSON.stringify(runtimePayload);
@@ -599,7 +602,7 @@ export default function StorefrontShell({
         runtimeSyncTimerRef.current = null;
       }
     };
-  }, [activeProducts, promotions, hiddenProductIds, productDescriptions, storePriceOverrides]);
+  }, [activeProducts, promotions, hiddenProductIds, productDescriptions, storePriceOverrides, storageScope]);
 
   useEffect(() => {
     if (!storeLinkFeedback) return;
@@ -1633,7 +1636,7 @@ export default function StorefrontShell({
         throw new Error(payload?.message || 'Nao foi possivel aceitar este pedido.');
       }
       if (typeof window !== 'undefined') {
-        window.localStorage.setItem(SALES_SYNC_STORAGE_KEY, `${Date.now()}:${payload?.data?.sale_id || ''}`);
+        window.localStorage.setItem(salesSyncStorageKey, `${Date.now()}:${payload?.data?.sale_id || ''}`);
       }
       await Promise.all([refreshOrders(), refreshCatalog()]);
       closeAcceptSaleModal();

@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import {
+  buildTenantStorageScope,
   fetchList,
   getDateRangeFromSearchParams,
   getStringParam,
   isInDateRange
 } from '../lib';
+import { auth } from '../../../auth';
 import PurchasesPanel from './purchases-panel';
 
 type Purchase = {
@@ -58,12 +60,17 @@ export default async function ComprasPage({
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
+  const session = await auth();
   const resolvedParams = (await searchParams) ?? {};
   const [purchasesResponse, resellerBrandsResponse, productsResponse] = await Promise.all([
     fetchList<Purchase>('/purchases'),
     fetchList<ResellerBrand>('/settings/brands'),
     fetchList<Product>('/inventory/products')
   ]);
+  const storageScope = buildTenantStorageScope(
+    (session?.user as { organizationId?: string } | undefined)?.organizationId,
+    (session?.user as { storeId?: string } | undefined)?.storeId
+  );
 
   const purchases = purchasesResponse?.data ?? [];
   const products = productsResponse?.data ?? [];
@@ -111,6 +118,7 @@ export default async function ComprasPage({
         products={products}
         initialCreateOpen={initialCreateOpen}
         initialOpenPurchaseId={initialOpenPurchaseId}
+        storageScope={storageScope}
       />
     </main>
   );

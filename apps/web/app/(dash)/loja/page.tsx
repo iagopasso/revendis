@@ -1,6 +1,8 @@
 import StorefrontShell from '../storefront-shell';
 import { fetchItem, fetchList } from '../lib';
+import { auth } from '../../../auth';
 import {
+  buildStorefrontStorageScope,
   storefrontRuntimeStateFromPayload,
   storefrontSettingsFromPayload,
   type StorefrontRuntimeState,
@@ -23,6 +25,7 @@ type StoreCatalogProduct = {
 };
 
 export default async function LojaPage() {
+  const session = await auth();
   const [catalogResponse, settingsResponse] = await Promise.all([
     fetchList<StoreCatalogProduct>('/storefront/catalog'),
     fetchItem<Partial<StorefrontSettingsPayload> & { runtimeState?: Partial<StorefrontRuntimeState> }>(
@@ -38,6 +41,10 @@ export default async function LojaPage() {
   const initialRuntimeState = storefrontRuntimeStateFromPayload(settingsResponse?.data?.runtimeState || null);
   const initialStoreLogoUrl =
     typeof settingsResponse?.data?.logoUrl === 'string' ? settingsResponse.data.logoUrl.trim() : '';
+  const storageScope = buildStorefrontStorageScope(
+    (session?.user as { organizationId?: string } | undefined)?.organizationId,
+    (session?.user as { storeId?: string } | undefined)?.storeId
+  );
 
   return (
     <StorefrontShell
@@ -46,6 +53,7 @@ export default async function LojaPage() {
       initialStoreSettings={initialSettings}
       initialStoreLogoUrl={initialStoreLogoUrl}
       initialRuntimeState={initialRuntimeState}
+      storageScope={storageScope}
     />
   );
 }

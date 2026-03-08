@@ -142,3 +142,13 @@ export const accessMemberUpdateSchema = accessMemberInputSchema
   .refine((payload) => Object.keys(payload).length > 0, {
     message: 'Informe ao menos um campo para atualizar.'
   });
+
+export const accessSeparateAccountInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    email: z.string().trim().email().max(255),
+    password: z.string().min(6).max(72),
+    role: roleSchema.optional(),
+    active: z.boolean().optional()
+  })
+  .strict();

@@ -45,6 +45,18 @@ type AccessMember = {
   role: string;
   active: boolean;
   created_at?: string;
+  store_id?: string | null;
+  store_name?: string | null;
+};
+
+type AccessMigrationResult = AccessMember & {
+  previous_store_id?: string | null;
+};
+
+type AccessMigrationResponse = {
+  primaryMember: AccessMember;
+  migratedMembers: AccessMigrationResult[];
+  remainingMembers: AccessMember[];
 };
 
 type CatalogBrandOption = {
@@ -80,6 +92,9 @@ type AccessForm = {
   email: string;
   role: string;
   active: boolean;
+  createSeparateAccount: boolean;
+  password: string;
+  confirmPassword: string;
 };
 
 type BrandEditForm = {
@@ -111,7 +126,7 @@ const sectionDescription: Record<SettingsSection, string> = {
   conta: 'Atualize dados basicos da conta e informacoes do negocio.',
   marcas: 'Adicione as marcas que voce revende para seus clientes.',
   aparencia: 'Escolha entre modo claro e modo escuro para o painel web.',
-  acessos: 'Controle membros da equipe e niveis de permissao.'
+  acessos: 'Crie acessos da equipe na mesma loja ou contas separadas com loja propria.'
 };
 
 const sourcePillLabel: Record<BrandSource, string> = {
@@ -211,7 +226,10 @@ const defaultAccessForm: AccessForm = {
   name: '',
   email: '',
   role: 'seller',
-  active: true
+  active: true,
+  createSeparateAccount: false,
+  password: '',
+  confirmPassword: ''
 };
 
 export default function SettingsPanel({
@@ -280,6 +298,7 @@ export default function SettingsPanel({
   const [memberSaving, setMemberSaving] = useState(false);
   const [memberError, setMemberError] = useState<string | null>(null);
   const [memberToggleLoadingId, setMemberToggleLoadingId] = useState<string | null>(null);
+  const [memberMigrationLoading, setMemberMigrationLoading] = useState(false);
 
   useEffect(() => {
     setActiveSection(isSection(initialSection) ? initialSection : 'conta');
@@ -665,7 +684,10 @@ export default function SettingsPanel({
       name: member.name,
       email: member.email,
       role: member.role || 'seller',
-      active: member.active
+      active: member.active,
+      createSeparateAccount: false,
+      password: '',
+      confirmPassword: ''
     });
     setMemberError(null);
     setMemberSaving(false);
@@ -683,14 +705,59 @@ export default function SettingsPanel({
     const name = memberForm.name.trim();
     const email = memberForm.email.trim().toLowerCase();
     const role = memberForm.role.trim().toLowerCase() || 'seller';
+    const creatingSeparateAccount = memberModalMode === 'create' && memberForm.createSeparateAccount;
+    const password = memberForm.password;
+    const confirmPassword = memberForm.confirmPassword;
 
     if (!name) {
-      setMemberError('Informe o nome do membro.');
+      setMemberError(creatingSeparateAccount ? 'Informe o nome da conta.' : 'Informe o nome do membro.');
       return;
     }
 
     if (!email) {
-      setMemberError('Informe um email valido.');
+      setMemberError(creatingSeparateAccount ? 'Informe um email valido para a conta.' : 'Informe um email valido.');
+      return;
+    }
+
+    if (creatingSeparateAccount) {
+      if (password.length < 6) {
+        setMemberError('Defina uma senha com pelo menos 6 caracteres.');
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setMemberError('A confirmacao da senha nao confere.');
+        return;
+      }
+
+      setMemberSaving(true);
+      setMemberError(null);
+
+      try {
+        const res = await fetch(`${API_BASE}/settings/access/separate-account`, {
+          method: 'POST',
+          headers: buildMutationHeaders(),
+          body: JSON.stringify({
+            name,
+            email,
+            password
+          })
+        });
+
+        const body = (await res.json().catch(() => null)) as { data?: AccessMember; message?: string } | null;
+        if (!res.ok || !body?.data) {
+          setMemberError(normalizeApiMessage(body, 'Erro ao criar conta.'));
+          return;
+        }
+
+        setMembers((prev) => [...prev, body.data as AccessMember]);
+        closeMemberModal();
+        setToast('Conta criada com loja propria na mesma operacao');
+      } catch {
+        setMemberError('Erro ao criar conta.');
+      } finally {
+        setMemberSaving(false);
+      }
       return;
     }
 
@@ -759,6 +826,46 @@ export default function SettingsPanel({
       setToast('Erro ao atualizar acesso');
     } finally {
       setMemberToggleLoadingId(null);
+    }
+  };
+
+  const handleMigrateLegacyMembers = async () => {
+    if (members.length <= 1 || memberMigrationLoading) return;
+
+    const confirmed = window.confirm(
+      'Isso vai criar uma loja propria para cada conta antiga que ainda usa a loja principal. A conta principal mantera a loja atual. Deseja continuar?'
+    );
+    if (!confirmed) return;
+
+    setMemberMigrationLoading(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/settings/access/migrate-legacy`, {
+        method: 'POST',
+        headers: buildMutationHeaders(),
+        body: JSON.stringify({})
+      });
+
+      const body = (await res.json().catch(() => null)) as
+        | { data?: AccessMigrationResponse; message?: string }
+        | null;
+
+      if (!res.ok || !body?.data) {
+        setToast(normalizeApiMessage(body, 'Erro ao migrar contas antigas.'));
+        return;
+      }
+
+      setMembers(body.data.remainingMembers);
+      const migratedCount = body.data.migratedMembers.length;
+      setToast(
+        migratedCount > 0
+          ? `${migratedCount} conta${migratedCount === 1 ? '' : 's'} antiga${migratedCount === 1 ? '' : 's'} migrada${migratedCount === 1 ? '' : 's'} para lojas proprias`
+          : 'Nenhuma conta antiga compartilhada encontrada'
+      );
+    } catch {
+      setToast('Erro ao migrar contas antigas.');
+    } finally {
+      setMemberMigrationLoading(false);
     }
   };
 
@@ -992,11 +1099,28 @@ export default function SettingsPanel({
   const renderAccessSection = () => (
     <div className="settings-access-panel">
       <div className="settings-access-toolbar">
-        <span className="meta">Membros cadastrados: {members.length}</span>
-        <button className="button primary settings-brand-add" type="button" onClick={openCreateMember}>
-          <IconPlus />
-          Adicionar acesso
-        </button>
+        <div className="settings-access-toolbar-copy">
+          <span className="meta">Membros cadastrados: {members.length}</span>
+          {members.length > 1 ? (
+            <span className="meta">Para contas antigas compartilhadas, use a migracao manual abaixo.</span>
+          ) : null}
+        </div>
+        <div className="settings-access-toolbar-actions">
+          {members.length > 1 ? (
+            <button
+              className="button ghost"
+              type="button"
+              disabled={memberMigrationLoading}
+              onClick={handleMigrateLegacyMembers}
+            >
+              {memberMigrationLoading ? 'Migrando...' : 'Migrar contas antigas'}
+            </button>
+          ) : null}
+          <button className="button primary settings-brand-add" type="button" onClick={openCreateMember}>
+            <IconPlus />
+            Adicionar acesso
+          </button>
+        </div>
       </div>
 
       {members.length === 0 ? (
@@ -1010,6 +1134,7 @@ export default function SettingsPanel({
                   {member.name}
                 </button>
                 <span className="meta">{member.email}</span>
+                <span className="meta">Loja: {member.store_name || 'Loja principal'}</span>
                 <span className="meta">Criado em {formatMemberDate(member.created_at)}</span>
               </div>
               <div className="settings-access-meta">
@@ -1341,18 +1466,45 @@ export default function SettingsPanel({
         <div className="modal-backdrop" onClick={closeMemberModal}>
           <div className="modal modal-settings-member" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <h3>{memberModalMode === 'create' ? 'Novo acesso' : 'Editar acesso'}</h3>
+              <h3>
+                {memberModalMode === 'create'
+                  ? memberForm.createSeparateAccount
+                    ? 'Nova conta'
+                    : 'Novo acesso'
+                  : 'Editar acesso'}
+              </h3>
               <button className="modal-close" type="button" onClick={closeMemberModal}>
                 ✕
               </button>
             </div>
 
             <div className="settings-member-grid">
+              {memberModalMode === 'create' ? (
+                <label className="settings-toggle-row">
+                  <span>Criar conta separada com loja propria</span>
+                  <input
+                    type="checkbox"
+                    checked={memberForm.createSeparateAccount}
+                    onChange={(event) => {
+                      setMemberForm((prev) => ({
+                        ...prev,
+                        createSeparateAccount: event.target.checked,
+                        role: event.target.checked ? 'seller' : prev.role,
+                        active: event.target.checked ? true : prev.active,
+                        password: '',
+                        confirmPassword: ''
+                      }));
+                      if (memberError) setMemberError(null);
+                    }}
+                  />
+                </label>
+              ) : null}
+
               <label className="modal-field">
                 <span>Nome</span>
                 <input
                   value={memberForm.name}
-                  placeholder="Nome completo"
+                  placeholder={memberForm.createSeparateAccount ? 'Nome da nova conta' : 'Nome completo'}
                   onChange={(event) => {
                     setMemberForm((prev) => ({ ...prev, name: event.target.value }));
                     if (memberError) setMemberError(null);
@@ -1365,7 +1517,7 @@ export default function SettingsPanel({
                 <input
                   type="email"
                   value={memberForm.email}
-                  placeholder="usuario@empresa.com"
+                  placeholder={memberForm.createSeparateAccount ? 'nova-conta@empresa.com' : 'usuario@empresa.com'}
                   onChange={(event) => {
                     setMemberForm((prev) => ({ ...prev, email: event.target.value }));
                     if (memberError) setMemberError(null);
@@ -1373,34 +1525,72 @@ export default function SettingsPanel({
                 />
               </label>
 
-              <label className="modal-field">
-                <span>Perfil</span>
-                <select
-                  value={memberForm.role}
-                  onChange={(event) => {
-                    setMemberForm((prev) => ({ ...prev, role: event.target.value }));
-                    if (memberError) setMemberError(null);
-                  }}
-                >
-                  {roleOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {memberForm.createSeparateAccount && memberModalMode === 'create' ? (
+                <>
+                  <label className="modal-field">
+                    <span>Senha</span>
+                    <input
+                      type="password"
+                      value={memberForm.password}
+                      placeholder="Minimo de 6 caracteres"
+                      onChange={(event) => {
+                        setMemberForm((prev) => ({ ...prev, password: event.target.value }));
+                        if (memberError) setMemberError(null);
+                      }}
+                    />
+                  </label>
 
-              <label className="settings-toggle-row">
-                <span>Permitir acesso</span>
-                <input
-                  type="checkbox"
-                  checked={memberForm.active}
-                  onChange={(event) => {
-                    setMemberForm((prev) => ({ ...prev, active: event.target.checked }));
-                    if (memberError) setMemberError(null);
-                  }}
-                />
-              </label>
+                  <label className="modal-field">
+                    <span>Confirmar senha</span>
+                    <input
+                      type="password"
+                      value={memberForm.confirmPassword}
+                      placeholder="Repita a senha"
+                      onChange={(event) => {
+                        setMemberForm((prev) => ({ ...prev, confirmPassword: event.target.value }));
+                        if (memberError) setMemberError(null);
+                      }}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className="modal-field">
+                    <span>Perfil</span>
+                    <select
+                      value={memberForm.role}
+                      onChange={(event) => {
+                        setMemberForm((prev) => ({ ...prev, role: event.target.value }));
+                        if (memberError) setMemberError(null);
+                      }}
+                    >
+                      {roleOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="settings-toggle-row">
+                    <span>Permitir acesso</span>
+                    <input
+                      type="checkbox"
+                      checked={memberForm.active}
+                      onChange={(event) => {
+                        setMemberForm((prev) => ({ ...prev, active: event.target.checked }));
+                        if (memberError) setMemberError(null);
+                      }}
+                    />
+                  </label>
+                </>
+              )}
+
+              {memberForm.createSeparateAccount && memberModalMode === 'create' ? (
+                <div className="meta">
+                  Essa conta tera uma loja propria na mesma operacao e entrara vendo apenas o estoque dessa loja.
+                </div>
+              ) : null}
             </div>
 
             {memberError ? <div className="field-error">{memberError}</div> : null}
@@ -1410,7 +1600,13 @@ export default function SettingsPanel({
                 Cancelar
               </button>
               <button className="button primary" type="button" onClick={handleSubmitMember} disabled={memberSaving}>
-                {memberSaving ? 'Salvando...' : memberModalMode === 'create' ? 'Adicionar acesso' : 'Salvar acesso'}
+                {memberSaving
+                  ? 'Salvando...'
+                  : memberModalMode === 'create'
+                    ? memberForm.createSeparateAccount
+                      ? 'Criar conta'
+                      : 'Adicionar acesso'
+                    : 'Salvar acesso'}
               </button>
             </div>
           </div>

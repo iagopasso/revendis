@@ -2,6 +2,7 @@ import type { PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { Router } from 'express';
 import type {
   AccessMemberInput,
+  AccessSeparateAccountInput,
   AccessMemberUpdateInput,
   SettingsAccountInput,
   SettingsAccountPasswordInput,
@@ -16,6 +17,7 @@ import { validateRequest } from '../middleware/validate';
 import { idParamSchema } from '../schemas/common';
 import {
   accessMemberInputSchema,
+  accessSeparateAccountInputSchema,
   accessMemberUpdateSchema,
   settingsAccountPasswordUpdateSchema,
   settingsAccountUpdateSchema,
@@ -24,6 +26,12 @@ import {
   settingsStorefrontUpdateSchema,
   settingsSubscriptionUpdateSchema
 } from '../schemas/settings';
+import {
+  createStoreForOrganizationMember,
+  ensurePrimaryStoreForOrganizationInClient,
+  ensureUserStoreAssignment,
+  ensureUserStoreColumn
+} from '../services/account-provisioning';
 import { asyncHandler } from '../utils/async-handler';
 import { writeAudit } from '../utils/audit';
 
@@ -141,6 +149,17 @@ type AccessMemberRow = {
   role: string;
   active: boolean;
   created_at: string;
+  store_id: string | null;
+  store_name: string | null;
+};
+
+type AccessMigrationMemberRow = AccessMemberRow & {
+  has_credentials: boolean;
+  keep_priority: number;
+};
+
+type AccessMigrationResultRow = AccessMemberRow & {
+  previous_store_id: string | null;
 };
 
 const router = Router();
@@ -646,6 +665,115 @@ const selectCurrentUserForAccount = async (
   );
 
   return byEmailResult.rows[0] || null;
+};
+
+const selectAccessMembers = async (db: DbExecutor, orgId: string) => {
+  await ensureUserStoreColumn();
+  const result = await db.query<AccessMemberRow>(
+    `SELECT u.id,
+            u.name,
+            u.email,
+            u.role,
+            u.active,
+            u.created_at,
+            u.store_id,
+            s.name AS store_name
+     FROM users u
+     LEFT JOIN stores s ON s.id = u.store_id
+     WHERE u.organization_id = $1
+     ORDER BY u.created_at ASC`,
+    [orgId]
+  );
+
+  return result.rows;
+};
+
+const selectAccessMembersForMigration = async (db: DbExecutor, orgId: string) => {
+  await ensureUserStoreColumn();
+  const result = await db.query<AccessMigrationMemberRow>(
+    `SELECT u.id,
+            u.name,
+            u.email,
+            u.role,
+            u.active,
+            u.created_at,
+            u.store_id,
+            s.name AS store_name,
+            creds.has_credentials,
+            CASE
+              WHEN NULLIF(lower(COALESCE(os.owner_email, '')), '') IS NOT NULL
+                AND lower(u.email) = lower(os.owner_email) THEN 0
+              WHEN lower(COALESCE(u.role, '')) = 'owner' THEN 1
+              WHEN creds.has_credentials THEN 2
+              ELSE 3
+            END AS keep_priority
+     FROM users u
+     LEFT JOIN organization_settings os ON os.organization_id = u.organization_id
+     LEFT JOIN stores s ON s.id = u.store_id
+     LEFT JOIN LATERAL (
+       SELECT EXISTS (
+         SELECT 1
+         FROM user_credentials c
+         WHERE c.user_id = u.id
+       ) AS has_credentials
+     ) creds ON TRUE
+     WHERE u.organization_id = $1
+     ORDER BY keep_priority ASC, u.created_at ASC, u.id ASC`,
+    [orgId]
+  );
+
+  const primaryMember = result.rows[0] || null;
+  return {
+    primaryMember,
+    members: result.rows
+  };
+};
+
+const isPrimaryMigrationUser = (
+  primaryMember: AccessMemberRow | null,
+  currentUserId: string,
+  currentUserEmail: string
+) => {
+  if (!primaryMember) return false;
+
+  const normalizedUserId = normalizeUuid(currentUserId);
+  if (normalizedUserId) return primaryMember.id === normalizedUserId;
+
+  return Boolean(currentUserEmail) && primaryMember.email.trim().toLowerCase() === currentUserEmail;
+};
+
+const findAccessMemberById = async (db: DbExecutor, orgId: string, memberId: string) => {
+  await ensureUserStoreColumn();
+  const result = await db.query<AccessMemberRow>(
+    `SELECT u.id,
+            u.name,
+            u.email,
+            u.role,
+            u.active,
+            u.created_at,
+            u.store_id,
+            s.name AS store_name
+     FROM users u
+     LEFT JOIN stores s ON s.id = u.store_id
+     WHERE u.organization_id = $1
+       AND u.id = $2
+     LIMIT 1`,
+    [orgId, memberId]
+  );
+
+  return result.rows[0] || null;
+};
+
+const selectLegacySharedMembers = (
+  members: AccessMigrationMemberRow[],
+  primaryMemberId: string,
+  primaryStoreId: string
+) => {
+  return members.filter((member) => {
+    if (member.id === primaryMemberId) return false;
+    const normalizedStoreId = normalizeUuid(member.store_id);
+    return !normalizedStoreId || normalizedStoreId === primaryStoreId;
+  });
 };
 
 router.get(
@@ -1289,14 +1417,158 @@ router.get(
   '/settings/access',
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
-    const result = await query<AccessMemberRow>(
-      `SELECT id, name, email, role, active, created_at
-       FROM users
-       WHERE organization_id = $1
-       ORDER BY created_at ASC`,
-      [orgId]
-    );
-    res.json({ data: result.rows });
+    const members = await selectAccessMembers({ query }, orgId);
+    res.json({ data: members });
+  })
+);
+
+router.post(
+  '/settings/access/migrate-legacy',
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const currentUserId = normalizeUuid(req.header('x-user-id'));
+    const currentUserEmail = `${req.header('x-user-email') || ''}`.trim().toLowerCase();
+
+    if (!currentUserId && !currentUserEmail) {
+      return res.status(401).json({
+        code: 'unauthorized',
+        message: 'Entre novamente com a conta principal para migrar os acessos antigos.'
+      });
+    }
+
+    const migrationResult = await withTransaction(async (client) => {
+      await ensureUserStoreColumn();
+      await ensureSettingsRow(client, orgId);
+
+      const { primaryMember, members } = await selectAccessMembersForMigration(client, orgId);
+      if (!primaryMember) {
+        return { status: 'not_found' as const };
+      }
+
+      const primaryStoreId = await ensureUserStoreAssignment(client, {
+        userId: primaryMember.id,
+        organizationId: orgId,
+        preferredStoreId: primaryMember.store_id
+      });
+      if (!primaryStoreId) {
+        return { status: 'not_found' as const };
+      }
+
+      const hydratedPrimaryMember =
+        (await findAccessMemberById(client, orgId, primaryMember.id)) || {
+          ...primaryMember,
+          store_id: primaryStoreId,
+          store_name: primaryMember.store_name
+        };
+
+      if (!isPrimaryMigrationUser(hydratedPrimaryMember, currentUserId, currentUserEmail)) {
+        return {
+          status: 'forbidden' as const,
+          primaryMember: hydratedPrimaryMember
+        };
+      }
+
+      const legacyMembers = selectLegacySharedMembers(members, hydratedPrimaryMember.id, primaryStoreId);
+      if (legacyMembers.length === 0) {
+        const remainingMembers = await selectAccessMembers(client, orgId);
+        return {
+          status: 'noop' as const,
+          primaryMember: hydratedPrimaryMember,
+          migratedMembers: [] as AccessMigrationResultRow[],
+          remainingMembers
+        };
+      }
+
+      const migratedMembers: AccessMigrationResultRow[] = [];
+
+      for (const member of legacyMembers) {
+        const previousStoreId = normalizeUuid(member.store_id) || primaryStoreId;
+        const createdStore = await createStoreForOrganizationMember(client, {
+          organizationId: orgId,
+          accountName: member.name
+        });
+        if (!createdStore.storeId) continue;
+
+        await client.query(
+          `UPDATE users
+           SET store_id = $2
+           WHERE id = $1
+             AND organization_id = $3`,
+          [member.id, createdStore.storeId, orgId]
+        );
+
+        const migratedMember = await findAccessMemberById(client, orgId, member.id);
+        if (migratedMember) {
+          migratedMembers.push({
+            ...migratedMember,
+            previous_store_id: previousStoreId
+          });
+        }
+
+        await writeAudit(client, {
+          organizationId: orgId,
+          storeId: createdStore.storeId,
+          userId: currentUserId || primaryMember.id,
+          entityType: 'settings_access_migration',
+          entityId: member.id,
+          action: 'migrated_to_store',
+          payload: {
+            previousStoreId,
+            nextStoreId: createdStore.storeId,
+            email: member.email
+          }
+        });
+      }
+
+      const remainingMembers = await selectAccessMembers(client, orgId);
+
+      await writeAudit(client, {
+        organizationId: orgId,
+        storeId: primaryStoreId,
+        userId: currentUserId || primaryMember.id,
+        entityType: 'settings_access_migration',
+        entityId: primaryMember.id,
+        action: 'migrated_legacy_accounts',
+        payload: {
+          primaryUserId: hydratedPrimaryMember.id,
+          primaryStoreId,
+          migratedUsers: migratedMembers.map((member) => ({
+            userId: member.id,
+            previousStoreId: member.previous_store_id,
+            storeId: member.store_id
+          }))
+        }
+      });
+
+      return {
+        status: 'migrated' as const,
+        primaryMember: hydratedPrimaryMember,
+        migratedMembers,
+        remainingMembers
+      };
+    });
+
+    if (migrationResult.status === 'not_found') {
+      return res.status(404).json({
+        code: 'not_found',
+        message: 'Nenhuma conta encontrada para esta loja.'
+      });
+    }
+
+    if (migrationResult.status === 'forbidden') {
+      return res.status(403).json({
+        code: 'primary_account_required',
+        message: `Entre com a conta principal (${migrationResult.primaryMember.email}) para migrar os acessos antigos.`
+      });
+    }
+
+    return res.json({
+      data: {
+        primaryMember: migrationResult.primaryMember,
+        migratedMembers: migrationResult.migratedMembers,
+        remainingMembers: migrationResult.remainingMembers
+      }
+    });
   })
 );
 
@@ -1305,17 +1577,21 @@ router.post(
   validateRequest({ body: accessMemberInputSchema }),
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const currentStoreId = normalizeUuid(req.header('x-store-id'));
     const userId = req.header('x-user-id') || null;
     const payload = req.body as AccessMemberInput;
 
     try {
       const created = await withTransaction(async (client) => {
-        const inserted = await client.query<AccessMemberRow>(
-          `INSERT INTO users (organization_id, name, email, role, active)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id, name, email, role, active, created_at`,
+        await ensureUserStoreColumn();
+        const storeId = currentStoreId || (await ensurePrimaryStoreForOrganizationInClient(client, orgId));
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO users (organization_id, store_id, name, email, role, active)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`,
           [
             orgId,
+            storeId,
             payload.name.trim(),
             payload.email.trim().toLowerCase(),
             normalizeRole(payload.role),
@@ -1323,14 +1599,92 @@ router.post(
           ]
         );
 
-        const member = inserted.rows[0];
+        const member = await findAccessMemberById(client, orgId, inserted.rows[0].id);
+        if (!member) {
+          throw new Error('failed_to_create_access_member');
+        }
 
         await writeAudit(client, {
           organizationId: orgId,
+          storeId: storeId || null,
           userId,
           entityType: 'settings_access',
           entityId: member.id,
           action: 'created',
+          payload: {
+            role: member.role,
+            active: member.active
+          }
+        });
+
+        return member;
+      });
+
+      return res.status(201).json({ data: created });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        return res.status(409).json({
+          code: 'email_conflict',
+          message: 'Este email ja esta em uso por outro usuario.'
+        });
+      }
+      throw error;
+    }
+  })
+);
+
+router.post(
+  '/settings/access/separate-account',
+  validateRequest({ body: accessSeparateAccountInputSchema }),
+  asyncHandler(async (req, res) => {
+    const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const userId = req.header('x-user-id') || null;
+    const payload = req.body as AccessSeparateAccountInput;
+
+    try {
+      const created = await withTransaction(async (client) => {
+        await ensureUserStoreColumn();
+
+        const createdStore = await createStoreForOrganizationMember(client, {
+          organizationId: orgId,
+          accountName: payload.name
+        });
+        if (!createdStore.storeId) {
+          throw new Error('failed_to_create_member_store');
+        }
+
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO users (organization_id, store_id, name, email, role, active, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, now())
+           RETURNING id`,
+          [
+            orgId,
+            createdStore.storeId,
+            payload.name.trim(),
+            payload.email.trim().toLowerCase(),
+            normalizeRole(payload.role),
+            payload.active ?? true
+          ]
+        );
+
+        await client.query(
+          `INSERT INTO user_credentials (user_id, password_hash)
+           VALUES ($1, crypt($2, gen_salt('bf')))`,
+          [inserted.rows[0].id, payload.password]
+        );
+
+        const member = await findAccessMemberById(client, orgId, inserted.rows[0].id);
+        if (!member) {
+          throw new Error('failed_to_load_separate_account');
+        }
+
+        await writeAudit(client, {
+          organizationId: orgId,
+          storeId: createdStore.storeId,
+          userId,
+          entityType: 'settings_access',
+          entityId: member.id,
+          action: 'created_separate_account',
           payload: {
             role: member.role,
             active: member.active
@@ -1384,15 +1738,16 @@ router.patch(
 
     try {
       const updated = await withTransaction(async (client) => {
-        const result = await client.query<AccessMemberRow>(
+        const result = await client.query<{ id: string }>(
           `UPDATE users
            SET ${fields.join(', ')}
            WHERE id = $${fields.length + 1} AND organization_id = $${fields.length + 2}
-           RETURNING id, name, email, role, active, created_at`,
+           RETURNING id`,
           [...values, memberId, orgId]
         );
 
-        const member = result.rows[0] || null;
+        const memberIdResult = result.rows[0]?.id || '';
+        const member = memberIdResult ? await findAccessMemberById(client, orgId, memberIdResult) : null;
         if (!member) return null;
 
         await writeAudit(client, {

@@ -1348,6 +1348,19 @@ main {
   gap: 12px;
 }
 
+.settings-access-toolbar-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-access-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .settings-access-list {
   display: grid;
   gap: 10px;
@@ -11216,6 +11229,10 @@ html[data-theme='dark'] .modal.modal-receipt .receipt-actions .button.ghost:hove
   .settings-access-toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .settings-access-toolbar-actions {
+    justify-content: stretch;
   }
 
   .settings-access-card {

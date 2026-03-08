@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import app from '../../app';
-import { closePool, ping } from '../../db';
+import { closePool, ping, query } from '../../db';
 
 let dbReady = false;
 
@@ -69,4 +70,54 @@ test('returns explicit conflict message when trying to create duplicated product
   expect(secondCreate.status).toBe(409);
   expect(secondCreate.body.code).toBe('product_already_exists');
   expect(secondCreate.body.message).toContain('Produto ja cadastrado');
+});
+
+test('applies manual stock adjustments to the current store from session headers', async () => {
+  if (!dbReady) {
+    return;
+  }
+
+  const timestamp = Date.now();
+  const organizationId = randomUUID();
+  const storeId = randomUUID();
+
+  await query(`INSERT INTO organizations (id, name) VALUES ($1, $2)`, [organizationId, `Org ${timestamp}`]);
+  await query(
+    `INSERT INTO stores (id, organization_id, name, timezone)
+     VALUES ($1, $2, $3, $4)`,
+    [storeId, organizationId, `Loja ${timestamp}`, 'America/Sao_Paulo']
+  );
+
+  const sku = `ADJ-${timestamp}`;
+  const createRes = await request(app)
+    .post('/api/inventory/products')
+    .set('x-org-id', organizationId)
+    .set('x-store-id', storeId)
+    .send({ name: 'Produto Ajuste', sku, price: 19.9 });
+
+  expect(createRes.status).toBe(201);
+
+  const adjustRes = await request(app)
+    .post('/api/inventory/adjustments')
+    .set('x-org-id', organizationId)
+    .set('x-store-id', storeId)
+    .send({
+      sku,
+      quantity: 3,
+      reason: 'manual_add'
+    });
+
+  expect(adjustRes.status).toBe(201);
+  expect(adjustRes.body.data.storeId).toBe(storeId);
+
+  const listRes = await request(app)
+    .get('/api/inventory/products')
+    .set('x-org-id', organizationId)
+    .set('x-store-id', storeId);
+
+  expect(listRes.status).toBe(200);
+  const adjustedProduct = (listRes.body.data as Array<{ sku: string; quantity: number | string }>).find(
+    (item) => item.sku === sku
+  );
+  expect(Number(adjustedProduct?.quantity || 0)).toBe(3);
 });

@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import type { CustomerInput } from '../dto';
-import { DEFAULT_ORG_ID } from '../config';
+import { DEFAULT_ORG_ID, DEFAULT_STORE_ID } from '../config';
 import { query, withTransaction } from '../db';
 import { validateRequest } from '../middleware/validate';
 import { idParamSchema } from '../schemas/common';
 import { customerInputSchema, customerUpdateSchema } from '../schemas/customers';
+import { ensureCustomerStoreColumn } from '../services/customer-store';
 import { asyncHandler } from '../utils/async-handler';
 import { writeAudit } from '../utils/audit';
 
@@ -19,6 +20,8 @@ router.get(
   '/customers',
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
+    await ensureCustomerStoreColumn();
     const result = await query(
       `SELECT id,
               name,
@@ -39,9 +42,10 @@ router.get(
               created_at
        FROM customers
        WHERE organization_id = $1
+         AND store_id = $2
        ORDER BY created_at DESC
        LIMIT 200`,
-      [orgId]
+      [orgId, storeId]
     );
     res.json({ data: result.rows });
   })
@@ -52,14 +56,16 @@ router.get(
   validateRequest({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const customerId = req.params.id;
+    await ensureCustomerStoreColumn();
 
     const customerRes = await query<{ id: string; name: string }>(
       `SELECT id, name
        FROM customers
-       WHERE id = $1 AND organization_id = $2
+       WHERE id = $1 AND organization_id = $2 AND store_id = $3
        LIMIT 1`,
-      [customerId, orgId]
+      [customerId, orgId, storeId]
     );
 
     const customer = customerRes.rows[0];
@@ -79,8 +85,7 @@ router.get(
                 s.total,
                 s.created_at
          FROM sales s
-         INNER JOIN stores st ON st.id = s.store_id
-         WHERE st.organization_id = $1
+         WHERE s.store_id = $1
            AND (
              s.customer_id = $2
              OR (
@@ -109,7 +114,7 @@ router.get(
        FROM base_sales bs
        LEFT JOIN item_totals items ON items.sale_id = bs.id
        ORDER BY bs.created_at DESC`,
-      [orgId, customerId, customer.name]
+      [storeId, customerId, customer.name]
     );
 
     return res.json({ data: salesRes.rows });
@@ -121,7 +126,9 @@ router.post(
   validateRequest({ body: customerInputSchema }),
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const userId = req.header('x-user-id') || null;
+    await ensureCustomerStoreColumn();
     const {
       name,
       phone,
@@ -153,6 +160,7 @@ router.post(
       const created = await client.query(
         `INSERT INTO customers (
            organization_id,
+           store_id,
            name,
            phone,
            email,
@@ -185,7 +193,8 @@ router.post(
            $13,
            $14,
            $15,
-           $16
+           $16,
+           $17
          )
          RETURNING id,
                    name,
@@ -206,6 +215,7 @@ router.post(
                    created_at`,
         [
           orgId,
+          storeId,
           name,
           phone,
           normalizeOptional(email),
@@ -226,6 +236,7 @@ router.post(
 
       await writeAudit(client, {
         organizationId: orgId,
+        storeId,
         userId,
         entityType: 'customer',
         entityId: created.rows[0].id,
@@ -250,9 +261,11 @@ router.patch(
   validateRequest({ params: idParamSchema, body: customerUpdateSchema }),
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const userId = req.header('x-user-id') || null;
     const customerId = req.params.id;
     const updates = req.body as Partial<CustomerInput>;
+    await ensureCustomerStoreColumn();
 
     const fields: string[] = [];
     const values: Array<string | string[] | null> = [];
@@ -350,13 +363,13 @@ router.patch(
       });
     }
 
-    values.push(customerId, orgId);
+    values.push(customerId, orgId, storeId);
 
     const updatedCustomer = await withTransaction(async (client) => {
       const updated = await client.query(
         `UPDATE customers
          SET ${fields.join(', ')}
-         WHERE id = $${index++} AND organization_id = $${index}
+         WHERE id = $${index++} AND organization_id = $${index++} AND store_id = $${index}
          RETURNING id,
                    name,
                    phone,
@@ -381,6 +394,7 @@ router.patch(
 
       await writeAudit(client, {
         organizationId: orgId,
+        storeId,
         userId,
         entityType: 'customer',
         entityId: customerId,
@@ -407,21 +421,24 @@ router.delete(
   validateRequest({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
+    const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const userId = req.header('x-user-id') || null;
     const customerId = req.params.id;
+    await ensureCustomerStoreColumn();
 
     const removed = await withTransaction(async (client) => {
       const result = await client.query(
         `DELETE FROM customers
-         WHERE id = $1 AND organization_id = $2
+         WHERE id = $1 AND organization_id = $2 AND store_id = $3
          RETURNING id`,
-        [customerId, orgId]
+        [customerId, orgId, storeId]
       );
 
       if (!result.rows.length) return result;
 
       await writeAudit(client, {
         organizationId: orgId,
+        storeId,
         userId,
         entityType: 'customer',
         entityId: customerId,
