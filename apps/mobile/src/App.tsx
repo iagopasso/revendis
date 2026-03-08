@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -645,6 +645,7 @@ const promotionStatusLabel = (status: 'active' | 'scheduled' | 'ended') => {
 
 export default function App() {
   const { width: screenWidth } = useWindowDimensions();
+  const contentScrollRef = useRef<ScrollView | null>(null);
   const [activeModule, setActiveModule] = useState<ModuleId>('dashboard');
   const [rangePreset, setRangePreset] = useState<RangePreset>('28d');
   const [connection, setConnection] = useState<ConnectionState>('checking');
@@ -2164,6 +2165,22 @@ export default function App() {
     });
   };
 
+  const handleModuleChange = useCallback(
+    (nextModule: ModuleId) => {
+      if (nextModule === activeModule) return;
+
+      contentScrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+
+      startTransition(() => {
+        if (nextModule === 'settings') {
+          setSettingsSection('account');
+        }
+        setActiveModule(nextModule);
+      });
+    },
+    [activeModule]
+  );
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
@@ -2210,12 +2227,7 @@ export default function App() {
             {MODULES.map((module) => (
               <Pressable
                 key={module.id}
-                onPress={() => {
-                  if (module.id === 'settings') {
-                    setSettingsSection('account');
-                  }
-                  setActiveModule(module.id);
-                }}
+                onPress={() => handleModuleChange(module.id)}
                 accessibilityLabel={module.label}
                 style={[styles.moduleTab, activeModule === module.id ? styles.moduleTabActive : null]}
               >
@@ -2254,6 +2266,7 @@ export default function App() {
               </View>
             ) : (
               <ScrollView
+                ref={contentScrollRef}
                 style={styles.content}
                 contentContainerStyle={styles.contentContainer}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadData('refresh')} />}
