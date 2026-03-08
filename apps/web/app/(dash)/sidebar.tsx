@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { API_BASE, buildMutationHeaders } from './lib';
 import {
@@ -41,6 +41,7 @@ type SidebarProps = {
 
 export default function Sidebar({ sessionUser }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const [accountActionLoading, setAccountActionLoading] = useState(false);
@@ -88,6 +89,33 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
     }, 2400);
     return () => window.clearTimeout(timer);
   }, [accountFeedback]);
+
+  useEffect(() => {
+    const hrefs = [...primaryNavItems.map((item) => item.href), '/notificacoes', '/configuracoes?section=conta'];
+    const prefetchRoutes = () => {
+      hrefs.forEach((href) => router.prefetch(href));
+    };
+    const requestIdle = window.requestIdleCallback?.bind(window);
+    const cancelIdle = window.cancelIdleCallback?.bind(window);
+
+    let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+    let idleId: number | null = null;
+
+    if (requestIdle) {
+      idleId = requestIdle(prefetchRoutes, { timeout: 1200 });
+    } else {
+      timeoutId = globalThis.setTimeout(prefetchRoutes, 180);
+    }
+
+    return () => {
+      if (idleId !== null && cancelIdle) {
+        cancelIdle(idleId);
+      }
+      if (timeoutId !== null) {
+        globalThis.clearTimeout(timeoutId);
+      }
+    };
+  }, [router]);
 
   const displayLabel = useMemo(() => {
     const base = (sessionUser.name || sessionUser.email || 'Perfil').trim();
@@ -167,6 +195,7 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
             <Link
               key={`${item.href}-${item.label}`}
               href={item.href}
+              prefetch
               className={isActive ? 'sidebar-icon-link active' : 'sidebar-icon-link'}
               aria-current={isActive ? 'page' : undefined}
               aria-label={item.label}
@@ -196,11 +225,11 @@ export default function Sidebar({ sessionUser }: SidebarProps) {
 
         {profileMenuOpen ? (
           <div className="profile-menu" role="menu" aria-label="Conta">
-            <Link href="/notificacoes" onClick={() => setProfileMenuOpen(false)}>
+            <Link href="/notificacoes" prefetch onClick={() => setProfileMenuOpen(false)}>
               <IconBell />
               Alertas
             </Link>
-            <Link href="/configuracoes?section=conta" onClick={() => setProfileMenuOpen(false)}>
+            <Link href="/configuracoes?section=conta" prefetch onClick={() => setProfileMenuOpen(false)}>
               <IconUser />
               Configurações
             </Link>

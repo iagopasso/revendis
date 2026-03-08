@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 import { IconCalendar, IconDollar, IconGift, IconTruck } from '../icons';
 
 type DashboardRemindersActionsProps = {
@@ -30,12 +30,18 @@ export default function DashboardRemindersActions({
   const [openBirthdayEmpty, setOpenBirthdayEmpty] = useState(false);
   const [openPendingEmpty, setOpenPendingEmpty] = useState(false);
 
+  useEffect(() => {
+    [expiringHref, birthdaysHref, pendingHref, notDeliveredHref].forEach((href) => router.prefetch(href));
+  }, [birthdaysHref, expiringHref, notDeliveredHref, pendingHref, router]);
+
   const handleBirthdayClick = () => {
     if (birthdaysCount <= 0) {
       setOpenBirthdayEmpty(true);
       return;
     }
-    router.push(birthdaysHref);
+    startTransition(() => {
+      router.push(birthdaysHref);
+    });
   };
 
   const handlePendingClick = () => {
@@ -43,13 +49,15 @@ export default function DashboardRemindersActions({
       setOpenPendingEmpty(true);
       return;
     }
-    router.push(pendingHref);
+    startTransition(() => {
+      router.push(pendingHref);
+    });
   };
 
   return (
     <>
       <div className="dashboard-reminders-grid">
-        <Link className="dashboard-reminder-card" href={expiringHref}>
+        <Link className="dashboard-reminder-card" href={expiringHref} prefetch>
           <span className="dashboard-reminder-main">
             <span className="dashboard-reminder-icon">
               <IconCalendar />
@@ -79,7 +87,7 @@ export default function DashboardRemindersActions({
           <strong className="dashboard-reminder-count">{pendingCount}</strong>
         </button>
 
-        <Link className="dashboard-reminder-card" href={notDeliveredHref}>
+        <Link className="dashboard-reminder-card" href={notDeliveredHref} prefetch>
           <span className="dashboard-reminder-main">
             <span className="dashboard-reminder-icon">
               <IconTruck />

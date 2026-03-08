@@ -232,7 +232,7 @@ export default async function DashboardPage({
       </div>
 
       <section className="dashboard-overview-grid">
-        <Link className="dashboard-overview-card" href={withRange('/compras')}>
+        <Link className="dashboard-overview-card" href={withRange('/compras')} prefetch>
           <div>
             <p className="dashboard-overview-label">Total em compras</p>
             <strong className="dashboard-overview-value">{formatCurrency(totalPurchases)}</strong>
@@ -242,7 +242,7 @@ export default async function DashboardPage({
           </span>
         </Link>
 
-        <Link className="dashboard-overview-card" href={withRange('/vendas')}>
+        <Link className="dashboard-overview-card" href={withRange('/vendas')} prefetch>
           <div>
             <p className="dashboard-overview-label">Total em vendas</p>
             <strong className="dashboard-overview-value">{formatCurrency(totalSales)}</strong>
@@ -252,7 +252,7 @@ export default async function DashboardPage({
           </span>
         </Link>
 
-        <Link className="dashboard-overview-card" href={withRange('/vendas')}>
+        <Link className="dashboard-overview-card" href={withRange('/vendas')} prefetch>
           <div>
             <p className="dashboard-overview-label">Lucro nas vendas</p>
             <strong className="dashboard-overview-value">{formatCurrency(salesProfit)}</strong>
@@ -262,7 +262,7 @@ export default async function DashboardPage({
           </span>
         </Link>
 
-        <Link className="dashboard-overview-card" href={withRange('/financeiro', { status: 'pending' })}>
+        <Link className="dashboard-overview-card" href={withRange('/financeiro', { status: 'pending' })} prefetch>
           <div>
             <p className="dashboard-overview-label">Total a receber</p>
             <strong className="dashboard-overview-value">{formatCurrency(totalReceivable)}</strong>
