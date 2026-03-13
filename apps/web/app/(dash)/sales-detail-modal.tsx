@@ -106,9 +106,9 @@ const paymentMethods = [
 ];
 
 const formatDate = (value: string) => {
-  const dateOnlyMatch = value.match(DATE_ONLY_REGEX);
-  if (dateOnlyMatch) {
-    const [, year, month, day] = dateOnlyMatch;
+  const datePrefixMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (datePrefixMatch) {
+    const [, year, month, day] = datePrefixMatch;
     return `${day}/${month}/${year}`;
   }
   const date = new Date(value);
@@ -214,6 +214,16 @@ const toUtcIsoDate = (value: Date) => {
   const month = String(value.getUTCMonth() + 1).padStart(2, '0');
   const day = String(value.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+const normalizeDateInput = (value?: string | null) => {
+  const raw = `${value || ''}`.trim();
+  if (!raw) return '';
+  const datePrefixMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (datePrefixMatch) return datePrefixMatch[1];
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return toUtcIsoDate(parsed);
 };
 
 const parseDateOnlyAsUtcNoon = (value: string) => {
@@ -324,7 +334,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
 
   useEffect(() => {
     if (!sale) return;
-    const dueDate = sale.dueDate ? sale.dueDate.split('T')[0] : sale.date.split('T')[0];
+    const dueDate = normalizeDateInput(sale.dueDate || sale.date) || toIsoDate(new Date());
     setDeliveryStatus(sale.status);
     setPaymentState({
       amount: sale.total,
@@ -1494,7 +1504,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
                             if (!target) return;
                             setEditTarget(target);
                             setEditAmount(formatCurrency(toNumber(target.amount)));
-                            setEditDueDate(target.due_date);
+                            setEditDueDate(normalizeDateInput(target.due_date) || toIsoDate(new Date()));
                             setEditMethod(target.method || '');
                             setEditOpen(true);
                           }}

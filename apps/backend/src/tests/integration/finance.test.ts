@@ -37,6 +37,8 @@ test('creates and lists receivables', async () => {
 
   expect(createRes.status).toBe(201);
   expect(createRes.body.data.sale_id).toBe(saleId);
+  expect(createRes.body.data.due_date).toBe('2026-01-31');
+  expect(createRes.body.data.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
   const listRes = await request(app).get('/api/finance/receivables');
   expect(listRes.status).toBe(200);
@@ -69,6 +71,8 @@ test('settles receivable', async () => {
 
   expect(settleRes.status).toBe(200);
   expect(settleRes.body.data.status).toBe('paid');
+  expect(settleRes.body.data.due_date).toBe('2026-01-31');
+  expect(settleRes.body.data.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 });
 
 test('lists finance payments from sales', async () => {

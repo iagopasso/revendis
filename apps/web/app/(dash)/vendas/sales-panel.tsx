@@ -311,11 +311,11 @@ const toIsoDate = (value: Date) => {
 const toInputDate = (value?: string | null) => {
   const raw = (value || '').trim();
   if (!raw) return toIsoDate(new Date());
-  const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (dateOnlyMatch) return `${dateOnlyMatch[1]}-${dateOnlyMatch[2]}-${dateOnlyMatch[3]}`;
+  const datePrefixMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (datePrefixMatch) return datePrefixMatch[1];
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return toIsoDate(new Date());
-  return toIsoDate(parsed);
+  return toUtcIsoDate(parsed);
 };
 
 const getProductNumericCode = (product?: Product | null) => {

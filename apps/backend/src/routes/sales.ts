@@ -638,7 +638,12 @@ router.get(
     );
 
     const receivablesRes = await query(
-      `SELECT id, amount, due_date, status, settled_at, method
+      `SELECT id,
+              amount,
+              TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date,
+              status,
+              settled_at,
+              method
        FROM receivables
        WHERE sale_id = $1
        ORDER BY due_date ASC`,

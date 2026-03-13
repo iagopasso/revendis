@@ -159,7 +159,14 @@ router.post(
       const created = await client.query(
         `INSERT INTO receivables (sale_id, amount, due_date, status, method)
          VALUES ($1, $2, $3, 'pending', $4)
-         RETURNING id, sale_id, amount, due_date, status, settled_at, method, created_at`,
+         RETURNING id,
+                   sale_id,
+                   amount,
+                   TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date,
+                   status,
+                   settled_at,
+                   method,
+                   created_at`,
         [saleId, amount, dueDate, method || null]
       );
 
@@ -199,7 +206,13 @@ router.post(
         `UPDATE receivables
          SET status = 'paid', settled_at = $2
          WHERE id = $1
-         RETURNING id, sale_id, amount, due_date, status, settled_at, method`,
+         RETURNING id,
+                   sale_id,
+                   amount,
+                   TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date,
+                   status,
+                   settled_at,
+                   method`,
         [id, settledAt]
       );
 
@@ -239,7 +252,13 @@ router.post(
         `UPDATE receivables
          SET status = 'pending', settled_at = NULL
          WHERE id = $1
-         RETURNING id, sale_id, amount, due_date, status, settled_at, method`,
+         RETURNING id,
+                   sale_id,
+                   amount,
+                   TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date,
+                   status,
+                   settled_at,
+                   method`,
         [id]
       );
 
@@ -301,7 +320,13 @@ router.patch(
         `UPDATE receivables
          SET ${fields.join(', ')}
          WHERE id = $${index}
-         RETURNING id, sale_id, amount, due_date, status, settled_at, method`,
+         RETURNING id,
+                   sale_id,
+                   amount,
+                   TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date,
+                   status,
+                   settled_at,
+                   method`,
         values
       );
 
