@@ -23,12 +23,54 @@ const buildError = (status: number, code: string, message: string) => {
   return error;
 };
 
+const toIsoDateFromParts = (year: number, month: number, day: number) => {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+  if (!Number.isFinite(parsed.getTime())) return null;
+  if (parsed.getUTCFullYear() !== year) return null;
+  if (parsed.getUTCMonth() + 1 !== month) return null;
+  if (parsed.getUTCDate() !== day) return null;
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
 const parseIsoDateInput = (value: string) => {
   const trimmed = value.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
-  const parsed = new Date(`${trimmed}T00:00:00Z`);
-  if (!Number.isFinite(parsed.getTime())) return null;
-  return trimmed;
+  if (!trimmed) return null;
+
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return toIsoDateFromParts(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]));
+  }
+
+  const isoPrefix = trimmed.match(/^(\d{4}-\d{2}-\d{2})T/);
+  if (isoPrefix?.[1]) {
+    return parseIsoDateInput(isoPrefix[1]);
+  }
+
+  const slashOrDashDate = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (slashOrDashDate) {
+    const first = Number(slashOrDashDate[1]);
+    const second = Number(slashOrDashDate[2]);
+    const year = Number(slashOrDashDate[3]);
+
+    const candidates: Array<{ day: number; month: number }> = [];
+    if (first > 12 && second <= 12) {
+      candidates.push({ day: first, month: second });
+    } else if (second > 12 && first <= 12) {
+      candidates.push({ day: second, month: first });
+    } else {
+      candidates.push({ day: first, month: second });
+      candidates.push({ day: second, month: first });
+    }
+
+    for (const candidate of candidates) {
+      const normalized = toIsoDateFromParts(year, candidate.month, candidate.day);
+      if (normalized) return normalized;
+    }
+  }
+
+  return null;
 };
 
 const toDateOnly = (value: unknown) => {
@@ -430,9 +472,24 @@ router.post(
     const orgId = req.header('x-org-id') || DEFAULT_ORG_ID;
     const storeId = req.header('x-store-id') || DEFAULT_STORE_ID;
     const userId = req.header('x-user-id') || null;
-    const { supplier, total, items, brand, orderNumber, status, purchaseDate, purchaseItems = [] } =
+    const { supplier, total, items, brand, orderNumber, status, purchaseDate, dueDate, purchaseItems = [] } =
       req.body as PurchaseInput;
     const nextStatus = status || 'pending';
+    const parsedPurchaseDate = purchaseDate ? parseIsoDateInput(purchaseDate) : null;
+    if (purchaseDate && !parsedPurchaseDate) {
+      return res.status(400).json({
+        code: 'invalid_payload',
+        message: 'Informe uma data da compra valida.'
+      });
+    }
+    const parsedDueDate = dueDate ? parseIsoDateInput(dueDate) : null;
+    if (dueDate && !parsedDueDate) {
+      return res.status(400).json({
+        code: 'invalid_payload',
+        message: 'Informe uma data de vencimento valida.'
+      });
+    }
+    const purchaseDateValue = parsedPurchaseDate || new Date().toISOString().slice(0, 10);
 
     try {
       const inserted = await withTransaction(async (client) => {
@@ -448,7 +505,7 @@ router.post(
             nextStatus,
             total,
             items,
-            purchaseDate || new Date().toISOString().slice(0, 10)
+            purchaseDateValue
           ]
         );
 
@@ -502,7 +559,8 @@ router.post(
             brand: normalizeOptional(brand) || undefined,
             status: nextStatus,
             total,
-            purchase_date: purchaseDate || new Date().toISOString().slice(0, 10)
+            purchase_date: purchaseDateValue,
+            due_date: parsedDueDate
           }
         });
 
@@ -520,7 +578,8 @@ router.post(
             brand: normalizeOptional(brand),
             orderNumber: normalizeOptional(orderNumber),
             status: nextStatus,
-            purchaseDate,
+            purchaseDate: purchaseDateValue,
+            dueDate: parsedDueDate,
             purchaseItemsCount: purchaseItems.length
           }
         });
@@ -609,7 +668,7 @@ router.patch(
       if (!parsedDate) {
         return res.status(400).json({
           code: 'invalid_payload',
-          message: 'Informe a data da compra no formato YYYY-MM-DD.'
+          message: 'Informe uma data da compra valida.'
         });
       }
       fields.push(`purchase_date = $${fields.length + 1}`);
@@ -623,7 +682,7 @@ router.patch(
       if (!parsedDueDate) {
         return res.status(400).json({
           code: 'invalid_payload',
-          message: 'Informe a data de vencimento no formato YYYY-MM-DD.'
+          message: 'Informe uma data de vencimento valida.'
         });
       }
     }

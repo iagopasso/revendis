@@ -2026,6 +2026,23 @@ html[data-theme='dark'] .modal.modal-purchase-view .purchase-view-product {
   height: 36px;
 }
 
+.sales-filters-panel .sales-customer-search {
+  min-height: 36px;
+  height: 36px;
+  min-width: 220px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border-color: #c9d4e3;
+  background: #edf2f8;
+  gap: 8px;
+}
+
+.sales-filters-panel .sales-customer-search input {
+  min-width: 0;
+  width: 100%;
+  font-size: 0.8rem;
+}
+
 .sales-page {
   gap: 20px;
 }
@@ -6959,6 +6976,10 @@ button.dashboard-reminder-card {
   font-weight: 700;
 }
 
+.sale-exit {
+  width: 100%;
+}
+
 .modal-add-product {
   width: min(520px, calc(100vw - 36px));
 }
@@ -10560,6 +10581,11 @@ html[data-theme='dark'] .modal.modal-receipt .receipt-actions .button.ghost:hove
   }
 
   .sales-filters-panel .toolbar-sales-group .sales-filter.menu-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .sales-filters-panel .sales-customer-search {
     width: 100%;
     min-width: 0;
   }
@@ -19857,6 +19883,19 @@ html[data-theme='dark'] .dashboard-reminder-card,
 html[data-theme='dark'] .store-overview-card {
   border-color: rgba(110, 141, 171, 0.32);
   background: linear-gradient(145deg, rgba(23, 35, 47, 0.9), rgba(19, 31, 42, 0.9));
+}
+
+html[data-theme='dark'] .sales-filters-panel .sales-customer-search {
+  border-color: rgba(110, 141, 171, 0.42);
+  background: rgba(18, 30, 42, 0.76);
+}
+
+html[data-theme='dark'] .sales-filters-panel .sales-customer-search input {
+  color: #e6f0fb;
+}
+
+html[data-theme='dark'] .sales-filters-panel .sales-customer-search input::placeholder {
+  color: rgba(201, 217, 235, 0.64);
 }
 
 html[data-theme='dark'] .dashboard-overview-card:hover,

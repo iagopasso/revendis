@@ -21,10 +21,8 @@ export const purchaseInputSchema = z
     brand: z.string().optional(),
     orderNumber: z.string().trim().min(1).optional(),
     status: purchaseStatusSchema.optional(),
-    purchaseDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .optional(),
+    purchaseDate: z.string().optional(),
+    dueDate: z.string().optional(),
     purchaseItems: z.array(purchaseItemSchema).optional()
   })
   .strict();

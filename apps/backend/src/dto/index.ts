@@ -148,6 +148,7 @@ export type PurchaseInput = {
   orderNumber?: string;
   status?: 'pending' | 'received' | 'cancelled';
   purchaseDate?: string;
+  dueDate?: string;
   purchaseItems?: PurchaseItemInput[];
 };
 

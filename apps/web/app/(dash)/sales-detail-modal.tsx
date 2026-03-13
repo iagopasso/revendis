@@ -106,6 +106,11 @@ const paymentMethods = [
 ];
 
 const formatDate = (value: string) => {
+  const dateOnlyMatch = value.match(DATE_ONLY_REGEX);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    return `${day}/${month}/${year}`;
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString('pt-BR');
@@ -1036,6 +1041,74 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     return true;
   };
 
+  const downloadReceiptPdfDirect = async ({
+    node,
+    format,
+    filename
+  }: {
+    node: HTMLElement;
+    format: 'a4' | 'thermal-80' | 'thermal-58';
+    filename: string;
+  }) => {
+    const blob = await buildPdfBlob({ element: node, format });
+    downloadBlob({ blob, filename });
+  };
+
+  const openNativeSaveAsPdf = async ({
+    printRoot,
+    title
+  }: {
+    printRoot: HTMLElement;
+    title: string;
+  }) => {
+    await printHtml({
+      html: printRoot.outerHTML,
+      title,
+      styles: `
+        html, body {
+          margin: 0;
+          padding: 0;
+          background: #ffffff;
+        }
+        body {
+          color: #0f172a;
+        }
+      `,
+      pageStyle: `
+        @page { size: auto; margin: 6mm; }
+        body { background: #ffffff !important; }
+        #print-root.receipt-body-digital {
+          width: 100% !important;
+          max-width: none !important;
+          margin: 0 auto !important;
+          padding: 0 !important;
+          background: #ffffff !important;
+        }
+        #print-root.receipt-body-digital .receipt-card-group {
+          width: min(420px, 100%) !important;
+          max-width: 420px !important;
+          margin: 0 auto !important;
+        }
+        #print-root.receipt-body-digital .receipt-card {
+          border: 1px solid rgba(100, 116, 139, 0.34) !important;
+          border-radius: 16px !important;
+          padding: 14px 16px !important;
+          box-shadow: none !important;
+        }
+        #print-root.receipt-body-digital .receipt-hero,
+        #print-root.receipt-body-digital .receipt-summary-table {
+          background: #edf2f7 !important;
+        }
+        #print-root.receipt-body-digital .receipt-print-footer {
+          position: static !important;
+          margin-top: 8px !important;
+          border-top: 1px solid #e2e8f0 !important;
+          padding-top: 8px !important;
+        }
+      `
+    });
+  };
+
   const handleDownloadReceipt = async () => {
     if (!sale) return;
     const mobileWeb = isMobileWeb();
@@ -1043,6 +1116,7 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
       receiptTab === 'digital'
         ? digitalReceiptRef.current?.querySelector<HTMLElement>('.receipt-card-group') ?? digitalReceiptRef.current
         : thermalReceiptRef.current?.querySelector<HTMLElement>('.receipt-thermal') ?? thermalReceiptRef.current;
+    const printRoot = receiptTab === 'digital' ? digitalReceiptRef.current : thermalReceiptRef.current;
     if (!node) {
       setToast('Extrato indisponivel para download');
       return;
@@ -1050,20 +1124,26 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     const filename = `venda-${sale.id}-${receiptTab}.pdf`;
     const format = receiptTab === 'digital' ? 'a4' : thermalFormat;
 
-    if (mobileWeb) {
-      const opened = openReceiptMobilePreview({
-        node,
-        title: `Extrato da venda #${sale.id}`,
-        mode: 'download'
-      });
-      setToast(opened ? 'Extrato aberto. Use compartilhar para salvar ou imprimir.' : 'Erro ao abrir extrato');
+    if (mobileWeb && receiptTab === 'digital') {
+      if (!printRoot) {
+        setToast('Extrato indisponivel para salvar em PDF');
+        return;
+      }
+      try {
+        await openNativeSaveAsPdf({
+          printRoot,
+          title: `Extrato da venda ${sale.id}`
+        });
+        setToast('Selecione "Salvar em PDF" no menu do navegador');
+      } catch {
+        setToast('Erro ao abrir salvar em PDF');
+      }
       return;
     }
 
     try {
-      const blob = await buildPdfBlob({ element: node, format });
-      downloadBlob({ blob, filename, openInNewTabOnIos: true });
-      setToast('PDF gerado');
+      await downloadReceiptPdfDirect({ node, format, filename });
+      setToast('Download iniciado');
     } catch {
       setToast('Erro ao gerar PDF');
     }
@@ -1079,6 +1159,23 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
     const printRoot = receiptTab === 'digital' ? digitalReceiptRef.current : thermalReceiptRef.current;
     if (!node || !printRoot) {
       setToast('Extrato indisponivel para impressao');
+      return;
+    }
+
+    if (mobileWeb && receiptTab === 'digital') {
+      if (!printRoot) {
+        setToast('Extrato indisponivel para salvar em PDF');
+        return;
+      }
+      try {
+        await openNativeSaveAsPdf({
+          printRoot,
+          title: `Extrato da venda ${sale.id}`
+        });
+        setToast('Selecione "Salvar em PDF" no menu do navegador');
+      } catch {
+        setToast('Erro ao gerar extrato');
+      }
       return;
     }
 
@@ -1235,6 +1332,15 @@ export default function SalesDetailModal({ open, onClose, sale, onUpdated, onEdi
                     }}
                   >
                     Baixar extrato
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      onClose();
+                    }}
+                  >
+                    Sair da venda
                   </button>
                   {!isCancelled ? (
                     <button

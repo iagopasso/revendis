@@ -2407,6 +2407,14 @@ export default function SalesPanel({
                   </label>
                   {createSaleError ? <div className="field-error">{createSaleError}</div> : null}
                   <button
+                    className="button ghost sale-exit"
+                    type="button"
+                    onClick={closeCreateSaleModal}
+                    disabled={createSaleSaving || loadingSaleForEdit}
+                  >
+                    Sair da venda
+                  </button>
+                  <button
                     className="button primary sale-submit"
                     type="button"
                     onClick={handleCreateSale}

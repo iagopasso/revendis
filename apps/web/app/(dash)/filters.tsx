@@ -16,6 +16,14 @@ type FilterSelectProps = {
   className?: string;
 };
 
+type FilterSearchInputProps = {
+  name: string;
+  value: string;
+  placeholder?: string;
+  className?: string;
+  debounceMs?: number;
+};
+
 export function FilterSelect({
   name,
   value,
@@ -142,5 +150,53 @@ export function FilterSelect({
       </select>
       <strong>▾</strong>
     </div>
+  );
+}
+
+export function FilterSearchInput({
+  name,
+  value,
+  placeholder = 'Buscar...',
+  className,
+  debounceMs = 250
+}: FilterSearchInputProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const [inputValue, setInputValue] = useState(value);
+
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const nextValue = inputValue.trim();
+      const nextParams = new URLSearchParams(queryString);
+      const currentValue = (nextParams.get(name) || '').trim();
+      if (currentValue === nextValue) return;
+      if (!nextValue) {
+        nextParams.delete(name);
+      } else {
+        nextParams.set(name, nextValue);
+      }
+      const query = nextParams.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname);
+    }, debounceMs);
+
+    return () => window.clearTimeout(timer);
+  }, [debounceMs, inputValue, name, pathname, queryString, router]);
+
+  return (
+    <label className={className ? `search ${className}` : 'search'}>
+      <span aria-hidden="true">🔍</span>
+      <input
+        aria-label={placeholder}
+        placeholder={placeholder}
+        value={inputValue}
+        onChange={(event) => setInputValue(event.target.value)}
+      />
+    </label>
   );
 }

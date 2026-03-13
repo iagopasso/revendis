@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import DateRangePicker from '../date-range';
-import { FilterSelect } from '../filters';
+import { FilterSearchInput, FilterSelect } from '../filters';
 import {
   buildTenantStorageScope,
   fetchList,
@@ -66,6 +66,7 @@ type ReceivableSummary = {
 type SearchParams = {
   payment?: string | string[];
   delivery?: string | string[];
+  customer?: string | string[];
   newSale?: string | string[];
   newCustomer?: string | string[];
   range?: string | string[];
@@ -73,6 +74,13 @@ type SearchParams = {
   from?: string | string[];
   to?: string | string[];
 };
+
+const normalizeSearchText = (value?: string | null) =>
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 
 const getPaymentStatus = (saleTotal: number | string, summary?: ReceivableSummary): PaymentStatus => {
   if (!summary) return 'paid';
@@ -111,8 +119,11 @@ export default async function VendasPage({
 
   const paymentFilterParam = getStringParam(resolvedParams.payment);
   const deliveryFilterParam = getStringParam(resolvedParams.delivery);
+  const customerFilterParam = getStringParam(resolvedParams.customer);
   const paymentFilter = paymentFilterParam === 'all' ? '' : paymentFilterParam;
   const deliveryFilter = deliveryFilterParam === 'all' ? '' : deliveryFilterParam;
+  const customerFilter = customerFilterParam.trim();
+  const normalizedCustomerFilter = normalizeSearchText(customerFilter);
 
   const paymentOptions = [
     { label: 'Pendente', value: 'pending' },
@@ -183,7 +194,11 @@ export default async function VendasPage({
         : deliveryFilter === 'delivered'
           ? sale.status === 'delivered' || sale.status === 'confirmed'
           : sale.status === deliveryFilter;
-    return matchesPayment && matchesDelivery;
+    const matchesCustomer =
+      !normalizedCustomerFilter
+        ? true
+        : normalizeSearchText(sale.customer_name || '').includes(normalizedCustomerFilter);
+    return matchesPayment && matchesDelivery && matchesCustomer;
   });
 
   const enrichedSales = filteredSales.map((sale) => {
@@ -234,6 +249,12 @@ export default async function VendasPage({
       <section className="panel sales-filters-panel filters-panel-static">
         <div className="toolbar toolbar-sales">
           <div className="toolbar-group toolbar-sales-group">
+            <FilterSearchInput
+              name="customer"
+              value={customerFilter}
+              className="sales-customer-search"
+              placeholder="Buscar cliente"
+            />
             <FilterSelect
               name="payment"
               value={paymentFilter}

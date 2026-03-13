@@ -161,44 +161,59 @@ const formatDateMask = (value: string) => {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 };
 
+const toIsoDateFromParts = (year: number, month: number, day: number) => {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return '';
+  if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+  const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+  if (Number.isNaN(parsed.getTime())) return '';
+  if (parsed.getUTCFullYear() !== year) return '';
+  if (parsed.getUTCMonth() + 1 !== month) return '';
+  if (parsed.getUTCDate() !== day) return '';
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
 const parseMaskedDateToIso = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (!match) return null;
-  const day = match[1];
-  const month = match[2];
-  const year = match[3];
-  const iso = `${year}-${month}-${day}`;
-  const date = new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return null;
-  if (date.getUTCFullYear() !== Number(year)) return null;
-  if (date.getUTCMonth() + 1 !== Number(month)) return null;
-  if (date.getUTCDate() !== Number(day)) return null;
-  return iso;
+  const iso = toIsoDateFromParts(Number(match[3]), Number(match[2]), Number(match[1]));
+  return iso || null;
 };
 
 const normalizeInputDate = (value?: string | null) => {
   const trimmed = value?.trim() || '';
   if (!trimmed) return '';
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const isoDate = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDate) {
+    return toIsoDateFromParts(Number(isoDate[1]), Number(isoDate[2]), Number(isoDate[3]));
+  }
 
   const isoPrefix = trimmed.match(/^(\d{4}-\d{2}-\d{2})T/);
-  if (isoPrefix?.[1]) return isoPrefix[1];
+  if (isoPrefix?.[1]) return normalizeInputDate(isoPrefix[1]);
 
-  const brDate = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (brDate) {
-    const day = brDate[1];
-    const month = brDate[2];
-    const year = brDate[3];
-    const iso = `${year}-${month}-${day}`;
-    const parsed = new Date(`${iso}T00:00:00`);
-    if (Number.isNaN(parsed.getTime())) return '';
-    if (parsed.getUTCFullYear() !== Number(year)) return '';
-    if (parsed.getUTCMonth() + 1 !== Number(month)) return '';
-    if (parsed.getUTCDate() !== Number(day)) return '';
-    return iso;
+  const slashOrDashDate = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (slashOrDashDate) {
+    const first = Number(slashOrDashDate[1]);
+    const second = Number(slashOrDashDate[2]);
+    const year = Number(slashOrDashDate[3]);
+
+    const candidates: Array<{ day: number; month: number }> = [];
+    if (first > 12 && second <= 12) {
+      candidates.push({ day: first, month: second });
+    } else if (second > 12 && first <= 12) {
+      candidates.push({ day: second, month: first });
+    } else {
+      candidates.push({ day: first, month: second });
+      candidates.push({ day: second, month: first });
+    }
+
+    for (const candidate of candidates) {
+      const normalized = toIsoDateFromParts(year, candidate.month, candidate.day);
+      if (normalized) return normalized;
+    }
+    return '';
   }
 
   const parsed = new Date(trimmed);
@@ -532,7 +547,7 @@ export default function PurchasesPanel({
   const [paymentMethod, setPaymentMethod] = useState('Cartao de Credito');
   const [installments, setInstallments] = useState<
     { id: string; dueDate: string; amount: string }[]
-  >([{ id: `${Date.now()}`, dueDate: toInputDate(new Date()), amount: '' }]);
+  >([{ id: `${Date.now()}`, dueDate: isoDateToMask(toInputDate(new Date())), amount: '' }]);
   const [basicErrors, setBasicErrors] = useState<{
     brand?: string;
     orderNumber?: string;
@@ -657,7 +672,7 @@ export default function PurchasesPanel({
       if (remainder > 0) remainder -= 1;
       return {
         id: `${Date.now()}-${index}`,
-        dueDate: baseDate,
+        dueDate: isoDateToMask(baseDate) || '',
         amount: formatCurrency(cents / 100)
       };
     });
@@ -1047,10 +1062,15 @@ export default function PurchasesPanel({
 
     const normalizedPurchaseDate = normalizeInputDate(form.purchaseDate);
     if (!normalizedPurchaseDate) {
-      setFormError('Informe a data da compra no formato YYYY-MM-DD.');
+      setFormError('Informe uma data de compra valida.');
       return;
     }
-    const normalizedDueDate = normalizeInputDate(installments[0]?.dueDate);
+    const paymentDueDateRaw = (installments[0]?.dueDate || '').trim();
+    const normalizedDueDate = normalizeInputDate(paymentDueDateRaw);
+    if (paymentDueDateRaw && !normalizedDueDate) {
+      setFormError('Informe a data do pagamento no formato DD/MM/AAAA.');
+      return;
+    }
 
     setSaving(true);
     setFormError(null);
@@ -1125,6 +1145,7 @@ export default function PurchasesPanel({
           brand: form.brand.trim() || undefined,
           orderNumber: form.orderNumber.trim() || undefined,
           purchaseDate: normalizedPurchaseDate,
+          dueDate: normalizedDueDate || undefined,
           status: 'pending',
           purchaseItems
         })
@@ -1912,10 +1933,12 @@ export default function PurchasesPanel({
                             <label>
                               <span>Vencimento</span>
                               <input
-                                type="date"
+                                inputMode="numeric"
+                                maxLength={10}
+                                placeholder="dd/mm/aaaa"
                                 value={item.dueDate}
                                 onChange={(event) => {
-                                  const nextDate = event.target.value;
+                                  const nextDate = formatDateMask(event.target.value);
                                   setInstallments((prev) =>
                                     prev.map((inst) =>
                                       inst.id === item.id ? { ...inst, dueDate: nextDate } : inst
